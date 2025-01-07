@@ -37,7 +37,7 @@ class addpostState extends State<addpost> {
         'code' : code,
         'docId' : doc_id,
         'likescount': 0,
-        'likes': {},
+        'likes': [],
         'Timestamp': FieldValue.serverTimestamp()
       };
       await FirebaseFirestore.instance

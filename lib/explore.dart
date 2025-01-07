@@ -209,25 +209,27 @@ class _QuestionCardState extends State<QuestionCard> {
       if (questionDoc.exists) {
         var likes = questionDoc['likes'];
 
-        // Ensure likes is a List before modifying
-        List<dynamic> likesList = [];
-        if (likes is List) {
-          likesList = List.from(likes); // Safely create a copy of the list
-        }
-
         if (isLiked) {
-          // Dislike: remove user from the list of likes
-          likesList.remove(FirebaseAuth.instance.currentUser?.uid);
+          // Dislike: Remove the current user's UID from the likes array
+          await questionRef.update({
+            'likes': FieldValue.arrayRemove([FirebaseAuth.instance.currentUser?.uid]),
+          });
         } else {
-          // Like: add user to the list of likes
-          likesList.add(FirebaseAuth.instance.currentUser?.uid);
+          // Like: Add the current user's UID to the likes array
+          await questionRef.update({
+            'likes': FieldValue.arrayUnion([FirebaseAuth.instance.currentUser?.uid]),
+          });
         }
 
-        // Update Firestore with the new likes list and updated likes count
+        // Fetch the updated document to get the new size of the likes array
+        DocumentSnapshot updatedDoc = await questionRef.get();
+        List<dynamic> updatedLikes = updatedDoc['likes'] ?? [];
+
+        // Update the likes count based on the array size
         await questionRef.update({
-          'likes': likesList,
-          'likescount': likesList.length, // Update the likes count
+          'likescount': updatedLikes.length,
         });
+
 
         setState(() {
           isLiked = !isLiked; // Toggle the like status
@@ -292,12 +294,14 @@ class _QuestionCardState extends State<QuestionCard> {
               RichText(
                 text: TextSpan(
                   style: theme.textTheme.bodyMedium,
+
                   children: _buildDescription(widget.description, theme),
                 ),
                 maxLines: 10,
+                textAlign: TextAlign.justify,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               // code = widget.code!!
               if (widget.code != null && widget.code!.isNotEmpty)
                 Container(
@@ -305,24 +309,34 @@ class _QuestionCardState extends State<QuestionCard> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   width: double.infinity,
-                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  margin: const EdgeInsets.symmetric(vertical: 5),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: MarkdownBody(
-                          data: "```\n${widget.code}\n```",
-                          styleSheet: MarkdownStyleSheet(
-                            code: TextStyle(
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.normal,
-                              fontSize: 14,
-                              backgroundColor: Colors.transparent,
-                            ),
-                            codeblockDecoration: BoxDecoration(
-                              color: theme.colorScheme.primaryFixed,
-                              borderRadius: BorderRadius.circular(15),
+                        // Background color for the body
+                        padding: const EdgeInsets.all(0.0),
+                        child: Padding(
+                          padding: const EdgeInsets.all(0.0),
+                          child: MarkdownBody(
+                            data: "```\n${widget.code}\n```",
+                            styleSheet: MarkdownStyleSheet(
+                              codeblockPadding: EdgeInsets.all(15),
+                              code: TextStyle(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.normal,
+                                fontSize: 14,
+                                backgroundColor: Colors.transparent,
+                              ),
+                              blockquoteDecoration:BoxDecoration(
+                                color: theme.colorScheme.primaryFixed,
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+
+                              codeblockDecoration: BoxDecoration(
+                                color: theme.colorScheme.primaryFixed,
+                                borderRadius: BorderRadius.circular(15),
+                              ),
                             ),
                           ),
                         ),
