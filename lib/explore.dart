@@ -294,7 +294,7 @@ class _QuestionCardState extends State<QuestionCard> {
                   style: theme.textTheme.bodyMedium,
                   children: _buildDescription(widget.description, theme),
                 ),
-                maxLines: 3,
+                maxLines: 10,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 16),
@@ -428,7 +428,7 @@ List<TextSpan> _buildDescription(String description, ThemeData theme) {
           decoration: TextDecoration.underline,
         ),
         recognizer: TapGestureRecognizer()
-          ..onTap = () => _launchURL("https://unsplash.com/"),
+          ..onTap = () => _launchURL(url),
       ),
     );
 
