@@ -16,34 +16,38 @@ class addpostState extends State<addpost> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _markdownController =
       TextEditingController(); // Controller for the code field
+  final _formKey = GlobalKey<FormState>();
   String markdownContent = ''; // Markdown content for Preview
   String code = ''; // Code content to show in the 'Code' tab
 
   String? selectedSubject;
 
-  addQA() async {
+  sharepost() async {
     try {
       var user = FirebaseAuth.instance.currentUser;
       String doc_id =
-          FirebaseFirestore.instance.collection('Question-Answer').doc().id;
+          FirebaseFirestore.instance.collection('Explore').doc().id;
       Map<String, dynamic> Data = {
-        'Question': _titleController.text.trim().capitalizeFirst,
-        'Answer': _descriptionController.text.trim().capitalizeFirst,
+        'Title': _titleController.text.trim().capitalizeFirst,
+        'Description': _descriptionController.text.trim().capitalizeFirst,
         'Uid': user?.uid,
         'Report': false,
         'Tags': _tags,
-        'docId': doc_id,
-        'Subject': selectedSubject,
+        'uid': user?.uid,
+        'code' : code,
+        'docId' : doc_id,
+        'likescount': 0,
+        'likes': {},
         'Timestamp': FieldValue.serverTimestamp()
       };
       await FirebaseFirestore.instance
-          .collection("Question-Answer")
+          .collection("Explore")
           .doc(doc_id)
           .set(Data)
           .then((_) => {
                 debugPrint("AddUser: User Added"),
                 Get.showSnackbar(const GetSnackBar(
-                  title: "Question-Answer Added",
+                  title: "Post Created",
                   message: "Success",
                   icon: Icon(
                     Icons.cloud_done_sharp,
@@ -59,7 +63,7 @@ class addpostState extends State<addpost> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(e.code)));
     } catch (e) {
-      debugPrint("Signupcode  {$e}");
+      debugPrint("Sharepost  {$e}");
     }
   }
 
@@ -83,33 +87,28 @@ class addpostState extends State<addpost> {
     });
   }
 
+  @override
   Widget build(BuildContext context) {
     return
       Scaffold(
+        appBar: AppBar(
+          title: Text('Express Yourself'),
+        ),
         body:
-        FractionallySizedBox(
-            heightFactor: 0.9,
+        Form(
             child: SingleChildScrollView(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      height: 4,
-                      width: 50,
-                      margin: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[400],
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
                     const Text(
-                      "Interview-Question",
+                      "Add your thought or Knowledge Resource to Cloud.....",
                       style: TextStyle(
                         color: Colors.black,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 16,
+
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                     SizedBox(height: 20),
@@ -122,8 +121,8 @@ class addpostState extends State<addpost> {
                       enabled: true,
                       minLines: 1,
                       decoration: InputDecoration(
-                        prefixIcon: Icon(Icons.question_mark_outlined,color:Theme.of(context).colorScheme.primary),
-                        hintText: 'Question',
+                        prefixIcon: Icon(Icons.title_rounded,color:Theme.of(context).colorScheme.primary),
+                        hintText: 'Title',
                         hintStyle: const TextStyle(color: Colors.grey),
                         filled: true,
                         fillColor: Colors.transparent,
@@ -149,7 +148,7 @@ class addpostState extends State<addpost> {
                           vertical: 15,
                           horizontal: 20,
                         ),
-                        hintText: 'Answer',
+                        hintText: 'description',
                         hintStyle: TextStyle(color: Colors.grey),
                         filled: true,
                         fillColor: Colors.transparent,
@@ -282,11 +281,12 @@ class addpostState extends State<addpost> {
                     ),
                     SizedBox(height: 10),
                     ElevatedButton.icon(
-                      icon: Icon(Icons.file_upload_outlined),
+                      icon: Icon(Icons.post_add_rounded),
                       onPressed: () {
-
+                      sharepost();
+                      Navigator.pop(context);
                       },
-                      label: Text('Post'),
+                      label: Text('Express'),
                       style: ElevatedButton.styleFrom(elevation: 2.0, // Border color and width
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12.0), // Border radius
