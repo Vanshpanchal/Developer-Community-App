@@ -103,13 +103,14 @@ class addpostState extends State<addpost> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
-                      "Add your thought or Knowledge Resource to Cloud.....",
+                      "Add your thoughts or Knowledge Resource to the Community.....",
                       style: TextStyle(
                         color: Colors.black,
                         fontSize: 16,
 
                         fontWeight: FontWeight.w400,
                       ),
+                      textAlign: TextAlign.justify,
                     ),
                     SizedBox(height: 20),
 
@@ -281,16 +282,19 @@ class addpostState extends State<addpost> {
                     ),
                     SizedBox(height: 10),
                     ElevatedButton.icon(
-                      icon: Icon(Icons.post_add_rounded),
+                      icon: Icon(Icons.post_add_rounded,color: Colors.white,),
                       onPressed: () {
                       sharepost();
                       Navigator.pop(context);
                       },
-                      label: Text('Express'),
+                      label: Text('Express',style: TextStyle(color: Colors.white),),
                       style: ElevatedButton.styleFrom(elevation: 2.0, // Border color and width
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12.0), // Border radius
-                          )),
+                          ),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+
+                      ),
                     ),
                   ],
                 ),

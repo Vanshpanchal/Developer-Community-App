@@ -18,6 +18,7 @@ class signup extends StatelessWidget {
 
   Usersignup() async {
     try {
+      String default_profile = "https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg";
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
           email: email_controller.text, password: password_controller.text);
@@ -25,6 +26,8 @@ class signup extends StatelessWidget {
         'Username': username_controller.text,
         'Email': userCredential.user?.email,
         'Uid': userCredential.user?.uid,
+        'profilePicture' : default_profile,
+        'XP': 100,
         'Saved': []
       };
       await FirebaseFirestore.instance

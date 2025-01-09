@@ -1,3 +1,5 @@
+import 'package:developer_community_app/explore.dart';
+import 'package:developer_community_app/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -6,7 +8,7 @@ import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 
-import 'explore.dart';
+import 'saved.dart';
 
 
 class home extends StatefulWidget {
@@ -70,11 +72,10 @@ class navigatorcontroller extends GetxController {
   List<Widget> get screen {
     if (userRole == 'admin') {
       return [
-        const explore(),
+        explore(),
         Container(color: Colors.orange),
-        Container(color: Colors.blueAccent),
-        Container(color: Colors.greenAccent)
-        // const saved(),
+        const saved(),
+        profile(),
         // const mypost(),
         // const profile(),
         // const reported()
@@ -82,10 +83,10 @@ class navigatorcontroller extends GetxController {
       ];
     } else {
       return [
-        const explore(),
+        explore(),
         Container(color: Colors.orange),
-        Container(color: Colors.blueAccent),
-        Container(color: Colors.greenAccent)
+        const saved(),
+        profile(),
         // const saved(),
         // const mypost(),
         // const profile(),
@@ -97,14 +98,14 @@ class navigatorcontroller extends GetxController {
     if (userRole == 'admin') {
       return const [
         NavigationDestination(
-            icon: Icon(Icons.looks_rounded, color: Colors.black),
+            icon: Icon(Icons.looks, color: Colors.black),
             label: "Explore"),
         NavigationDestination(
             icon: Icon(Icons.forum_rounded, color: Colors.black),
             label: "Saved"),
         NavigationDestination(
-            icon: Icon(Icons.my_library_books_outlined, color: Colors.black),
-            label: "My Question"),
+            icon: Icon(Icons.book, color: Colors.black),
+            label: "Saved"),
         NavigationDestination(
             icon: Icon(Icons.person_outline, color: Colors.black),
             label: "Profile"),
@@ -121,10 +122,10 @@ class navigatorcontroller extends GetxController {
             label: "Explore"),
         NavigationDestination(
             icon: Icon(Icons.forum_rounded, color: Colors.black),
-            label: "Saved"),
+            label: "Discussion"),
         NavigationDestination(
-            icon: Icon(Icons.my_library_books_outlined, color: Colors.black),
-            label: "My Question"),
+            icon: Icon(Icons.book, color: Colors.black),
+            label: "Saved"),
         NavigationDestination(
             icon: Icon(Icons.person, color: Colors.black),
             label: "Profile"),
@@ -135,11 +136,11 @@ class navigatorcontroller extends GetxController {
   String getAppBarTitle() {
     switch (selectedindex.value) {
       case 0:
-        return 'Explore';
+        return 'saved';
       case 1:
-        return 'Saved';
+        return 'Discussion';
       case 2:
-        return 'My Question';
+        return 'Saved';
       case 3:
         return 'Profile';
       default:

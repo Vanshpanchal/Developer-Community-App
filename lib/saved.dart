@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:developer_community_app/addpost.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,18 +8,15 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class explore extends StatefulWidget {
-  const explore({super.key});
+class saved extends StatefulWidget {
+  const saved({super.key});
 
   @override
-  exploreState createState() => exploreState();
+  savedState createState() => savedState();
 }
 
-class exploreState extends State<explore> {
+class savedState extends State<saved> {
   final user = FirebaseAuth.instance.currentUser;
-  TextEditingController search_controller = TextEditingController();
-
-
   String username = '';
   String imageUrl = '';
 
@@ -30,61 +26,17 @@ class exploreState extends State<explore> {
       .where('Report', isEqualTo: false)
       .snapshots();
 
+  final savedIdsStream = FirebaseFirestore.instance
+      .collection('User')
+      .doc(FirebaseAuth
+          .instance.currentUser?.uid) // Replace with the actual document ID
+      .snapshots();
+
   void openbottmsheet() {
     showModalBottomSheet(
         isScrollControlled: true,
         context: context,
         builder: (ctx) => addpost());
-  }
-
-  onSearch(String msg) {
-    if (msg.isNotEmpty) {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Explore')
-            .where("Tags", arrayContains: msg.toUpperCase())
-            .snapshots();
-      });
-    } else if (msg.isEmpty) {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Question-Answer')
-            .where('Report', isEqualTo: false)
-            .snapshots();
-      });
-    }
-    // print(exploreStream.toString());
-  }
-
-  onSearch2(String msg) {
-    if (msg.isNotEmpty) {
-      // if(selectedSubject!.isNotEmpty){
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Explore')
-            .where("Title", isGreaterThanOrEqualTo: msg.capitalizeFirst)
-            .where("Title", isLessThan: '${msg.capitalizeFirst}z')
-            .snapshots();
-      });
-    } else {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Question-Answer')
-            .where('Report', isEqualTo: false)
-            .snapshots();
-      });
-    }
-    // print(exploreStream.toString());
-  }
-
-  all() {
-    setState(() {
-      exploreStream = FirebaseFirestore.instance
-          .collection('Explore')
-          .where('Report', isEqualTo: false)
-          .snapshots();
-    });
-    search_controller.clear();
   }
 
   fetchuser() async {
@@ -106,6 +58,7 @@ class exploreState extends State<explore> {
       }
     }
   }
+
 
   @override
   void initState() {
@@ -137,61 +90,63 @@ class exploreState extends State<explore> {
             )
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            Get.to(addpost());
-          },
-          tooltip: 'Ask Question',
-          child: Icon(Icons.add),
-        ),
-        body: Column(children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: CupertinoSearchTextField(
-              onSuffixTap: () => {all() },
-              controller: search_controller,
-              placeholder: "Search",
-              onChanged: (val) => {onSearch2(val), print(val)},
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder(
-              stream: exploreStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(child: Text('No Post found.'));
-                }
+        body: StreamBuilder(
+            stream: savedIdsStream,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Text('Error');
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-                final questions = snapshot.data!.docs;
+              if (!snapshot.hasData || !snapshot.data!.exists) {
+                return const Center(child: Text('No saved IDs available'));
+              }
+              List<String> documentIds =
+                  List.from(snapshot.data!['Saved'] ?? []);
+              return StreamBuilder(
+                stream: exploreStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return Center(child: Text('No Post found.'));
+                  }
 
-                return ListView.builder(
-                  itemCount: questions.length,
-                  itemBuilder: (context, index) {
-                    final data = questions[index].data();
-                    return QuestionCard(
-                      title: data['Title'] ?? '',
-                      description: data['Description'] ?? '',
-                      tags: List<String>.from(data['Tags'] ?? []),
-                      votes: data['likescount'] ?? 0,
-                      answers: data['answers'] ?? 0,
-                      timestamp: (data['Timestamp'] as Timestamp?)?.toDate() ??
-                          DateTime.now(),
-                      code: data['code'] ?? '',
-                      uid: data['Uid'] ?? '',
-                      docid: data['docId'] ?? '',
+                  var docs = snapshot.data!.docs
+                      .where((doc) => documentIds.contains(doc.id))
+                      .toList();
+                  if (docs.length == 0){
+                    return Center(child: Text('No saved IDs available'));
+                  }else {
+                    return ListView.builder(
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final data = docs[index].data();
+                        return QuestionCard(
+                          title: data['Title'] ?? '',
+                          description: data['Description'] ?? '',
+                          tags: List<String>.from(data['Tags'] ?? []),
+                          votes: data['likescount'] ?? 0,
+                          answers: data['answers'] ?? 0,
+                          timestamp:
+                          (data['Timestamp'] as Timestamp?)?.toDate() ??
+                              DateTime.now(),
+                          code: data['code'] ?? '',
+                          uid: data['Uid'] ?? '',
+                          docid: data['docId'] ?? '',
+                        );
+                      },
                     );
-                  },
-                );
-              },
-            ),
-          ),
-        ]));
+                  }
+                },
+              );
+            }));
   }
 }
 
@@ -355,6 +310,25 @@ class _QuestionCardState extends State<QuestionCard> {
     }
   }
 
+  removesaved(itemId) async {
+    var usercredential = FirebaseAuth.instance.currentUser;
+    await FirebaseFirestore.instance
+        .collection("User")
+        .doc(usercredential?.uid)
+        .update({
+      'Saved': FieldValue.arrayRemove([itemId])
+    });
+
+    Get.showSnackbar(GetSnackBar(
+      title: "Success",
+      message: "Unsaved the post",
+      icon: Icon(
+        Icons.bookmark_border,
+        color: Colors.green,
+      ),
+      duration: Duration(seconds: 2),
+    ));
+  }
   save(itemId) async {
     var usercredential = FirebaseAuth.instance.currentUser;
     await FirebaseFirestore.instance
@@ -364,15 +338,7 @@ class _QuestionCardState extends State<QuestionCard> {
       'Saved': FieldValue.arrayUnion([itemId])
     });
 
-    Get.showSnackbar(GetSnackBar(
-      title: "Success",
-      message: "Post Saved",
-      icon: Icon(
-        Icons.bookmark,
-        color: Colors.green,
-      ),
-      duration: Duration(seconds: 2),
-    ));
+
   }
 
   @override
@@ -589,9 +555,9 @@ class _QuestionCardState extends State<QuestionCard> {
                     Text('${widget.votes}', style: theme.textTheme.labelLarge),
                     const SizedBox(width: 24),
                     IconButton(
-                      icon: Icon(Icons.bookmark_add_outlined),
+                      icon: Icon(Icons.bookmark),
                       onPressed: () {
-                        save(widget.docid);
+                        removesaved(widget.docid);
                       },
                       // onPressed: _handleLike,
                     ),
@@ -677,13 +643,5 @@ void _launchURL(String url) async {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   } else {
     debugPrint('Could not launch $url');
-  }
-}
-
-class SearchController extends GetxController {
-  var searchText = ''.obs;
-
-  void updateSearchText(String text) {
-    searchText.value = text;
   }
 }
