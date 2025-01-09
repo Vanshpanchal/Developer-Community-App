@@ -15,6 +15,7 @@ class _wrapperState extends State<wrapper> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: StreamBuilder(
+
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
           if (snapshot.hasData) {

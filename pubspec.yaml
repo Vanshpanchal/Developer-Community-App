@@ -44,6 +44,7 @@ dependencies:
   flutter_markdown: ^0.6.10
   image_picker: ^1.1.2
   http: ^1.2.2
+  lottie: ^3.3.0
 
 dev_dependencies:
   flutter_test:

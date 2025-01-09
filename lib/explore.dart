@@ -118,6 +118,7 @@ class exploreState extends State<explore> {
     return Scaffold(
         appBar: AppBar(
           title: Text('Developer Community'),
+          automaticallyImplyLeading: false,
           actions: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),

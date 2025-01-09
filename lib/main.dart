@@ -4,6 +4,7 @@ import 'package:developer_community_app/wrapper.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get_navigation/src/root/get_material_app.dart';
+import 'package:lottie/lottie.dart';
 
 import 'Authservice.dart';
 
@@ -34,7 +35,7 @@ class MyApp extends StatelessWidget {
             elevation: 4.0, // AppBar shadow elevation
           ),
         ),
-        home: Splash());
+        home: SplashScreen());
 
   }
 }
@@ -67,5 +68,82 @@ class Splash extends StatelessWidget {
         nextScreen: wrapper(),
         splashTransition: SplashTransition.fadeTransition,
         backgroundColor: Colors.lightBlue.shade50);
+  }
+}
+
+
+class SplashScreen extends StatefulWidget {
+  @override
+  _SplashScreenState createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Navigate to the login page after 3 seconds
+    Future.delayed(const Duration(seconds: 3), () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => wrapper()),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Background Gradient
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF5BC7FF), // Deep Green
+                  Color(0xFF00C7FF), // Blue-Green
+                  Color(0xFF005B80), // Blue
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+          // Center Content
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Lottie Animation
+                Lottie.asset(
+                  'assets/images/discussion_animation.json', // Replace with your Lottie file path
+                  height: 200,
+                  width: 200,
+                ),
+                const SizedBox(height: 20),
+                // Animated Text
+                Text(
+                  "Let's Discuss & Share",
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  "Connecting Ideas Globally",
+                  style: TextStyle(
+                    fontSize: 16,
+
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
