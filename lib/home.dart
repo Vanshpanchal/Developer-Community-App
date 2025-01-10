@@ -1,3 +1,4 @@
+import 'package:developer_community_app/chatbot.dart';
 import 'package:developer_community_app/explore.dart';
 import 'package:developer_community_app/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -75,6 +76,7 @@ class navigatorcontroller extends GetxController {
         explore(),
         Container(color: Colors.orange),
         const saved(),
+        // ChatScreen(),
         profile(),
         // const mypost(),
         // const profile(),
@@ -86,6 +88,7 @@ class navigatorcontroller extends GetxController {
         explore(),
         Container(color: Colors.orange),
         const saved(),
+        // ChatScreen(),
         profile(),
         // const saved(),
         // const mypost(),
@@ -106,6 +109,9 @@ class navigatorcontroller extends GetxController {
         NavigationDestination(
             icon: Icon(Icons.book, color: Colors.black),
             label: "Saved"),
+        // NavigationDestination(
+        //     icon: Icon(Icons.chat_rounded, color: Colors.black),
+        //     label: "Chat"),
         NavigationDestination(
             icon: Icon(Icons.person_outline, color: Colors.black),
             label: "Profile"),
@@ -126,6 +132,9 @@ class navigatorcontroller extends GetxController {
         NavigationDestination(
             icon: Icon(Icons.book, color: Colors.black),
             label: "Saved"),
+        // NavigationDestination(
+        //     icon: Icon(Icons.chat_rounded, color: Colors.black),
+        //     label: "Chat"),
         NavigationDestination(
             icon: Icon(Icons.person, color: Colors.black),
             label: "Profile"),

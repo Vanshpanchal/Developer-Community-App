@@ -21,42 +21,64 @@ class addpostState extends State<addpost> {
   String code = ''; // Code content to show in the 'Code' tab
 
   String? selectedSubject;
-
   sharepost() async {
     try {
+      // Get the current user
       var user = FirebaseAuth.instance.currentUser;
-      String doc_id =
-          FirebaseFirestore.instance.collection('Explore').doc().id;
-      Map<String, dynamic> Data = {
-        'Title': _titleController.text.trim().capitalizeFirst,
-        'Description': _descriptionController.text.trim().capitalizeFirst,
+
+      // Trim and validate inputs
+      String title = _titleController.text.trim();
+      String description = _descriptionController.text.trim();
+
+      if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
+        // Show error if any field is empty
+        Get.showSnackbar(const GetSnackBar(
+          title: "Error",
+          message: "All fields must be filled!",
+          icon: Icon(
+            Icons.error,
+            color: Colors.redAccent,
+          ),
+          duration: Duration(seconds: 3),
+        ));
+        return;
+      }
+
+      // Generate document ID
+      String docId = FirebaseFirestore.instance.collection('Explore').doc().id;
+
+      // Prepare data to be stored
+      Map<String, dynamic> data = {
+        'Title': title.capitalizeFirst,
+        'Description': description.capitalizeFirst,
         'Uid': user?.uid,
         'Report': false,
         'Tags': _tags,
         'uid': user?.uid,
-        'code' : code,
-        'docId' : doc_id,
+        'code': code,
+        'docId': docId,
         'likescount': 0,
         'likes': [],
-        'Timestamp': FieldValue.serverTimestamp()
+        'Timestamp': FieldValue.serverTimestamp(),
       };
+
+      // Add data to Firestore
       await FirebaseFirestore.instance
           .collection("Explore")
-          .doc(doc_id)
-          .set(Data)
-          .then((_) => {
-                debugPrint("AddUser: User Added"),
-                Get.showSnackbar(const GetSnackBar(
-                  title: "Post Created",
-                  message: "Success",
-                  icon: Icon(
-                    Icons.cloud_done_sharp,
-                    color: Colors.white,
-                  ),
-                  duration: Duration(seconds: 3),
-                ))
-              })
-          .catchError((e) {
+          .doc(docId)
+          .set(data)
+          .then((_) {
+        debugPrint("AddUser: User Added");
+        Get.showSnackbar(const GetSnackBar(
+          title: "Post Created",
+          message: "Success",
+          icon: Icon(
+            Icons.cloud_done_sharp,
+            color: Colors.white,
+          ),
+          duration: Duration(seconds: 3),
+        ));
+      }).catchError((e) {
         debugPrint("AddUser  {$e}");
       });
     } on FirebaseAuthException catch (e) {
@@ -66,6 +88,67 @@ class addpostState extends State<addpost> {
       debugPrint("Sharepost  {$e}");
     }
   }
+
+  // sharepost() async {
+  //   try {
+  //     String title = _titleController.text.trim();
+  //     String description = _descriptionController.text.trim();
+  //
+  //     if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
+  //       // Show error if any field is empty
+  //       Get.showSnackbar(const GetSnackBar(
+  //         title: "Error",
+  //         message: "All fields must be filled!",
+  //         icon: Icon(
+  //           Icons.error,
+  //           color: Colors.white,
+  //         ),
+  //         duration: Duration(seconds: 3),
+  //       ));
+  //       return;
+  //     }
+  //     var user = FirebaseAuth.instance.currentUser;
+  //     String doc_id =
+  //         FirebaseFirestore.instance.collection('Explore').doc().id;
+  //     Map<String, dynamic> Data = {
+  //       'Title': _titleController.text.trim().capitalizeFirst,
+  //       'Description': _descriptionController.text.trim().capitalizeFirst,
+  //       'Uid': user?.uid,
+  //       'Report': false,
+  //       'Tags': _tags,
+  //       'uid': user?.uid,
+  //       'code' : code,
+  //       'docId' : doc_id,
+  //       'likescount': 0,
+  //       'likes': [],
+  //       'Timestamp': FieldValue.serverTimestamp()
+  //     };
+  //     await FirebaseFirestore.instance
+  //         .collection("Explore")
+  //         .doc(doc_id)
+  //         .set(Data)
+  //         .then((_) => {
+  //               debugPrint("AddUser: User Added"),
+  //               Get.showSnackbar(const GetSnackBar(
+  //                 title: "Post Created",
+  //                 message: "Success",
+  //                 icon: Icon(
+  //                   Icons.cloud_done_sharp,
+  //                   color: Colors.white,
+  //                 ),
+  //                 duration: Duration(seconds: 3),
+  //               ))
+  //             })
+  //         .catchError((e) {
+  //       debugPrint("AddUser  {$e}");
+  //     });
+  //   } on FirebaseAuthException catch (e) {
+  //     ScaffoldMessenger.of(context)
+  //         .showSnackBar(SnackBar(content: Text(e.code)));
+  //   } catch (e) {
+  //     debugPrint("Sharepost  {$e}");
+  //   }
+  // }
 
   final TextEditingController _tagController = TextEditingController();
   final List<String> _tags = [];
