@@ -1,7 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
 
-import 'gemini_api.dart';
-// import '../services/chat_gpt_service.dart';
+const apiKey = 'AIza------tMww4--------------'; // Your Gemini API key
+
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Gemini Chatbot',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: ChatScreen(),
+    );
+  }
+}
 
 class ChatScreen extends StatefulWidget {
   @override
@@ -9,34 +26,29 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _messageController = TextEditingController();
-  final List<Map<String, String>> _messages = [];
-  late ChatGPTService _chatGPTService;
-  String _role = "assistant";
+  final TextEditingController _controller = TextEditingController();
+  String _response = '';
 
   @override
   void initState() {
     super.initState();
-    _chatGPTService = ChatGPTService(apiKey: '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');
+    // Initialize Gemini with the API key inside the chat screen
+    Gemini.init(apiKey: apiKey, enableDebugging: true);
   }
 
-  Future<void> _sendMessage() async {
-    final userMessage = _messageController.text.trim();
-    if (userMessage.isEmpty) return;
-
-    setState(() {
-      _messages.add({'sender': 'user', 'text': userMessage});
-    });
-    _messageController.clear();
-
+  void _generateResponse(String prompt) async {
     try {
-      final botMessage = await _chatGPTService.generateResponse(userMessage, _role);
+      // Generate response from Gemini API based on user input
+      final result = await Gemini.instance.prompt(parts: [
+        Part.text(prompt),
+      ]);
+
       setState(() {
-        _messages.add({'sender': 'bot', 'text': botMessage});
+        _response = result?.output ?? 'Error: No response received';
       });
     } catch (e) {
       setState(() {
-        _messages.add({'sender': 'bot', 'text': 'Failed to fetch response: $e'});
+        _response = 'Error: ${e.toString()}';
       });
     }
   }
@@ -44,75 +56,32 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('ChatGPT Chatbot'),
-        actions: [
-          DropdownButton<String>(
-            value: _role,
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  _role = value;
-                });
-              }
-            },
-            items: [
-              DropdownMenuItem(value: "assistant", child: Text("Assistant")),
-              DropdownMenuItem(value: "expert", child: Text("Expert")),
-              DropdownMenuItem(value: "friend", child: Text("Friend")),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                final isUser = message['sender'] == 'user';
-                return Align(
-                  alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-                    padding: EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.secondary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      message['text']!,
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                );
+      appBar: AppBar(title: Text('Gemini Chatbot')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              decoration: InputDecoration(labelText: 'Ask something'),
+            ),
+            SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                String userInput = _controller.text.trim();
+                if (userInput.isNotEmpty) {
+                  _generateResponse(userInput);
+                }
               },
+              child: Text('Get Response'),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: InputDecoration(
-                      hintText: "Type a message...",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.send),
-                  onPressed: _sendMessage,
-                ),
-              ],
+            SizedBox(height: 16),
+            Text(
+              _response,
+              style: TextStyle(fontSize: 18, color: Colors.black),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

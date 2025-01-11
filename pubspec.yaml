@@ -46,6 +46,11 @@ dependencies:
   http: ^1.2.2
   lottie: ^3.3.0
   chat_gpt_sdk: ^3.1.4
+  flutter_gemini: ^3.0.0
+  flutter_chat_ui: ^1.6.15
+  flutter_chat_types: ^3.6.2
+  intl: ^0.18.0  # Add this line
+
 
 dev_dependencies:
   flutter_test:

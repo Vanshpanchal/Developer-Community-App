@@ -1,3 +1,4 @@
+import 'package:developer_community_app/Ongoing_discussion.dart';
 import 'package:developer_community_app/chatbot.dart';
 import 'package:developer_community_app/explore.dart';
 import 'package:developer_community_app/profile.dart';
@@ -74,7 +75,8 @@ class navigatorcontroller extends GetxController {
     if (userRole == 'admin') {
       return [
         explore(),
-        Container(color: Colors.orange),
+        ongoing_discussion(),
+        // ChatScreen(),
         const saved(),
         // ChatScreen(),
         profile(),
@@ -86,7 +88,8 @@ class navigatorcontroller extends GetxController {
     } else {
       return [
         explore(),
-        Container(color: Colors.orange),
+        ongoing_discussion(),
+        // ChatScreen(),
         const saved(),
         // ChatScreen(),
         profile(),
