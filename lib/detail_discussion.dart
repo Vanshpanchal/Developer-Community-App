@@ -21,7 +21,66 @@ class _detail_discussionState extends State<detail_discussion> {
   final _replyController = TextEditingController();
 
   final user = FirebaseAuth.instance.currentUser;
+  Future<void> updateXP2(String uid, int points) async {
+    try {
+      // Fetch the current XP value as a String
+      final userDoc =
+      await FirebaseFirestore.instance.collection('User').doc(uid).get();
 
+      if (userDoc.exists) {
+        // Get the current XP as a String
+        String currentXPString = userDoc.data()?['XP'] ?? '0'; // Default to '0'
+        int currentXP = int.tryParse(currentXPString) ?? 0; // Parse to int
+
+        // Update XP (add or subtract points)
+        int updatedXP = currentXP - points;
+
+        // Save the updated XP back to Firestore as a String
+        await FirebaseFirestore.instance.collection('User').doc(uid).update({
+          'XP': updatedXP.toString(),
+        });
+
+        print('XP updated successfully to $updatedXP!');
+      } else {
+        print('User document not found.');
+      }
+    } catch (e) {
+      print('Error updating XP: $e');
+    }
+  }
+
+  Future<String?> _fetchUserXP(String uid) async {
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(uid)
+          .get();
+      if (userDoc.exists) {
+        return userDoc['XP'];
+      } else {
+        return '100';
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
+      return 'Error';
+    }
+  }
+  Future<String?> _fetchUserProfileImage(String uid) async {
+    try {
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(uid)
+          .get();
+      if (userDoc.exists) {
+        return userDoc['profilePicture'];
+      } else {
+        return 'Unknown User';
+      }
+    } catch (e) {
+      print('Error fetching user data: $e');
+      return 'Error';
+    }
+  }
   Future<int> getRepliesCount() async {
     try {
       // Fetch the Replies collection for a specific document
@@ -203,210 +262,305 @@ class _detail_discussionState extends State<detail_discussion> {
                             return ListView.builder(
                               itemCount: replies.length,
                               itemBuilder: (context, index) {
-                                var replyData = replies[index].data()
-                                    as Map<String, dynamic>;
+                                var replyData = replies[index].data() as Map<String, dynamic>;
 
-                                return Card(
-                                  margin: EdgeInsets.symmetric(
-                                      vertical: 8.0, horizontal: 12.0),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12.0),
-                                  ),
-                                  elevation: 5,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Row(
-                                      children: [
-                                        // Profile picture or icon for the user (Optional)
-                                        CircleAvatar(
-                                          radius: 20,
-                                          backgroundColor: Colors.blueAccent,
-                                          backgroundImage: replyData[
-                                                          'profilePicture'] !=
-                                                      null &&
-                                                  replyData['profilePicture']
-                                                      .isNotEmpty
-                                              ? NetworkImage(
-                                                  replyData['profilePicture'])
-                                              : null,
-                                          child: replyData['profilePicture'] ==
-                                                      null ||
-                                                  replyData['profilePicture']
-                                                      .isEmpty
-                                              ? Text(
-                                                  replyData['user_name'] != null
-                                                      ? replyData['user_name']
-                                                          .toUpperCase()
-                                                      : '?',
-                                                  style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontWeight:
-                                                          FontWeight.bold),
-                                                )
-                                              : null,
-                                        ),
-
-                                        SizedBox(width: 12),
-                                        // Text content of the reply
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              // Title (Reply text)
-                                              Text(
-                                                replyData['reply'] ??
-                                                    'No reply content',
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.black87,
+                                return GestureDetector(
+                                  onTap: ()async{
+                                    if (user?.uid == replyData['uid']) {
+                                      bool? confirmDelete = await showDialog(
+                                        context: context,
+                                        builder: (context) =>
+                                            AlertDialog(
+                                              title: const Text("Delete Reply"),
+                                              content: const Text(
+                                                  "Are you sure you want to delete this reply?"),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          context, false),
+                                                  child: const Text("Cancel"),
                                                 ),
-                                              ),
-                                              SizedBox(height: 4),
-                                              // Subtitle (User and timestamp, with some additional styling)
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                          context, true),
+                                                  child: const Text("Delete"),
+                                                ),
+                                              ],
+                                            ),
+                                      );
 
-                                              // Conditional check for accepted reply
-                                              if (replyData['accepted'] == true)
-                                                Container(
-                                                  padding: EdgeInsets.symmetric(
-                                                      vertical: 6,
-                                                      horizontal: 12),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.green,
-                                                    // Green background for the accepted button
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            20), // Makes the button capsule-shaped
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    // Makes the row size fit the content
-                                                    children: [
-                                                      Icon(
-                                                        Icons.check_circle,
-                                                        color: Colors.white,
-                                                        size:
-                                                            20, // Slightly smaller icon for capsule look
-                                                      ),
-                                                      SizedBox(width: 8),
-                                                      // Space between icon and text
-                                                      Text(
-                                                        'Accepted',
-                                                        style: TextStyle(
-                                                          color: Colors.white,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          fontSize: 14,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                )
-                                              else
-                                                FutureBuilder<User?>(
-                                                  future: FirebaseAuth.instance.authStateChanges().first,
+                                      if (confirmDelete == true) {
+                                        try {
+                                          // Delete the reply from Firestore
+                                          await FirebaseFirestore.instance
+                                              .collection('Discussions')
+                                              .doc(widget.docId)
+                                              .collection('Replies')
+                                              .doc(replyData['replyId'])
+                                              .delete();
+
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            const SnackBar(content: Text(
+                                                'Reply deleted successfully!')),
+                                          );
+                                        } catch (e) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(content: Text(
+                                                'Failed to delete reply: $e'))
+                                            ,
+                                          );
+                                          print(e);
+                                        }
+                                      }
+
+                                      if (replyData['accepted'] == true) {
+                                        updateXP2(replyData['uid'], 50);
+                                      }
+                                    }
+                                  },
+                                  child: Card(
+                                    
+                                    margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12.0),
+                                    ),
+                                    elevation: 5,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12.0),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          // Row with Circle Avatar and User Name
+                                          Row(
+                                            children: [
+                                              FutureBuilder<String?>(
+                                                  future: _fetchUserProfileImage(replyData['uid']),
                                                   builder: (context, snapshot) {
-                                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                                      return CircularProgressIndicator();
-                                                    } else if (snapshot.hasData && snapshot.data!.uid == widget.creatorId) {
-                                                      // Show "Accept" button if creatorId matches current userId
-                                                      return GestureDetector(
-                                                        onTap: () async {
-                                                          if (replyData['uid'] != widget.creatorId) {
-                                                            try {
-                                                              await FirebaseFirestore.instance
-                                                                  .collection('Discussions')
-                                                                  .doc(widget.docId)
-                                                                  .collection('Replies')
-                                                                  .doc(replyData['replyId']) // Ensure replyId is available
-                                                                  .update({'accepted': true});
-
-                                                              final replySnapshot = await FirebaseFirestore.instance
-                                                                  .collection('Discussions')
-                                                                  .doc(widget.docId)
-                                                                  .collection('Replies')
-                                                                  .doc(replyData['replyId'])
-                                                                  .get();
-
-                                                              if (replySnapshot.exists) {
-                                                                final replyData = replySnapshot.data();
-                                                                final uid = replyData?['uid'];
-
-                                                                // Update XP of the user
-                                                                updateXP(uid);
-
-                                                                if (uid != null) {
-                                                                  print('UID: $uid');
-                                                                } else {
-                                                                  print('UID not found in the document');
-                                                                }
-                                                              } else {
-                                                                print('Reply document not found');
-                                                              }
-
-                                                              // Show success message
-                                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                                SnackBar(content: Text('Reply accepted!')),
-                                                              );
-                                                            } catch (e) {
-                                                              print('Error accepting reply: $e');
-                                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                                SnackBar(content: Text('Failed to accept reply.')),
-                                                              );
-                                                            }
-                                                          }
-                                                        },
-                                                        child: Container(
-                                                          padding: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                                                          decoration: BoxDecoration(
-                                                            color: Colors.grey, // Background color of the button
-                                                            borderRadius: BorderRadius.circular(20), // Capsule shape
-                                                          ),
-                                                          child: Row(
-                                                            mainAxisSize: MainAxisSize.min, // Ensures the button width adjusts to content
-                                                            children: [
-                                                              Icon(
-                                                                Icons.check_circle_outline,
-                                                                color: Colors.white, // Icon color
-                                                                size: 20,
-                                                              ),
-                                                              SizedBox(width: 8), // Space between icon and text
-                                                              Text(
-                                                                'Accept Reply',
-                                                                style: TextStyle(
-                                                                  color: Colors.white,
-                                                                  fontWeight: FontWeight.bold,
-                                                                  fontSize: 14,
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
+                                                    if (snapshot.connectionState ==
+                                                        ConnectionState.waiting) {
+                                                      return const CircleAvatar(
+                                                        backgroundColor: Colors.grey,
+                                                      );
+                                                    } else if (snapshot.hasError) {
+                                                      print(snapshot.error);
+                                                      return const CircleAvatar(
+                                                        foregroundImage: NetworkImage(
+                                                          'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                                         ),
                                                       );
                                                     } else {
-                                                      return SizedBox.shrink(); // Hide the button if userId doesn't match
+                                                      return CircleAvatar(
+                                                        foregroundImage: NetworkImage(snapshot.data!),
+                                                      );
                                                     }
-                                                  },
+                                                  }),
+                                              const SizedBox(width: 12),
+                                              // User Name
+                                              Expanded(
+                                                child: Text(
+                                                  "~"+replyData['user_name'] ?? 'Unknown User',
+                                                  style: const TextStyle(
+                                                    fontSize: 14,
+                                                    color: Colors.black87,
+                                                  ),
                                                 ),
-
-                                              Text(
-                                                "By: ${replyData['user_name']} • ${DateFormat('MMM dd, yyyy').format(replyData['timestamp'].toDate())}",
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600],
-                                                ),
+                                              ),
+                                              FutureBuilder<String?>(
+                                                future: _fetchUserXP(replyData['uid']),
+                                                builder: (context, snapshot) {
+                                                  if (snapshot.connectionState ==
+                                                      ConnectionState.waiting) {
+                                                    return const Text('XP: Loading...');
+                                                  } else if (snapshot.hasError) {
+                                                    return const Text('Error fetching XP');
+                                                  } else if (snapshot.hasData) {
+                                                    Object xp = snapshot.data ?? 0;
+                                                    return Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                          horizontal: 12, vertical: 6),
+                                                      decoration: BoxDecoration(
+                                                        gradient: LinearGradient(
+                                                          colors: [
+                                                            Colors.lightBlueAccent, // Light blue
+                                                            Colors.blue, // Regular blue
+                                                            Colors.blueAccent, // Darker blue
+                                                          ],
+                                                          begin: Alignment.topLeft,
+                                                          end: Alignment.bottomRight,
+                                                        ),
+                                                        borderRadius: BorderRadius.circular(30),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: Colors.black.withOpacity(0.2),
+                                                            blurRadius: 10,
+                                                            offset: Offset(4, 4),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            'XP: $xp',
+                                                            style: const TextStyle(
+                                                              color: Colors.white,
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 12,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                  } else {
+                                                    return const Text('XP: 0');
+                                                  }
+                                                },
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(height: 12), // Space between Row and content
+                                  
+                                          // Reply Text
+                                          Text(
+                                            replyData['reply'] ?? 'No reply content',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.normal,
+                                              color: Colors.black87,
+                                            ),
+                                            textAlign: TextAlign.justify,
+                                          ),
+                                          const SizedBox(height: 8),
+                                  
+                                          // Timestamp
+                                          Text(
+                                            "Posted on: ${DateFormat('MMM dd, yyyy').format(replyData['timestamp'].toDate())}",
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                  
+                                          // Accepted Reply Indicator or Button
+                                          if (replyData['accepted'] == true)
+                                            Container(
+                                              padding:
+                                              const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.green,
+                                                borderRadius: BorderRadius.circular(20),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: const [
+                                                  Icon(
+                                                    Icons.check_circle,
+                                                    color: Colors.white,
+                                                    size: 20,
+                                                  ),
+                                                  SizedBox(width: 8),
+                                                  Text(
+                                                    'Accepted',
+                                                    style: TextStyle(
+                                                      color: Colors.white,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                          else
+                                            FutureBuilder<User?>(
+                                              future: FirebaseAuth.instance.authStateChanges().first,
+                                              builder: (context, snapshot) {
+                                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                                  return const CircularProgressIndicator();
+                                                } else if (snapshot.hasData &&
+                                                    snapshot.data!.uid == widget.creatorId) {
+                                                  return GestureDetector(
+                                                    onTap: () async {
+                                                        if (user?.uid != replyData['uid']) {
+                                                          try {
+                                                            await FirebaseFirestore
+                                                                .instance
+                                                                .collection(
+                                                                'Discussions')
+                                                                .doc(widget.docId)
+                                                                .collection(
+                                                                'Replies')
+                                                                .doc(
+                                                                replyData['replyId'])
+                                                                .update({
+                                                              'accepted': true
+                                                            });
+                                  
+                                                            updateXP(
+                                                                replyData['uid']);
+                                                            ScaffoldMessenger.of(
+                                                                context)
+                                                                .showSnackBar(
+                                                              const SnackBar(
+                                                                  content: Text(
+                                                                      'Reply accepted!')),
+                                                            );
+                                                          } catch (e) {
+                                                            ScaffoldMessenger.of(
+                                                                context)
+                                                                .showSnackBar(
+                                                              const SnackBar(
+                                                                  content: Text(
+                                                                      'Failed to accept.')),
+                                                            );
+                                                          }
+                                                        }
+                                                    },
+                                                    child: Container(
+                                                      padding: const EdgeInsets.symmetric(
+                                                          vertical: 6, horizontal: 12),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.blue,
+                                                        borderRadius: BorderRadius.circular(20),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: const [
+                                                          Icon(
+                                                            Icons.check_circle_outline,
+                                                            color: Colors.white,
+                                                            size: 20,
+                                                          ),
+                                                          SizedBox(width: 8),
+                                                          Text(
+                                                            'Accept Reply',
+                                                            style: TextStyle(
+                                                              color: Colors.white,
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 14,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                } else {
+                                                  return const SizedBox.shrink();
+                                                }
+                                              },
+                                            ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 );
                               },
                             );
+
                           },
                         ),
                       ),

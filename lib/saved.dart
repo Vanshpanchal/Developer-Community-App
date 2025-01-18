@@ -71,24 +71,8 @@ class savedState extends State<saved> {
     return Scaffold(
         appBar: AppBar(
           title: Text('Developer Community'),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: CircleAvatar(
-                radius: 16,
-                // Adjust size as needed
-                backgroundImage: imageUrl != null
-                    ? NetworkImage(imageUrl)
-                    : AssetImage('assets/images/default_profile.png')
-                        as ImageProvider,
-                // Default image
-                child: imageUrl == null
-                    ? Icon(Icons.account_circle,
-                        size: 32) // Default icon if no profile picture
-                    : null,
-              ),
-            )
-          ],
+          automaticallyImplyLeading: false,
+
         ),
         body: StreamBuilder(
             stream: savedIdsStream,
