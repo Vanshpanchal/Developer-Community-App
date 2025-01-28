@@ -10,6 +10,7 @@ import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 
+import 'chat.dart';
 import 'saved.dart';
 
 
@@ -76,7 +77,7 @@ class navigatorcontroller extends GetxController {
       return [
         explore(),
         ongoing_discussion(),
-        // ChatScreen(),
+        // ChatScreen1(),
         const saved(),
         // ChatScreen(),
         profile(),
@@ -90,6 +91,7 @@ class navigatorcontroller extends GetxController {
         explore(),
         ongoing_discussion(),
         // ChatScreen(),
+        // ChatScreen1(),
         const saved(),
         // ChatScreen(),
         profile(),

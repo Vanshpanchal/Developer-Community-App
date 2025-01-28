@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:developer_community_app/chatbot.dart';
+import 'package:developer_community_app/saved_discussion.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +12,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+
+import 'chat.dart';
 
 class profile extends StatefulWidget {
   @override
@@ -291,6 +295,20 @@ class _ProfileState extends State<profile> {
               padding: EdgeInsets.symmetric(horizontal: 20),
               children: [
                 buildProfileButton(
+                  icon: Icons.forum,
+                  title: 'Saved Discussion',
+                  color: Colors.green,
+                  onTap: () {Get.to(saved_discussion());},
+                ),
+                buildProfileButton(
+                  icon: Icons.smart_toy,
+                  title: 'Gemini Assistant',
+                  color: Colors.purple,
+                  onTap: () {
+                    Get.to(ChatScreen1());
+                  },
+                ),
+                buildProfileButton(
                   icon: Icons.edit,
                   title: 'Change Profile Picture',
                   color: Colors.blue,
@@ -303,18 +321,6 @@ class _ProfileState extends State<profile> {
                   onTap: () {
                     forget();
                   },
-                ),
-                buildProfileButton(
-                  icon: Icons.forum,
-                  title: 'Discussion Forum',
-                  color: Colors.green,
-                  onTap: () {},
-                ),
-                buildProfileButton(
-                  icon: Icons.post_add,
-                  title: 'Posts',
-                  color: Colors.purple,
-                  onTap: () {},
                 ),
                 buildProfileButton(
                   icon: Icons.logout,

@@ -1,7 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:developer_community_app/attachcode.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -132,6 +135,7 @@ class _detail_discussionState extends State<detail_discussion> {
           'profilePicture': imageUrl,
           'uid': FirebaseAuth.instance.currentUser?.uid,
           'timestamp': FieldValue.serverTimestamp(),
+          'code': "",
           'accepted': false, // Set initial accepted to false
         });
 
@@ -192,6 +196,7 @@ class _detail_discussionState extends State<detail_discussion> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text("Discussion Details")),
       body: Padding(
@@ -266,6 +271,105 @@ class _detail_discussionState extends State<detail_discussion> {
 
                                 return GestureDetector(
                                   onTap: ()async{
+                                    print("hello vansh");
+                                    var code = replyData['code']!!;
+                                    print(code);
+                                    if (code.toString().isNotEmpty) {
+                                      showModalBottomSheet(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.vertical(
+                                            top: Radius.circular(
+                                                24), // Rounded top corners
+                                          ),
+                                        ),
+                                        builder: (context) {
+                                          return Padding(
+                                            padding: EdgeInsets.only(
+                                              top: 16,
+                                              left: 16,
+                                              right: 16,
+                                              bottom: MediaQuery.of(context).viewInsets.bottom + 16, // Adjust for keyboard visibility
+                                            ),
+                                            child: SizedBox(
+                                              width: MediaQuery.of(context).size.width, // Full screen width
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min, // Adjusts height based on content
+                                                children: [
+                                                  // Heading
+                                                  Text(
+                                                    'Code Snippet', // Change the heading as needed
+                                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                  SizedBox(height: 8), // Spacing between heading and content
+
+                                                  // Additional Info (can be a description or metadata)
+                                                  Text(
+                                                    'Description: This is a sample code snippet. Feel free to copy it and use it in your project.',
+                                                    style: Theme.of(context).textTheme.bodyMedium,
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                  SizedBox(height: 16), // Spacing between description and code block
+
+                                                  // Code Block
+                                                  GestureDetector(
+                                                    onLongPress: () {
+                                                      Clipboard.setData(
+                                                        ClipboardData(text: replyData['code'] ?? 'Sample Code Here'), // Replace with dynamic code
+                                                      );
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text('Code Copied to Clipboard!'),
+                                                          duration: Duration(seconds: 2),
+                                                          backgroundColor: Colors.green,
+                                                        ),
+                                                      );
+                                                    },
+                                                    child: MarkdownBody(
+                                                      data: "```\n${replyData['code'] ?? 'Sample Code Here'}\n```", // Display dynamic code block
+                                                      styleSheet: MarkdownStyleSheet(
+                                                        codeblockPadding: EdgeInsets.all(15),
+                                                        code: TextStyle(
+                                                          fontFamily: 'monospace',
+                                                          fontWeight: FontWeight.normal,
+                                                          fontSize: 14,
+                                                          backgroundColor: Colors.transparent,
+                                                        ),
+                                                        blockquoteDecoration: BoxDecoration(
+                                                          color: Theme.of(context).colorScheme.primaryContainer,
+                                                          borderRadius: BorderRadius.circular(15),
+                                                        ),
+                                                        codeblockDecoration: BoxDecoration(
+                                                          color: Theme.of(context).colorScheme.primaryContainer,
+                                                          borderRadius: BorderRadius.circular(15),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  SizedBox(height: 16), // Spacing between code block and button
+
+                                                  // Close Button
+                                                  ElevatedButton(
+                                                    onPressed: () {
+                                                      Navigator.pop(context); // Close the Bottom Sheet
+                                                    },
+                                                    child: Text("Close"),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+
+
+                                        },
+                                      );
+                                    }
+                                  },
+                                  onLongPress: ()async{
                                     if (user?.uid == replyData['uid']) {
                                       bool? confirmDelete = await showDialog(
                                         context: context,
@@ -323,7 +427,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                     }
                                   },
                                   child: Card(
-                                    
+
                                     margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12.0),
@@ -423,30 +527,77 @@ class _detail_discussionState extends State<detail_discussion> {
                                             ],
                                           ),
                                           const SizedBox(height: 12), // Space between Row and content
-                                  
-                                          // Reply Text
-                                          Text(
-                                            replyData['reply'] ?? 'No reply content',
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.normal,
-                                              color: Colors.black87,
+
+                                          RichText(
+                                            text: TextSpan(
+                                              style: theme.textTheme.bodyMedium,
+                                              children:
+                                              _buildDescription(replyData['reply'] ?? 'No reply content', theme),
                                             ),
+                                            // maxLines: 10,
                                             textAlign: TextAlign.justify,
+                                            // overflow: TextOverflow.ellipsis,
                                           ),
-                                          const SizedBox(height: 8),
-                                  
+                                          // Reply Text
+                                          // Text(
+                                          //   replyData['reply'] ?? 'No reply content',
+                                          //   style: const TextStyle(
+                                          //     fontSize: 14,
+                                          //     fontWeight: FontWeight.normal,
+                                          //     color: Colors.black87,
+                                          //   ),
+                                          //   textAlign: TextAlign.justify,
+                                          // ),
+
+                                          const SizedBox(height: 5),
+
                                           // Timestamp
-                                          Text(
-                                            "Posted on: ${DateFormat('MMM dd, yyyy').format(replyData['timestamp'].toDate())}",
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
-                                            ),
+
+                                          Row(
+                                            children: [
+                                              Text(
+                                                "Posted on: ${DateFormat('MMM dd, yyyy').format(replyData['timestamp'].toDate())}",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                              if (replyData['code'].toString().isNotEmpty)
+                                                IconButton(
+                                                  onPressed: () {
+                                                    // Your onPressed action here
+                                                  },
+                                                  icon: Icon(
+                                                    size: 18,
+                                                    Icons.attach_file,
+                                                    color: Colors.blue, // Optional: icon color
+                                                  ),
+                                                ),
+                                            ],
                                           ),
-                                          const SizedBox(height: 8),
-                                  
-                                          // Accepted Reply Indicator or Button
+
+                                          const SizedBox(height: 5),
+
+                                          if (!replyData['code'].toString().isNotEmpty && replyData['uid'] == user?.uid)
+                                            OutlinedButton.icon(
+                                              onPressed: () {
+                                                // Your onPressed action here
+                                                Get.to(() =>
+                                                    attachcode(
+                                                        docId: replyData['replyId'],
+                                                        discussionId: widget
+                                                            .docId));
+                                              },
+                                              icon: Icon(Icons.attach_file),
+                                              label: Text('Attach Code Snippet'),
+                                              // Optional, can be used if you want text with the icon
+                                              style: OutlinedButton.styleFrom(
+                                                side: BorderSide(color: Colors
+                                                    .blue), // Optional: color of the outline
+                                              ),
+                                            ),
+                                              // Accepted Reply Indicator or Button
+
                                           if (replyData['accepted'] == true)
                                             Container(
                                               padding:
@@ -499,7 +650,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                                 .update({
                                                               'accepted': true
                                                             });
-                                  
+
                                                             updateXP(
                                                                 replyData['uid']);
                                                             ScaffoldMessenger.of(
@@ -614,7 +765,9 @@ class _detail_discussionState extends State<detail_discussion> {
                   IconButton(
                     icon: Icon(Icons.send),
                     onPressed: () async {
+                      if (_replyController.text.trim().isNotEmpty){
                       addReply();
+                      }
                     },
                   ),
                 ],
