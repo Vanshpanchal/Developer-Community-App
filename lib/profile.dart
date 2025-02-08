@@ -298,6 +298,7 @@ class _ProfileState extends State<profile> {
                   icon: Icons.forum,
                   title: 'Saved Discussion',
                   color: Colors.green,
+                  // onTap: ()=>{},
                   onTap: () {Get.to(saved_discussion());},
                 ),
                 buildProfileButton(

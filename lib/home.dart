@@ -77,6 +77,9 @@ class navigatorcontroller extends GetxController {
       return [
         explore(),
         ongoing_discussion(),
+        // Container(color: Colors.black,),
+        // Container(color: Colors.brown,),
+
         // ChatScreen1(),
         const saved(),
         // ChatScreen(),
@@ -90,14 +93,24 @@ class navigatorcontroller extends GetxController {
       return [
         explore(),
         ongoing_discussion(),
-        // ChatScreen(),
+        // Container(color: Colors.grey,),
+        // Container(color: Colors.grey,),
+
         // ChatScreen1(),
         const saved(),
         // ChatScreen(),
         profile(),
+        // ---
+        // explore(),
+        // ongoing_discussion(),
+        // // ChatScreen(),
+        // // ChatScreen1(),
         // const saved(),
-        // const mypost(),
-        // const profile(),
+        // // ChatScreen(),
+        // profile(),
+        // // const saved(),
+        // // const mypost(),
+        // // const profile(),
       ];
     }
   }
