@@ -372,10 +372,12 @@ class _detail_discussionState extends State<detail_discussion> {
                                   onLongPress: ()async{
                                     if (user?.uid == replyData['uid']) {
                                       bool? confirmDelete = await showDialog(
+                                        barrierDismissible: false,
                                         context: context,
                                         builder: (context) =>
                                             AlertDialog(
                                               title: const Text("Delete Reply"),
+
                                               content: const Text(
                                                   "Are you sure you want to delete this reply?"),
                                               actions: [

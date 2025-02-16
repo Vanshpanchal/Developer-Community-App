@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:developer_community_app/chatbot.dart';
@@ -157,52 +158,101 @@ class _ProfileState extends State<profile> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Top Section with Gradient
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(vertical: 40),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.blueAccent, Colors.lightBlue],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+          Stack(
+            children: [
+              // Background Gradient Container
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(vertical: 40),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blueAccent, Colors.lightBlue],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(height: 20),
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundImage: imageUrl != null
+                          ? NetworkImage(imageUrl!)
+                          : NetworkImage(
+                        'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      username ?? 'Unknown User',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      usercredential?.email ?? 'No User Found',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: Column(
-              children: [
-                // Profile Picture
-                CircleAvatar(
-                  radius: 50,
-                  backgroundColor: Colors.white,
-                  child: imageUrl == null
-                      ? CircleAvatar(
-                    radius: 60,
-                    backgroundImage: NetworkImage('https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg'),
-                  )
-                      : CircleAvatar(
-                    radius: 60,
-                    foregroundImage: NetworkImage(imageUrl!),
+
+              // Image at Top Right Corner
+              // Positioned(
+              //   top: 100, // Adjust position
+              //   right: -85, // Push to right corner
+              //   child: Image.asset(
+              //     'assets/images/bg_1.PNG', // Replace with your image
+              //     width: 250, // Adjust size
+              //     height: 250,
+              //   ),
+              // ),
+              // Positioned(
+              //   top: -100, // Adjust position
+              //   right: 295, // Push to right corner
+              //   child: Transform.rotate(
+              //     angle: -pi/45,
+              //     child: Image.asset(
+              //       'assets/images/bg_1.PNG', // Replace with your image
+              //       width: 250, // Adjust size
+              //       height: 250,
+              //     ),
+              //   ),
+              // ),
+              Positioned(
+                bottom: -80, // Position at bottom
+                left: -65,  // Move slightly left
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.diagonal3Values(-1, 1, 1), // Rotate 30° (Optional)
+                  child: Image.asset(
+                    'assets/images/bg.PNG',
+                    width: 250,
+                    height: 250,
                   ),
                 ),
-                SizedBox(height: 10),
-                // Username
-                Text(
-                  '$username',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+              ),
+
+              // Right-Bottom Image
+              Positioned(
+                bottom: -80, // Position at bottom
+                right: -65, // Move slightly right
+                child: Transform.rotate(
+                  angle: 0, // Rotate -30° (Optional)
+                  child: Image.asset(
+                    'assets/images/bg.PNG',
+                    width: 250,
+                    height:250,
                   ),
                 ),
-                SizedBox(height: 5),
-                Text(
-                  usercredential?.email ?? 'No User Found',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           SizedBox(height: 20),
 
@@ -304,7 +354,7 @@ class _ProfileState extends State<profile> {
                 buildProfileButton(
                   icon: Icons.smart_toy,
                   title: 'Gemini Assistant',
-                  color: Colors.purple,
+                  color: Theme.of(context).colorScheme.primary,
                   onTap: () {
                     Get.to(ChatScreen1());
                   },

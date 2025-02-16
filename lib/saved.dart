@@ -72,7 +72,7 @@ class savedState extends State<saved> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
-          title: Text('Developer Community'),
+          title: Text('DevSphere'),
           automaticallyImplyLeading: false,
 
         ),

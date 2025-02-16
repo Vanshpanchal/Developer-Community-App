@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:developer_community_app/addpost.dart';
+import 'package:developer_community_app/chat.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -19,7 +20,6 @@ class explore extends StatefulWidget {
 class exploreState extends State<explore> {
   final user = FirebaseAuth.instance.currentUser;
   TextEditingController search_controller = TextEditingController();
-
 
   String username = '';
   String imageUrl = '';
@@ -117,12 +117,14 @@ class exploreState extends State<explore> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
-          title: Text('Developer Community'),
+          title: Text('DevSphere'),
           automaticallyImplyLeading: false,
           actions: [
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: CircleAvatar(
+
                 radius: 16,
                 // Adjust size as needed
                 backgroundImage: imageUrl != null
@@ -138,18 +140,49 @@ class exploreState extends State<explore> {
             )
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            Get.to(addpost());
-          },
-          tooltip: 'Ask Question',
-          child: Icon(Icons.add),
+        // floatingActionButton: FloatingActionButton(
+        //   onPressed: () {
+        //     Get.to(addpost());
+        //   },
+        //   tooltip: 'Ask Question',
+        //   child: Icon(Icons.add),
+        // ),
+        floatingActionButton: Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            Positioned(
+              bottom: 80,
+              right: 16,
+              child: FloatingActionButton(
+                onPressed: () {
+                  Get.to(ChatScreen1());
+                  // First FAB action
+                },
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                heroTag: "fab1",
+                mini: true,
+                child: Icon(Icons.smart_toy,color: Colors.white), // Ensure unique heroTag
+              ),
+            ),
+            Positioned(
+                bottom: 16,
+                right: 16,
+                child: FloatingActionButton(
+                  onPressed: () {
+                    // Second FAB action
+                    Get.to(addpost());
+                  },
+                  heroTag: "fab2",
+                  tooltip: 'Ask Question',
+                  child: Icon(Icons.add),
+                )),
+          ],
         ),
         body: Column(children: [
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: CupertinoSearchTextField(
-              onSuffixTap: () => {all() },
+              onSuffixTap: () => {all()},
               controller: search_controller,
               placeholder: "Search",
               onChanged: (val) => {onSearch2(val), print(val)},

@@ -87,7 +87,7 @@ class _ongoing_discussionState extends State<ongoing_discussion> {
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(
-          title: Text('Developer Community'),
+          title: Text('DevSphere'),
           automaticallyImplyLeading: false,
         ),
         floatingActionButton: FloatingActionButton(
