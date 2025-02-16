@@ -3,26 +3,46 @@ import 'package:developer_community_app/firebase_options.dart';
 import 'package:developer_community_app/wrapper.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get_navigation/src/root/get_material_app.dart';
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:lottie/lottie.dart';
 
 import 'Authservice.dart';
+import 'ThemeController.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  runApp(const MyApp());
+  await GetStorage.init();
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final ThemeController themeController = Get.put(ThemeController());
+
+  MyApp({super.key});
 
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
         title: 'Flutter Demo',
+        // theme: ThemeData(
+        //   primaryColor: themeController.primaryColor.value,
+        //   colorScheme: ColorScheme.light(
+        //     primary: themeController.primaryColor.value,
+        //   ),
+        //   useMaterial3: true,
+        //   visualDensity: VisualDensity.adaptivePlatformDensity,
+        //   // remove allow
+        //   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        //     elevation: 8.0,
+        //   ),
+        //   appBarTheme: const AppBarTheme(
+        //     // AppBar color
+        //     elevation: 4.0, // AppBar shadow elevation
+        //   ),
+        // ),
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.lightBlueAccent),
           useMaterial3: true,
@@ -36,9 +56,9 @@ class MyApp extends StatelessWidget {
           ),
         ),
         home: SplashScreen());
-
   }
 }
+
 class Button extends StatelessWidget {
   // final auth = Authservice();
   const Button({super.key});
@@ -58,7 +78,6 @@ class Button extends StatelessWidget {
 }
 
 class Splash extends StatelessWidget {
-
   @override
   Widget build(BuildContext context) {
     return AnimatedSplashScreen(
@@ -70,7 +89,6 @@ class Splash extends StatelessWidget {
         backgroundColor: Colors.lightBlue.shade50);
   }
 }
-
 
 class SplashScreen extends StatefulWidget {
   @override
@@ -116,7 +134,8 @@ class _SplashScreenState extends State<SplashScreen> {
               children: [
                 // Lottie Animation
                 Lottie.asset(
-                  'assets/images/discussion_animation.json', // Replace with your Lottie file path
+                  'assets/images/discussion_animation.json',
+                  // Replace with your Lottie file path
                   height: 200,
                   width: 200,
                 ),
@@ -135,7 +154,6 @@ class _SplashScreenState extends State<SplashScreen> {
                   "Connecting Ideas Globally",
                   style: TextStyle(
                     fontSize: 16,
-
                     color: Colors.white70,
                   ),
                 ),

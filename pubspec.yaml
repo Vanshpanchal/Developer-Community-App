@@ -49,6 +49,7 @@ dependencies:
   flutter_gemini: ^3.0.0
   flutter_chat_ui: ^1.6.15
   flutter_chat_types: ^3.6.2
+  get_storage: ^2.1.1
   intl: ^0.18.0  # Add this line
 
 
