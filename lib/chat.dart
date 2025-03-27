@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -88,7 +89,7 @@ class _ChatScreenState extends State<ChatScreen1> {
   bool _isTyping = false;
 
   static const String apiKey = 'AIzaSyAprvvV7xT49a4RSzRSr7RQWAZbMI9s7UM';
-  static const String apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+  static const String apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   Future<String> getGeminiResponse(String prompt) async {
     try {
@@ -108,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen1> {
         final data = jsonDecode(response.body);
         return data['candidates'][0]['content']['parts'][0]['text'];
       } else {
-        throw Exception('Failed to get response: ${response.statusCode}');
+        throw Exception('Failed to get response: ${response.body}');
       }
     } catch (e) {
       return 'Error: $e';
@@ -380,6 +381,7 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final VoidCallback onCopy;
 
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -433,14 +435,22 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Text(
-                  message.text,
-                  style: Theme.of(context).textTheme.bodyLarge!.copyWith(
-                    color: message.isUser
-                        ? Colors.white
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
+                // child: Text(
+                //   message.text,
+                //   style: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                //     color: message.isUser
+                //         ? Colors.white
+                //         : Theme.of(context).colorScheme.onSurface,
+                //   ),
+                // ),
+                child: MarkdownBody( data: message.text,
+                  styleSheet: MarkdownStyleSheet(
+                    p: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                      color: message.isUser
+                          ? Colors.white
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),),
               ),
             ),
           ),
