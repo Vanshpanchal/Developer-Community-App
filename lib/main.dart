@@ -101,7 +101,7 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     // Navigate to the login page after 3 seconds
     Future.delayed(const Duration(seconds: 3), () {
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => wrapper()),
       );

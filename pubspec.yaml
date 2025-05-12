@@ -49,6 +49,7 @@ dependencies:
   flutter_gemini: ^3.0.0
   flutter_chat_ui: ^1.6.15
   flutter_chat_types: ^3.6.2
+  flutter_launcher_icons: ^0.14.3
   get_storage: ^2.1.1
   intl: ^0.18.0  # Add this line
 
@@ -63,7 +64,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
