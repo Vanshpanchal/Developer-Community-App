@@ -88,7 +88,7 @@ class _ChatScreenState extends State<ChatScreen1> {
   bool _isLoading = false;
   bool _isTyping = false;
 
-  static const String apiKey = 'AIzaSyAprvvV7xT49a4RSzRSr7RQWAZbMI9s7UM';
+  static const String apiKey = ''; // add your api key
   static const String apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   Future<String> getGeminiResponse(String prompt) async {
