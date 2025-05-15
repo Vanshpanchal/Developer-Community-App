@@ -76,14 +76,4 @@ We welcome contributions from the community!
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
----
-
-## 🤝 Connect with Us
-
-- 💬 [Discussions](https://github.com/your-username/devsphere/discussions)
-- 🐦 Twitter: [@yourhandle](https://twitter.com/yourhandle)
-- 🌍 Website: [devsphere.app](https://devsphere.app)
-
----
-
 > DevSphere — Empowering Developers Through Knowledge, Collaboration, and Innovation 🌐✨
