@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'messagemodel.dart';
 
 class CopyOverlay extends StatefulWidget {
   final BuildContext context;
@@ -65,14 +67,6 @@ class _CopyOverlayState extends State<CopyOverlay> with SingleTickerProviderStat
     );
   }
 }
-class Message {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-
-  Message({required this.text, required this.isUser})
-      : timestamp = DateTime.now();
-}
 
 class ChatScreen1 extends StatefulWidget {
   const ChatScreen1({super.key});
@@ -83,13 +77,23 @@ class ChatScreen1 extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen1> {
   final TextEditingController _controller = TextEditingController();
-  final List<Message> _messages = [];
+  late Box<Message> _messageBox;
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
   bool _isTyping = false;
 
-  static const String apiKey = ''; // add your api key
+  static const String apiKey = 'AIzaSyAprvvV7xT49a4RSzRSr7RQWAZbMI9s7UM'; // add your api key
   static const String apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+  @override
+  void initState() {
+    super.initState();
+    _messageBox = Hive.box<Message>('chat_messages');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom();
+    });
+  }
+
 
   Future<String> getGeminiResponse(String prompt) async {
     try {
@@ -132,21 +136,23 @@ class _ChatScreenState extends State<ChatScreen1> {
     );
   }
 
-  void _sendMessage() async {
+  Future<void> _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
 
-    final userMessage = _controller.text;
+    final userMessage = Message(text: _controller.text, isUser: true);
+    await _messageBox.add(userMessage);
     setState(() {
-      _messages.add(Message(text: userMessage, isUser: true));
       _isLoading = true;
       _isTyping = true;
     });
     _controller.clear();
     _scrollToBottom();
 
-    final botResponse = await getGeminiResponse(userMessage);
+    final botResponse = await getGeminiResponse(userMessage.text);
+    final botMessage = Message(text: botResponse, isUser: false);
+    await _messageBox.add(botMessage);
+
     setState(() {
-      _messages.add(Message(text: botResponse, isUser: false));
       _isLoading = false;
       _isTyping = false;
     });
@@ -164,6 +170,22 @@ class _ChatScreenState extends State<ChatScreen1> {
       }
     });
   }
+
+  void _scrollBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    });
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -233,36 +255,45 @@ class _ChatScreenState extends State<ChatScreen1> {
               ),
 
               Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[index];
-                    final showTimestamp = index == 0 ||
-                        _messages[index].timestamp.difference(_messages[index - 1].timestamp).inMinutes > 5;
-
-                    return Column(
-                      children: [
-                        if (showTimestamp)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Text(
-                              DateFormat('MMM d, h:mm a').format(message.timestamp),
-                              style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                child: ValueListenableBuilder(
+                  valueListenable: _messageBox.listenable(),
+                  builder: (context, Box<Message> box, _) {
+                    final messages = box.values.toList();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _scrollBottom();
+                    });
+                    return ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        final showTimestamp = index == 0 ||
+                            messages[index].timestamp.difference(messages[index - 1].timestamp).inMinutes > 5;
+                        return Column(
+                          children: [
+                            if (showTimestamp)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  DateFormat('MMM d, h:mm a').format(message.timestamp),
+                                  style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
                               ),
+                            MessageBubble(
+                              message: message,
+                              onCopy: _showCopiedSnackBar,
                             ),
-                          ),
-                        MessageBubble(
-                          message: message,
-                          onCopy: _showCopiedSnackBar,
-                        ),
-                      ],
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
               ),
+
 
               if (_isLoading)
                 Padding(
@@ -381,7 +412,6 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final VoidCallback onCopy;
 
-
   const MessageBubble({
     super.key,
     required this.message,
@@ -435,22 +465,16 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ],
                 ),
-                // child: Text(
-                //   message.text,
-                //   style: Theme.of(context).textTheme.bodyLarge!.copyWith(
-                //     color: message.isUser
-                //         ? Colors.white
-                //         : Theme.of(context).colorScheme.onSurface,
-                //   ),
-                // ),
-                child: MarkdownBody( data: message.text,
+                child: MarkdownBody(
+                  data: message.text,
                   styleSheet: MarkdownStyleSheet(
                     p: Theme.of(context).textTheme.bodyLarge!.copyWith(
                       color: message.isUser
                           ? Colors.white
                           : Theme.of(context).colorScheme.onSurface,
                     ),
-                  ),),
+                  ),
+                ),
               ),
             ),
           ),
