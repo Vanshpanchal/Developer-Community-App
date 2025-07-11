@@ -69,21 +69,3 @@ We welcome contributions from the community!
 3. Commit your changes (`git commit -m 'Add some feature'`)
 4. Push to the branch (`git push origin feature/YourFeature`)
 5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🤝 Connect with Us
-
-- 💬 [Discussions](https://github.com/your-username/devsphere/discussions)
-- 🐦 Twitter: [@yourhandle](https://twitter.com/yourhandle)
-- 🌍 Website: [devsphere.app](https://devsphere.app)
-
----
-
-> DevSphere — Empowering Developers Through Knowledge, Collaboration, and Innovation 🌐✨
