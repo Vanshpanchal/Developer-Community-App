@@ -42,7 +42,7 @@ class login extends StatelessWidget {
           color: Colors.green,
         ),
         backgroundColor: Get.context?.theme.colorScheme.primary ?? Colors.black,
-        duration: const Duration(seconds: 3),
+        duration:  Duration(seconds: 3),
       ));
     } on FirebaseAuthException catch (e) {
       Get.showSnackbar(GetSnackBar(
@@ -66,7 +66,7 @@ class login extends StatelessWidget {
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          padding:  EdgeInsets.symmetric(horizontal: 20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -129,7 +129,7 @@ class login extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10.0),
                   ),
                 ),
-                child: Text('Login',style: const TextStyle(color: Colors.white)),
+                child: Text('Login',style:  TextStyle(color: Colors.white)),
               ),
               SizedBox(height: 20.0),
               TextButton(

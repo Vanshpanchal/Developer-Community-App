@@ -8,6 +8,7 @@ import 'package:get_storage/get_storage.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 import 'package:lottie/lottie.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'Authservice.dart';
 import 'ThemeController.dart';
@@ -18,6 +19,12 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await GetStorage.init();
   await Hive.initFlutter();
+  // Load environment variables (e.g., GEMINI_API_KEY)
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (e) {
+    debugPrint('dotenv load failed: $e');
+  }
   Hive.registerAdapter(MessageAdapter());
   await Hive.openBox<Message>('chat_messages');
   runApp(MyApp());
@@ -26,7 +33,7 @@ void main() async {
 class MyApp extends StatelessWidget {
   // final ThemeController themeController = Get.put(ThemeController());
 
-  const MyApp({super.key});
+   MyApp({super.key});
 
   // This widget is the root of your application.
   @override
@@ -41,10 +48,10 @@ class MyApp extends StatelessWidget {
         //   useMaterial3: true,
         //   visualDensity: VisualDensity.adaptivePlatformDensity,
         //   // remove allow
-        //   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        //   bottomNavigationBarTheme:  BottomNavigationBarThemeData(
         //     elevation: 8.0,
         //   ),
-        //   appBarTheme: const AppBarTheme(
+        //   appBarTheme:  AppBarTheme(
         //     // AppBar color
         //     elevation: 4.0, // AppBar shadow elevation
         //   ),
@@ -53,10 +60,10 @@ class MyApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.lightBlueAccent),
           useMaterial3: true,
           visualDensity:  VisualDensity.adaptivePlatformDensity, // remove allow
-          bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          bottomNavigationBarTheme:  BottomNavigationBarThemeData(
             elevation: 8.0,
           ),
-          appBarTheme: const AppBarTheme(
+          appBarTheme:  AppBarTheme(
             // AppBar color
             elevation: 4.0, // AppBar shadow elevation
           ),
@@ -67,7 +74,7 @@ class MyApp extends StatelessWidget {
 
 class Button extends StatelessWidget {
   // final auth = Authservice();
-  const Button({super.key});
+   Button({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +84,7 @@ class Button extends StatelessWidget {
           await Authservice()
               .signup(email: "abc@gmail.com", password: "", context: context);
         },
-        child: const Text('Show SnackBar'),
+        child:  Text('Show SnackBar'),
       ),
     );
   }
@@ -106,7 +113,7 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
     // Navigate to the login page after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed( Duration(seconds: 3), () {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => wrapper()),
@@ -121,7 +128,7 @@ class _SplashScreenState extends State<SplashScreen> {
         children: [
           // Background Gradient
           Container(
-            decoration: const BoxDecoration(
+            decoration:  BoxDecoration(
               gradient: LinearGradient(
                 colors: [
                   Color(0xFF5BC7FF), // Deep Green
@@ -145,7 +152,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   height: 200,
                   width: 200,
                 ),
-                const SizedBox(height: 20),
+                 SizedBox(height: 20),
                 // Animated Text
                 Text(
                   "Let's Discuss & Share",
@@ -155,7 +162,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 10),
+                 SizedBox(height: 10),
                 Text(
                   "Connecting Ideas Globally",
                   style: TextStyle(
