@@ -15,6 +15,8 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import 'chat.dart';
+import 'portfolio.dart';
+import 'api_key_manager.dart';
 
 class profile extends StatefulWidget {
   @override
@@ -26,6 +28,7 @@ class _ProfileState extends State<profile> {
   final user = FirebaseAuth.instance.currentUser;
   String username = '';
   String Xp = '';
+  String? githubUsername;
   Color _selectedColor = Colors.amber; // Default color
   // final ThemeController themeController = Get.put(ThemeController());
 
@@ -72,6 +75,7 @@ class _ProfileState extends State<profile> {
           username = userData['Username'] ?? 'No name available';
           imageUrl = userData['profilePicture'] ?? '';
           Xp = userData['XP']?? '';
+          githubUsername = userData['github'];
 
         });
       } else {
@@ -360,6 +364,24 @@ class _ProfileState extends State<profile> {
                   },
                 ),
                 buildProfileButton(
+                  icon: Icons.account_tree_outlined,
+                  title: 'AI Portfolio',
+                  color: Colors.purple,
+                  onTap: () { Get.to( const DeveloperPortfolioPage()); },
+                ),
+                buildProfileButton(
+                  icon: Icons.vpn_key,
+                  title: 'Set Gemini API Key',
+                  color: Colors.teal,
+                  onTap: _setGeminiKey,
+                ),
+                buildProfileButton(
+                  icon: Icons.link,
+                  title: githubUsername == null ? 'Link GitHub' : 'GitHub: $githubUsername',
+                  color: Colors.black87,
+                  onTap: _editGithub,
+                ),
+                buildProfileButton(
                   icon: Icons.edit,
                   title: 'Change Profile Picture',
                   color: Colors.blue,
@@ -396,7 +418,7 @@ class _ProfileState extends State<profile> {
     required VoidCallback onTap,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding:  EdgeInsets.symmetric(vertical: 8),
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
@@ -471,6 +493,87 @@ class _ProfileState extends State<profile> {
     } catch (e) {
       print('Error');
     }
+  }
+
+  Future<void> _editGithub() async {
+    final controller = TextEditingController(text: githubUsername ?? '');
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title:  Text('GitHub Username'),
+        content: TextField(
+          controller: controller,
+          decoration:  InputDecoration(
+            hintText: 'e.g. torvalds',
+            labelText: 'Username',
+            prefixIcon: Icon(Icons.code),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: ()=>Navigator.pop(ctx), child:  Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final val = controller.text.trim();
+              Navigator.pop(ctx);
+              if (val.isEmpty) {
+                await FirebaseFirestore.instance.collection('User').doc(user!.uid).update({'github': FieldValue.delete()});
+                setState(()=>githubUsername=null);
+              } else {
+                await FirebaseFirestore.instance.collection('User').doc(user!.uid).update({'github': val});
+                setState(()=>githubUsername = val);
+              }
+              Get.showSnackbar(GetSnackBar(title: 'Saved', message: 'GitHub updated', duration:  Duration(seconds:2)));
+            },
+            child:  Text('Save'),
+          )
+        ],
+      ),
+    );
+  }
+
+  Future<void> _setGeminiKey() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Gemini API Key'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: 'Paste your Gemini API Key',
+              prefixIcon: Icon(Icons.vpn_key),
+            ),
+            obscureText: true,
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Enter a key';
+              if (!v.startsWith('AI')) return 'Key format looks unusual';
+              if (v.trim().length < 20) return 'Key too short';
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+              final key = controller.text.trim();
+              Navigator.pop(ctx);
+              try {
+                await ApiKeyManager.instance.saveUserKey(key);
+                Get.showSnackbar(const GetSnackBar(title: 'Saved', message: 'Gemini key stored securely', duration: Duration(seconds: 2)));
+              } catch (e) {
+                Get.showSnackbar(GetSnackBar(title: 'Error', message: e.toString(), duration: const Duration(seconds: 3)));
+              }
+            },
+            child: const Text('Save'),
+          )
+        ],
+      ),
+    );
   }
 
 }

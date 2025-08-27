@@ -11,7 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 
 class saved extends StatefulWidget {
-  const saved({super.key});
+   saved({super.key});
 
   @override
   savedState createState() => savedState();
@@ -83,11 +83,11 @@ class savedState extends State<saved> {
                 return Text('Error');
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return  Center(child: CircularProgressIndicator());
               }
 
               if (!snapshot.hasData || !snapshot.data!.exists) {
-                return const Center(child: Text('No saved IDs available'));
+                return  Center(child: Text('No saved IDs available'));
               }
               List<String> documentIds =
                   List.from(snapshot.data!['Saved'] ?? []);
@@ -147,7 +147,7 @@ class QuestionCard extends StatefulWidget {
   final String docid;
   final DateTime timestamp;
 
-  const QuestionCard({
+   QuestionCard({
     super.key,
     required this.title,
     required this.code,
@@ -333,7 +333,7 @@ class _QuestionCardState extends State<QuestionCard> {
     String? code;
     return Card(
         child: Padding(
-      padding: const EdgeInsets.all(16.0),
+      padding:  EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -345,12 +345,12 @@ class _QuestionCardState extends State<QuestionCard> {
                   future: _fetchUserProfileImage(widget.uid),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const CircleAvatar(
+                      return  CircleAvatar(
                         backgroundColor: Colors.grey,
                       );
                     } else if (snapshot.hasError) {
                       print(snapshot.error);
-                      return const CircleAvatar(
+                      return  CircleAvatar(
                         foregroundImage: NetworkImage(
                           'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                         ),
@@ -361,21 +361,21 @@ class _QuestionCardState extends State<QuestionCard> {
                       );
                     }
                   }),
-              const SizedBox(width: 8), // Space between avatar and text
+               SizedBox(width: 8), // Space between avatar and text
               // Fetch and display the user's name
               // if (!isFetchingUserName)
               FutureBuilder<String?>(
                 future: _userNameFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Text('Loading...');
+                    return  Text('Loading...');
                   } else if (snapshot.hasError) {
-                    return const Text('Error fetching user name');
+                    return  Text('Error fetching user name');
                   } else if (snapshot.hasData) {
                     String userName = "~ ${snapshot.data}";
                     return Text(userName);
                   } else {
-                    return const Text('User not found');
+                    return  Text('User not found');
                   }
                 },
               ),
@@ -384,13 +384,13 @@ class _QuestionCardState extends State<QuestionCard> {
                 future: _fetchUserXP(widget.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Text('XP: Loading...');
+                    return  Text('XP: Loading...');
                   } else if (snapshot.hasError) {
-                    return const Text('Error fetching XP');
+                    return  Text('Error fetching XP');
                   } else if (snapshot.hasData) {
                     Object xp = snapshot.data ?? 0;
                     return Container(
-                      padding: const EdgeInsets.symmetric(
+                      padding:  EdgeInsets.symmetric(
                           horizontal: 15, vertical: 8),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -416,7 +416,7 @@ class _QuestionCardState extends State<QuestionCard> {
                         children: [
                           Text(
                             'XP: $xp',
-                            style: const TextStyle(
+                            style:  TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
@@ -426,18 +426,18 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                     );
                   } else {
-                    return const Text('XP: 0');
+                    return  Text('XP: 0');
                   }
                 },
               ),
             ],
           ),
-          const SizedBox(height: 16), // Space between user info and title
+           SizedBox(height: 16), // Space between user info and title
           Text(
             widget.title,
             style: theme.textTheme.titleLarge,
           ),
-          const SizedBox(height: 8),
+           SizedBox(height: 8),
           RichText(
             text: TextSpan(
               style: theme.textTheme.bodyMedium,
@@ -447,7 +447,7 @@ class _QuestionCardState extends State<QuestionCard> {
             textAlign: TextAlign.justify,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 8),
+           SizedBox(height: 8),
           // code = widget.code!!
           if (widget.code != null && widget.code!.isNotEmpty)
             Container(
@@ -455,15 +455,15 @@ class _QuestionCardState extends State<QuestionCard> {
                 borderRadius: BorderRadius.circular(8),
               ),
               width: double.infinity,
-              margin: const EdgeInsets.symmetric(vertical: 5),
+              margin:  EdgeInsets.symmetric(vertical: 5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
                     // Background color for the body
-                    padding: const EdgeInsets.all(0.0),
+                    padding:  EdgeInsets.all(0.0),
                     child: Padding(
-                      padding: const EdgeInsets.all(0.0),
+                      padding:  EdgeInsets.all(0.0),
                       child: GestureDetector(
                         onLongPress: () => {
                           Clipboard.setData(ClipboardData(text: widget.code!)),
@@ -516,7 +516,7 @@ class _QuestionCardState extends State<QuestionCard> {
                     ))
                 .toList(),
           ),
-          const Divider(height: 24),
+           Divider(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -537,9 +537,9 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                       onPressed: _handleLike,
                     ),
-                    const SizedBox(width: 4),
+                     SizedBox(width: 4),
                     Text('${widget.votes}', style: theme.textTheme.labelLarge),
-                    const SizedBox(width: 24),
+                     SizedBox(width: 24),
                     IconButton(
                       icon: Icon(Icons.bookmark),
                       onPressed: () {

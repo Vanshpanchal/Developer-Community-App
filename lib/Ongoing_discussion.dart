@@ -9,7 +9,7 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ongoing_discussion extends StatefulWidget {
-  const ongoing_discussion({super.key});
+   ongoing_discussion({super.key});
 
   @override
   State<ongoing_discussion> createState() => _ongoing_discussionState();
@@ -99,7 +99,7 @@ class _ongoing_discussionState extends State<ongoing_discussion> {
         ),
         body: Column(children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding:  EdgeInsets.all(8.0),
             child: CupertinoSearchTextField(
               onSuffixTap: () => {all()},
               controller: search_controller,
@@ -155,7 +155,7 @@ class displayCard extends StatefulWidget {
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
 
-  const displayCard({
+   displayCard({
     super.key,
     required this.title,
     required this.description,
@@ -285,7 +285,7 @@ class displayCardState extends State<displayCard> {
               Get.to(detail_discussion(docId: widget.docid,creatorId: widget.uid,));
             },
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding:  EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -298,12 +298,12 @@ class displayCardState extends State<displayCard> {
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
-                              return const CircleAvatar(
+                              return  CircleAvatar(
                                 backgroundColor: Colors.grey,
                               );
                             } else if (snapshot.hasError) {
                               print(snapshot.error);
-                              return const CircleAvatar(
+                              return  CircleAvatar(
                                 foregroundImage: NetworkImage(
                                   'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                 ),
@@ -314,7 +314,7 @@ class displayCardState extends State<displayCard> {
                               );
                             }
                           }),
-                      const SizedBox(width: 8), // Space between avatar and text
+                       SizedBox(width: 8), // Space between avatar and text
                       // Fetch and display the user's name
                       // if (!isFetchingUserName)
                       FutureBuilder<String?>(
@@ -322,14 +322,14 @@ class displayCardState extends State<displayCard> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return const Text('Loading...');
+                            return  Text('Loading...');
                           } else if (snapshot.hasError) {
-                            return const Text('Error fetching user name');
+                            return  Text('Error fetching user name');
                           } else if (snapshot.hasData) {
                             String userName = "~ ${snapshot.data}";
                             return Text(userName);
                           } else {
-                            return const Text('User not found');
+                            return  Text('User not found');
                           }
                         },
                       ),
@@ -339,13 +339,13 @@ class displayCardState extends State<displayCard> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return const Text('XP: Loading...');
+                            return  Text('XP: Loading...');
                           } else if (snapshot.hasError) {
-                            return const Text('Error fetching XP');
+                            return  Text('Error fetching XP');
                           } else if (snapshot.hasData) {
                             Object xp = snapshot.data ?? 0;
                             return Container(
-                              padding: const EdgeInsets.symmetric(
+                              padding:  EdgeInsets.symmetric(
                                   horizontal: 15, vertical: 8),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
@@ -371,7 +371,7 @@ class displayCardState extends State<displayCard> {
                                 children: [
                                   Text(
                                     'XP: $xp',
-                                    style: const TextStyle(
+                                    style:  TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
@@ -381,19 +381,19 @@ class displayCardState extends State<displayCard> {
                               ),
                             );
                           } else {
-                            return const Text('XP: 0');
+                            return  Text('XP: 0');
                           }
                         },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                   SizedBox(height: 16),
                   // Space between user info and title
                   Text(
                     widget.title,
                     style: theme.textTheme.titleLarge,
                   ),
-                  const SizedBox(height: 8),
+                   SizedBox(height: 8),
                   RichText(
                     text: TextSpan(
                       style: theme.textTheme.bodyMedium,
@@ -403,7 +403,7 @@ class displayCardState extends State<displayCard> {
                     textAlign: TextAlign.justify,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 8),
+                   SizedBox(height: 8),
                   // code = widget.code!!
                   Wrap(
                     spacing: 5,
@@ -418,7 +418,7 @@ class displayCardState extends State<displayCard> {
                             ))
                         .toList(),
                   ),
-                  const Divider(height: 24),
+                   Divider(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -434,10 +434,10 @@ class displayCardState extends State<displayCard> {
                               icon: Icon(Icons.comment_bank_rounded),
                               onPressed: () => {},
                             ),
-                            const SizedBox(width: 4),
+                             SizedBox(width: 4),
                             Text('${_repliesCount}',
                                 style: theme.textTheme.labelLarge),
-                            const SizedBox(width: 24),
+                             SizedBox(width: 24),
                             IconButton(
                               icon: Icon(Icons.bookmark_add_outlined),
                               onPressed: () {

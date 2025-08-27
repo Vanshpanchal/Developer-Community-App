@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 class markdown extends StatefulWidget {
-  const markdown({super.key});
+   markdown({super.key});
 
   @override
   State<markdown> createState() => _markdownState();
@@ -24,7 +24,7 @@ class _markdownState extends State<markdown> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Markdown Editor'),
+        title:  Text('Markdown Editor'),
       ),
       body: Row(
         children: [
@@ -33,7 +33,7 @@ class _markdownState extends State<markdown> {
             child: TextField(
               controller: _controller,
               maxLines: null,
-              decoration: const InputDecoration(
+              decoration:  InputDecoration(
                 hintText: 'Enter your markdown here...',
                 contentPadding: EdgeInsets.all(16),
               ),
@@ -43,7 +43,7 @@ class _markdownState extends State<markdown> {
             ),
           ),
           // Vertical Divider
-          const VerticalDivider(thickness: 1, width: 1),
+           VerticalDivider(thickness: 1, width: 1),
           // Preview Section
           Expanded(
             child: Markdown(data: _controller.text),

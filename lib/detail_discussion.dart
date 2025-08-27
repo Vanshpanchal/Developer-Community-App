@@ -8,12 +8,15 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'ai_service.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter/services.dart';
 
 class detail_discussion extends StatefulWidget {
   final String docId;
   final String creatorId;
 
-  const detail_discussion(
+   detail_discussion(
       {Key? key, required this.docId, required this.creatorId});
 
   @override
@@ -24,6 +27,8 @@ class _detail_discussionState extends State<detail_discussion> {
   final _replyController = TextEditingController();
 
   final user = FirebaseAuth.instance.currentUser;
+  String? _threadSummary;
+  bool _summaryLoading = false;
   Future<void> updateXP2(String uid, int points) async {
     try {
       // Fetch the current XP value as a String
@@ -198,9 +203,54 @@ class _detail_discussionState extends State<detail_discussion> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text("Discussion Details")),
+      appBar: AppBar(title: Text("Discussion Details"), actions: [
+        IconButton(
+          tooltip: 'Summarize Thread',
+          icon: _summaryLoading
+              ?  SizedBox(width: 20,height:20,child: CircularProgressIndicator(strokeWidth: 2))
+              :  Icon(Icons.summarize),
+          onPressed: _summaryLoading ? null : () async {
+            setState(() { _summaryLoading = true; _threadSummary = null; });
+            try {
+              // Fetch discussion doc & replies once.
+              final discSnap = await FirebaseFirestore.instance.collection('Discussions').doc(widget.docId).get();
+              final repliesSnap = await FirebaseFirestore.instance.collection('Discussions').doc(widget.docId).collection('Replies').orderBy('timestamp').get();
+              final title = discSnap.data()?['Title'] ?? 'Untitled';
+              final desc = discSnap.data()?['Description'] ?? '';
+              final replies = repliesSnap.docs.map((d) => d.data()).toList();
+              final summary = await AIService().summarizeThread(
+                title: title,
+                description: desc,
+                replies: replies.cast<Map<String,dynamic>>()
+              );
+              if (mounted) {
+                setState(() { _threadSummary = summary; });
+                // Show in bottom sheet
+                if (summary.isNotEmpty) {
+                  // ignore: use_build_context_synchronously
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: theme.colorScheme.surface,
+                    shape:  RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    builder: (_) => _ThreadSummarySheet(summary: summary),
+                  );
+                }
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Summary failed: $e')));
+              }
+            } finally {
+              if (mounted) setState(() { _summaryLoading = false; });
+            }
+          },
+        ),
+      ]),
       body: Padding(
-        padding: const EdgeInsets.all(6.0),
+        padding:  EdgeInsets.all(6.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -376,22 +426,22 @@ class _detail_discussionState extends State<detail_discussion> {
                                         context: context,
                                         builder: (context) =>
                                             AlertDialog(
-                                              title: const Text("Delete Reply"),
+                                              title:  Text("Delete Reply"),
 
-                                              content: const Text(
+                                              content:  Text(
                                                   "Are you sure you want to delete this reply?"),
                                               actions: [
                                                 TextButton(
                                                   onPressed: () =>
                                                       Navigator.pop(
                                                           context, false),
-                                                  child: const Text("Cancel"),
+                                                  child:  Text("Cancel"),
                                                 ),
                                                 TextButton(
                                                   onPressed: () =>
                                                       Navigator.pop(
                                                           context, true),
-                                                  child: const Text("Delete"),
+                                                  child:  Text("Delete"),
                                                 ),
                                               ],
                                             ),
@@ -409,7 +459,7 @@ class _detail_discussionState extends State<detail_discussion> {
 
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
-                                            const SnackBar(content: Text(
+                                             SnackBar(content: Text(
                                                 'Reply deleted successfully!')),
                                           );
                                         } catch (e) {
@@ -430,13 +480,13 @@ class _detail_discussionState extends State<detail_discussion> {
                                   },
                                   child: Card(
 
-                                    margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                                    margin:  EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12.0),
                                     ),
                                     elevation: 5,
                                     child: Padding(
-                                      padding: const EdgeInsets.all(12.0),
+                                      padding:  EdgeInsets.all(12.0),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
@@ -448,12 +498,12 @@ class _detail_discussionState extends State<detail_discussion> {
                                                   builder: (context, snapshot) {
                                                     if (snapshot.connectionState ==
                                                         ConnectionState.waiting) {
-                                                      return const CircleAvatar(
+                                                      return  CircleAvatar(
                                                         backgroundColor: Colors.grey,
                                                       );
                                                     } else if (snapshot.hasError) {
                                                       print(snapshot.error);
-                                                      return const CircleAvatar(
+                                                      return  CircleAvatar(
                                                         foregroundImage: NetworkImage(
                                                           'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                                         ),
@@ -464,12 +514,12 @@ class _detail_discussionState extends State<detail_discussion> {
                                                       );
                                                     }
                                                   }),
-                                              const SizedBox(width: 12),
+                                               SizedBox(width: 12),
                                               // User Name
                                               Expanded(
                                                 child: Text(
                                                   "~"+replyData['user_name'] ?? 'Unknown User',
-                                                  style: const TextStyle(
+                                                  style:  TextStyle(
                                                     fontSize: 14,
                                                     color: Colors.black87,
                                                   ),
@@ -480,13 +530,13 @@ class _detail_discussionState extends State<detail_discussion> {
                                                 builder: (context, snapshot) {
                                                   if (snapshot.connectionState ==
                                                       ConnectionState.waiting) {
-                                                    return const Text('XP: Loading...');
+                                                    return  Text('XP: Loading...');
                                                   } else if (snapshot.hasError) {
-                                                    return const Text('Error fetching XP');
+                                                    return  Text('Error fetching XP');
                                                   } else if (snapshot.hasData) {
                                                     Object xp = snapshot.data ?? 0;
                                                     return Container(
-                                                      padding: const EdgeInsets.symmetric(
+                                                      padding:  EdgeInsets.symmetric(
                                                           horizontal: 12, vertical: 6),
                                                       decoration: BoxDecoration(
                                                         gradient: LinearGradient(
@@ -512,7 +562,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                         children: [
                                                           Text(
                                                             'XP: $xp',
-                                                            style: const TextStyle(
+                                                            style:  TextStyle(
                                                               color: Colors.white,
                                                               fontWeight: FontWeight.bold,
                                                               fontSize: 12,
@@ -522,13 +572,13 @@ class _detail_discussionState extends State<detail_discussion> {
                                                       ),
                                                     );
                                                   } else {
-                                                    return const Text('XP: 0');
+                                                    return  Text('XP: 0');
                                                   }
                                                 },
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 12), // Space between Row and content
+                                           SizedBox(height: 12), // Space between Row and content
 
                                           RichText(
                                             text: TextSpan(
@@ -543,7 +593,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                           // Reply Text
                                           // Text(
                                           //   replyData['reply'] ?? 'No reply content',
-                                          //   style: const TextStyle(
+                                          //   style:  TextStyle(
                                           //     fontSize: 14,
                                           //     fontWeight: FontWeight.normal,
                                           //     color: Colors.black87,
@@ -551,7 +601,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                           //   textAlign: TextAlign.justify,
                                           // ),
 
-                                          const SizedBox(height: 5),
+                                           SizedBox(height: 5),
 
                                           // Timestamp
 
@@ -578,7 +628,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                             ],
                                           ),
 
-                                          const SizedBox(height: 5),
+                                           SizedBox(height: 5),
 
                                           if (!replyData['code'].toString().isNotEmpty && replyData['uid'] == user?.uid)
                                             OutlinedButton.icon(
@@ -603,14 +653,14 @@ class _detail_discussionState extends State<detail_discussion> {
                                           if (replyData['accepted'] == true)
                                             Container(
                                               padding:
-                                              const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                                               EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                                               decoration: BoxDecoration(
                                                 color: Colors.green,
                                                 borderRadius: BorderRadius.circular(20),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
-                                                children: const [
+                                                children:  [
                                                   Icon(
                                                     Icons.check_circle,
                                                     color: Colors.white,
@@ -633,7 +683,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                               future: FirebaseAuth.instance.authStateChanges().first,
                                               builder: (context, snapshot) {
                                                 if (snapshot.connectionState == ConnectionState.waiting) {
-                                                  return const CircularProgressIndicator();
+                                                  return  CircularProgressIndicator();
                                                 } else if (snapshot.hasData &&
                                                     snapshot.data!.uid == widget.creatorId) {
                                                   return GestureDetector(
@@ -658,7 +708,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                             ScaffoldMessenger.of(
                                                                 context)
                                                                 .showSnackBar(
-                                                              const SnackBar(
+                                                               SnackBar(
                                                                   content: Text(
                                                                       'Reply accepted!')),
                                                             );
@@ -666,7 +716,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                             ScaffoldMessenger.of(
                                                                 context)
                                                                 .showSnackBar(
-                                                              const SnackBar(
+                                                               SnackBar(
                                                                   content: Text(
                                                                       'Failed to accept.')),
                                                             );
@@ -674,7 +724,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                         }
                                                     },
                                                     child: Container(
-                                                      padding: const EdgeInsets.symmetric(
+                                                      padding:  EdgeInsets.symmetric(
                                                           vertical: 6, horizontal: 12),
                                                       decoration: BoxDecoration(
                                                         color: Colors.blue,
@@ -682,7 +732,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                       ),
                                                       child: Row(
                                                         mainAxisSize: MainAxisSize.min,
-                                                        children: const [
+                                                        children:  [
                                                           Icon(
                                                             Icons.check_circle_outline,
                                                             color: Colors.white,
@@ -702,7 +752,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     ),
                                                   );
                                                 } else {
-                                                  return const SizedBox.shrink();
+                                                  return  SizedBox.shrink();
                                                 }
                                               },
                                             ),
@@ -724,7 +774,7 @@ class _detail_discussionState extends State<detail_discussion> {
             ),
             // Material 3 style reply TextField at the bottom
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 0),
+              padding:  EdgeInsets.symmetric(vertical: 0),
               child: Row(
                 children: [
                   // Wrap the TextField with an Expanded widget to allow it to take up remaining space
@@ -791,7 +841,7 @@ class display_discussion extends StatefulWidget {
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
 
-  const display_discussion({
+   display_discussion({
     super.key,
     required this.title,
     required this.description,
@@ -917,7 +967,7 @@ class display_discussionCardState extends State<display_discussion> {
                 builder: (context) {
                   return Container(
                     width: double.infinity, // Full width of the screen
-                    padding: const EdgeInsets.all(16.0),
+                    padding:  EdgeInsets.all(16.0),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surface,
                       // Material 3 background color
@@ -934,7 +984,7 @@ class display_discussionCardState extends State<display_discussion> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                         SizedBox(height: 8),
                         // Description of the discussion
                         RichText(
                           text: TextSpan(
@@ -946,7 +996,7 @@ class display_discussionCardState extends State<display_discussion> {
                           textAlign: TextAlign.justify,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 16),
+                         SizedBox(height: 16),
 
                         Wrap(
                           spacing: 5,
@@ -976,7 +1026,7 @@ class display_discussionCardState extends State<display_discussion> {
               );
             },
             child: Padding(
-              padding: const EdgeInsets.all(10.0),
+              padding:  EdgeInsets.all(10.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -989,12 +1039,12 @@ class display_discussionCardState extends State<display_discussion> {
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
-                              return const CircleAvatar(
+                              return  CircleAvatar(
                                 backgroundColor: Colors.grey,
                               );
                             } else if (snapshot.hasError) {
                               print(snapshot.error);
-                              return const CircleAvatar(
+                              return  CircleAvatar(
                                 foregroundImage: NetworkImage(
                                   'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                 ),
@@ -1005,7 +1055,7 @@ class display_discussionCardState extends State<display_discussion> {
                               );
                             }
                           }),
-                      const SizedBox(width: 2), // Space between avatar and text
+                       SizedBox(width: 2), // Space between avatar and text
                       // Fetch and display the user's name
                       // if (!isFetchingUserName)
                       FutureBuilder<String?>(
@@ -1013,14 +1063,14 @@ class display_discussionCardState extends State<display_discussion> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return const Text('Loading...');
+                            return  Text('Loading...');
                           } else if (snapshot.hasError) {
-                            return const Text('Error fetching user name');
+                            return  Text('Error fetching user name');
                           } else if (snapshot.hasData) {
                             String userName = "~ ${snapshot.data}";
                             return Text(userName);
                           } else {
-                            return const Text('User not found');
+                            return  Text('User not found');
                           }
                         },
                       ),
@@ -1030,13 +1080,13 @@ class display_discussionCardState extends State<display_discussion> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return const Text('XP: Loading...');
+                            return  Text('XP: Loading...');
                           } else if (snapshot.hasError) {
-                            return const Text('Error fetching XP');
+                            return  Text('Error fetching XP');
                           } else if (snapshot.hasData) {
                             Object xp = snapshot.data ?? 0;
                             return Container(
-                              padding: const EdgeInsets.symmetric(
+                              padding:  EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
@@ -1062,7 +1112,7 @@ class display_discussionCardState extends State<display_discussion> {
                                 children: [
                                   Text(
                                     'XP: $xp',
-                                    style: const TextStyle(
+                                    style:  TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
@@ -1072,19 +1122,19 @@ class display_discussionCardState extends State<display_discussion> {
                               ),
                             );
                           } else {
-                            return const Text('XP: 0');
+                            return  Text('XP: 0');
                           }
                         },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                   SizedBox(height: 6),
                   // Space between user info and title
                   Text(
                     widget.title,
                     style: theme.textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 0),
+                   SizedBox(height: 0),
                   RichText(
                     text: TextSpan(
                       style: theme.textTheme.bodyMedium,
@@ -1094,7 +1144,7 @@ class display_discussionCardState extends State<display_discussion> {
                     textAlign: TextAlign.justify,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // const SizedBox(height: 8),
+                  //  SizedBox(height: 8),
                   // code = widget.code!!
                   // Wrap(
                   //   spacing: 5,
@@ -1179,5 +1229,137 @@ void _launchURL(String url) async {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   } else {
     debugPrint('Could not launch $url');
+  }
+}
+
+class _ThreadSummarySheet extends StatefulWidget {
+  final String summary;
+   _ThreadSummarySheet({required this.summary});
+
+  @override
+  State<_ThreadSummarySheet> createState() => _ThreadSummarySheetState();
+}
+
+class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
+  bool _expanded = true;
+  bool _copied = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (ctx, scrollController) => Column(
+        children: [
+          Padding(
+            padding:  EdgeInsets.only(top: 12),
+            child: Container(
+              width: 48,
+              height: 5,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          Padding(
+            padding:  EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                 Icon(Icons.summarize),
+                 SizedBox(width: 8),
+                Expanded(
+                  child: Text('AI Thread Summary',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+                IconButton(
+                  tooltip: _expanded ? 'Collapse' : 'Expand',
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                ),
+                IconButton(
+                  tooltip: 'Copy Markdown',
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: widget.summary));
+                    setState(() => _copied = true);
+                    Future.delayed( Duration(seconds: 2), () {
+                      if (mounted) setState(() => _copied = false);
+                    });
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                         SnackBar(content: Text('Summary copied to clipboard')),
+                      );
+                    }
+                  },
+                  icon: Icon(_copied ? Icons.check : Icons.copy),
+                ),
+                IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.pop(context),
+                  icon:  Icon(Icons.close),
+                ),
+              ],
+            ),
+          ),
+           Divider(height: 1),
+          Expanded(
+            child: AnimatedCrossFade(
+              duration:  Duration(milliseconds: 250),
+              crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+              firstChild: Markdown(
+                controller: scrollController,
+                data: widget.summary,
+                selectable: true,
+                styleSheet: MarkdownStyleSheet(
+                  h2: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary),
+                  listBullet: theme.textTheme.bodyMedium,
+                  p: theme.textTheme.bodyMedium,
+                  blockquoteDecoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+              secondChild: Center(
+                child: Text('Collapsed', style: theme.textTheme.bodySmall),
+              ),
+            ),
+          ),
+          Padding(
+            padding:  EdgeInsets.fromLTRB(16,4,16,12),
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => setState(() => _expanded = true),
+                  icon:  Icon(Icons.visibility),
+                  label:  Text('Expand'),
+                ),
+                 SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: widget.summary));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                         SnackBar(content: Text('Copied')), 
+                      );
+                    }
+                  },
+                  icon:  Icon(Icons.copy_all),
+                  label:  Text('Copy'),
+                ),
+                 Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child:  Text('Done'),
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
   }
 }
