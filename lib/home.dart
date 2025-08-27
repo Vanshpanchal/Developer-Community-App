@@ -15,7 +15,7 @@ import 'saved.dart';
 
 
 class home extends StatefulWidget {
-   home({super.key});
+  const home({super.key});
 
   @override
   State<home> createState() => _homepageState();
@@ -81,12 +81,12 @@ class navigatorcontroller extends GetxController {
         // Container(color: Colors.brown,),
 
         // ChatScreen1(),
-         saved(),
+        const saved(),
         // ChatScreen(),
         profile(),
-        //  mypost(),
-        //  profile(),
-        //  reported()
+        // const mypost(),
+        // const profile(),
+        // const reported()
         // Add more admin-specific screens here
       ];
     } else {
@@ -97,7 +97,7 @@ class navigatorcontroller extends GetxController {
         // Container(color: Colors.grey,),
 
         // ChatScreen1(),
-         saved(),
+        const saved(),
         // ChatScreen(),
         profile(),
         // ---
@@ -105,19 +105,19 @@ class navigatorcontroller extends GetxController {
         // ongoing_discussion(),
         // // ChatScreen(),
         // // ChatScreen1(),
-        //  saved(),
+        // const saved(),
         // // ChatScreen(),
         // profile(),
-        // //  saved(),
-        // //  mypost(),
-        // //  profile(),
+        // // const saved(),
+        // // const mypost(),
+        // // const profile(),
       ];
     }
   }
 
   List<NavigationDestination> get navigationDestinations {
     if (userRole == 'admin') {
-      return  [
+      return const [
         NavigationDestination(
             icon: Icon(Icons.looks, color: Colors.black),
             label: "Explore"),
@@ -140,7 +140,7 @@ class navigatorcontroller extends GetxController {
         // Add more admin-specific navigation destinations here
       ];
     } else {
-      return  [
+      return const [
         NavigationDestination(
             icon: Icon(Icons.looks_rounded, color: Colors.black),
             label: "Explore"),

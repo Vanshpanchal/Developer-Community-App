@@ -9,12 +9,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'ai_service.dart';
-import 'repo_analyzer.dart';
-import 'portfolio.dart';
 
 class explore extends StatefulWidget {
-   explore({super.key});
+  const explore({super.key});
 
   @override
   exploreState createState() => exploreState();
@@ -125,7 +122,7 @@ class exploreState extends State<explore> {
           actions: [
 
             Padding(
-              padding:  EdgeInsets.symmetric(horizontal: 8.0),
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: CircleAvatar(
 
                 radius: 16,
@@ -153,19 +150,6 @@ class exploreState extends State<explore> {
         floatingActionButton: Stack(
           alignment: Alignment.bottomRight,
           children: [
-            Positioned(
-              bottom: 144,
-              right: 16,
-              child: FloatingActionButton(
-                onPressed: () {
-                  Get.to( RepoAnalyzerScreen());
-                },
-                backgroundColor: Theme.of(context).colorScheme.secondary,
-                heroTag: "fab_repo",
-                mini: true,
-                child:  Icon(Icons.analytics, color: Colors.white),
-              ),
-            ),
             Positioned(
               bottom: 80,
               right: 16,
@@ -196,7 +180,7 @@ class exploreState extends State<explore> {
         ),
         body: Column(children: [
           Padding(
-            padding:  EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(8.0),
             child: CupertinoSearchTextField(
               onSuffixTap: () => {all()},
               controller: search_controller,
@@ -256,7 +240,7 @@ class QuestionCard extends StatefulWidget {
   final String docid;
   final DateTime timestamp;
 
-   QuestionCard({
+  const QuestionCard({
     super.key,
     required this.title,
     required this.code,
@@ -294,9 +278,6 @@ class _QuestionCardState extends State<QuestionCard> {
   bool isLiked = false;
   bool isFetchingUserName = false;
   late Future<String?> _userNameFuture;
-  bool _showComplexity = false;
-  String? _complexityResult;
-  bool _complexityLoading = false;
 
   @override
   void initState() {
@@ -434,7 +415,7 @@ class _QuestionCardState extends State<QuestionCard> {
     String? code;
     return Card(
         child: Padding(
-      padding:  EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -442,73 +423,56 @@ class _QuestionCardState extends State<QuestionCard> {
           Row(
             // mainAxisAlignment: Maina,
             children: [
-              GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
-                    ),
-                  );
-                },
-                child: FutureBuilder<String?>(
-                    future: _fetchUserProfileImage(widget.uid),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const CircleAvatar(
-                          backgroundColor: Colors.grey,
-                        );
-                      } else if (snapshot.hasError || snapshot.data == null) {
-                        return const CircleAvatar(
-                          foregroundImage: NetworkImage(
-                            'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                          ),
-                        );
-                      } else {
-                        return CircleAvatar(
-                          foregroundImage: NetworkImage(snapshot.data!),
-                        );
-                      }
-                    }),
-              ),
-               SizedBox(width: 8), // Space between avatar and text
-              // Fetch and display the user's name
-              // if (!isFetchingUserName)
-              GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
-                    ),
-                  );
-                },
-                child: FutureBuilder<String?>(
-                  future: _userNameFuture,
+              FutureBuilder<String?>(
+                  future: _fetchUserProfileImage(widget.uid),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Text('Loading...');
+                      return const CircleAvatar(
+                        backgroundColor: Colors.grey,
+                      );
                     } else if (snapshot.hasError) {
-                      return const Text('Error fetching user name');
-                    } else if (snapshot.hasData) {
-                      String userName = "~ ${snapshot.data}";
-                      return Text(userName, style: const TextStyle());
+                      print(snapshot.error);
+                      return const CircleAvatar(
+                        foregroundImage: NetworkImage(
+                          'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                        ),
+                      );
                     } else {
-                      return const Text('User not found');
+                      return CircleAvatar(
+                        foregroundImage: NetworkImage(snapshot.data!),
+                      );
                     }
-                  },
-                ),
+                  }),
+              const SizedBox(width: 8), // Space between avatar and text
+              // Fetch and display the user's name
+              // if (!isFetchingUserName)
+              FutureBuilder<String?>(
+                future: _userNameFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Text('Loading...');
+                  } else if (snapshot.hasError) {
+                    return const Text('Error fetching user name');
+                  } else if (snapshot.hasData) {
+                    String userName = "~ ${snapshot.data}";
+                    return Text(userName);
+                  } else {
+                    return const Text('User not found');
+                  }
+                },
               ),
               Spacer(),
               FutureBuilder<String?>(
                 future: _fetchUserXP(widget.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return  Text('XP: Loading...');
+                    return const Text('XP: Loading...');
                   } else if (snapshot.hasError) {
-                    return  Text('Error fetching XP');
+                    return const Text('Error fetching XP');
                   } else if (snapshot.hasData) {
                     Object xp = snapshot.data ?? 0;
                     return Container(
-                      padding:  EdgeInsets.symmetric(
+                      padding: const EdgeInsets.symmetric(
                           horizontal: 15, vertical: 8),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -534,7 +498,7 @@ class _QuestionCardState extends State<QuestionCard> {
                         children: [
                           Text(
                             'XP: $xp',
-                            style:  TextStyle(
+                            style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
@@ -544,18 +508,18 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                     );
                   } else {
-                    return  Text('XP: 0');
+                    return const Text('XP: 0');
                   }
                 },
               ),
             ],
           ),
-           SizedBox(height: 16), // Space between user info and title
+          const SizedBox(height: 16), // Space between user info and title
           Text(
             widget.title,
             style: theme.textTheme.titleLarge,
           ),
-           SizedBox(height: 8),
+          const SizedBox(height: 8),
           RichText(
             text: TextSpan(
               style: theme.textTheme.bodyMedium,
@@ -565,7 +529,7 @@ class _QuestionCardState extends State<QuestionCard> {
             textAlign: TextAlign.justify,
             overflow: TextOverflow.ellipsis,
           ),
-           SizedBox(height: 8),
+          const SizedBox(height: 8),
           // code = widget.code!!
           if (widget.code != null && widget.code!.isNotEmpty)
             Container(
@@ -573,41 +537,15 @@ class _QuestionCardState extends State<QuestionCard> {
                 borderRadius: BorderRadius.circular(8),
               ),
               width: double.infinity,
-              margin:  EdgeInsets.symmetric(vertical: 5),
+              margin: const EdgeInsets.symmetric(vertical: 5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text('Code', style: theme.textTheme.labelLarge),
-                       Spacer(),
-                      TextButton.icon(
-                        onPressed: _complexityLoading ? null : () async {
-                          if (_showComplexity) {
-                            setState(() { _showComplexity = false; });
-                            return;
-                          }
-                          if (widget.code != null && widget.code!.trim().isNotEmpty) {
-                            setState(() { _complexityLoading = true; });
-                            final res = await AIService().analyzeComplexity(code: widget.code!, language: 'dart');
-                            if (mounted) {
-                              setState(() { _complexityResult = res; _showComplexity = true; _complexityLoading = false; });
-                            }
-                          }
-                        },
-                        icon: _complexityLoading ?  SizedBox(width:16,height:16,child:CircularProgressIndicator(strokeWidth:2)) : Icon(_showComplexity ? Icons.visibility_off : Icons.speed),
-                        label: Text(_showComplexity ? 'Hide Complexity' : 'Analyze Complexity'),
-                        style: TextButton.styleFrom(
-                          padding:  EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        ),
-                      ),
-                    ],
-                  ),
                   Padding(
                     // Background color for the body
-                    padding:  EdgeInsets.all(0.0),
+                    padding: const EdgeInsets.all(0.0),
                     child: Padding(
-                      padding:  EdgeInsets.all(0.0),
+                      padding: const EdgeInsets.all(0.0),
                       child: GestureDetector(
                         onLongPress: () => {
                           Clipboard.setData(ClipboardData(text: widget.code!)),
@@ -646,17 +584,6 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                     ),
                   ),
-                  if (_showComplexity && _complexityResult != null)
-                    Container(
-                      width: double.infinity,
-                      margin:  EdgeInsets.only(top:8),
-                      padding:  EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceVariant,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: MarkdownBody(data: _complexityResult!),
-                    ),
                 ],
               ),
             ),
@@ -671,7 +598,7 @@ class _QuestionCardState extends State<QuestionCard> {
                     ))
                 .toList(),
           ),
-           Divider(height: 24),
+          const Divider(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -692,9 +619,9 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                       onPressed: _handleLike,
                     ),
-                     SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text('${widget.votes}', style: theme.textTheme.labelLarge),
-                     SizedBox(width: 24),
+                    const SizedBox(width: 24),
                     IconButton(
                       icon: Icon(Icons.bookmark_add_outlined),
                       onPressed: () {

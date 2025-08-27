@@ -7,7 +7,7 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 
 class add_discussion extends StatefulWidget {
-   add_discussion({super.key});
+  const add_discussion({super.key});
 
   @override
   State<add_discussion> createState() => _add_discussionState();
@@ -34,7 +34,7 @@ class _add_discussionState extends State<add_discussion> {
 
       if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
         // Show error if any field is empty
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(const GetSnackBar(
           title: "Error",
           message: "All fields must be filled!",
           icon: Icon(
@@ -68,7 +68,7 @@ class _add_discussionState extends State<add_discussion> {
           .set(data)
           .then((_) {
         debugPrint("Discussion Created");
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(const GetSnackBar(
           title: "Discussion Created",
           message: "Success",
           icon: Icon(
@@ -118,11 +118,11 @@ class _add_discussionState extends State<add_discussion> {
       Form(
           child: SingleChildScrollView(
             child: Padding(
-              padding:  EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(16.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                   Text(
+                  const Text(
                     "Add your thoughts or Knowledge Resource to the Community.....",
                     style: TextStyle(
                       color: Colors.black,
@@ -144,13 +144,13 @@ class _add_discussionState extends State<add_discussion> {
                     decoration: InputDecoration(
                       prefixIcon: Icon(Icons.title_rounded,color:Theme.of(context).colorScheme.primary),
                       hintText: 'Title',
-                      hintStyle:  TextStyle(color: Colors.grey),
+                      hintStyle: const TextStyle(color: Colors.grey),
                       filled: true,
                       fillColor: Colors.transparent,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      contentPadding:  EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         vertical: 15,
                         horizontal: 20,
                       ),
@@ -165,7 +165,7 @@ class _add_discussionState extends State<add_discussion> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      contentPadding:  EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         vertical: 15,
                         horizontal: 20,
                       ),
@@ -186,7 +186,7 @@ class _add_discussionState extends State<add_discussion> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      contentPadding:  EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         vertical: 15,
                         horizontal: 20,
                       ),
@@ -212,7 +212,7 @@ class _add_discussionState extends State<add_discussion> {
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12.0)),
                         onDeleted: () => _removeTag(tag),
-                        deleteIcon:  Icon(
+                        deleteIcon: const Icon(
                           Icons.cancel_outlined,
                           size: Checkbox.width,
                           color: Colors.black,

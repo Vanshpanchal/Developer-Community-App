@@ -5,7 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 
 class addpost extends StatefulWidget {
-   addpost({super.key});
+  const addpost({super.key});
 
   @override
   State<addpost> createState() => addpostState();
@@ -32,7 +32,7 @@ class addpostState extends State<addpost> {
 
       if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
         // Show error if any field is empty
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(const GetSnackBar(
           title: "Error",
           message: "All fields must be filled!",
           icon: Icon(
@@ -69,7 +69,7 @@ class addpostState extends State<addpost> {
           .set(data)
           .then((_) {
         debugPrint("AddUser: User Added");
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(const GetSnackBar(
           title: "Post Created",
           message: "Success",
           icon: Icon(
@@ -96,7 +96,7 @@ class addpostState extends State<addpost> {
   //
   //     if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
   //       // Show error if any field is empty
-  //       Get.showSnackbar( GetSnackBar(
+  //       Get.showSnackbar(const GetSnackBar(
   //         title: "Error",
   //         message: "All fields must be filled!",
   //         icon: Icon(
@@ -129,7 +129,7 @@ class addpostState extends State<addpost> {
   //         .set(Data)
   //         .then((_) => {
   //               debugPrint("AddUser: User Added"),
-  //               Get.showSnackbar( GetSnackBar(
+  //               Get.showSnackbar(const GetSnackBar(
   //                 title: "Post Created",
   //                 message: "Success",
   //                 icon: Icon(
@@ -181,11 +181,11 @@ class addpostState extends State<addpost> {
         Form(
             child: SingleChildScrollView(
               child: Padding(
-                padding:  EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(16.0),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                     Text(
+                    const Text(
                       "Add your thoughts or Knowledge Resource to the Community.....",
                       style: TextStyle(
                         color: Colors.black,
@@ -207,13 +207,13 @@ class addpostState extends State<addpost> {
                       decoration: InputDecoration(
                         prefixIcon: Icon(Icons.title_rounded,color:Theme.of(context).colorScheme.primary),
                         hintText: 'Title',
-                        hintStyle:  TextStyle(color: Colors.grey),
+                        hintStyle: const TextStyle(color: Colors.grey),
                         filled: true,
                         fillColor: Colors.transparent,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        contentPadding:  EdgeInsets.symmetric(
+                        contentPadding: const EdgeInsets.symmetric(
                           vertical: 15,
                           horizontal: 20,
                         ),
@@ -228,7 +228,7 @@ class addpostState extends State<addpost> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        contentPadding:  EdgeInsets.symmetric(
+                        contentPadding: const EdgeInsets.symmetric(
                           vertical: 15,
                           horizontal: 20,
                         ),
@@ -249,7 +249,7 @@ class addpostState extends State<addpost> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        contentPadding:  EdgeInsets.symmetric(
+                        contentPadding: const EdgeInsets.symmetric(
                           vertical: 15,
                           horizontal: 20,
                         ),
@@ -275,7 +275,7 @@ class addpostState extends State<addpost> {
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12.0)),
                           onDeleted: () => _removeTag(tag),
-                          deleteIcon:  Icon(
+                          deleteIcon: const Icon(
                             Icons.cancel_outlined,
                             size: Checkbox.width,
                             color: Colors.black,
@@ -307,7 +307,7 @@ class addpostState extends State<addpost> {
                                 Card(
                                   child: Padding(
 
-                                    padding:  EdgeInsets.all(16.0),
+                                    padding: const EdgeInsets.all(16.0),
                                     child: TextField(
                                       controller: _markdownController, // Use _codeController for TextField
                                       maxLines: null, // Allow multiple lines
@@ -335,7 +335,7 @@ class addpostState extends State<addpost> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Padding(
-                                        padding:  EdgeInsets.all(16.0),
+                                        padding: const EdgeInsets.all(16.0),
                                         child: MarkdownBody(
                                           data: "```\n$code\n```",
                                           styleSheet: MarkdownStyleSheet(

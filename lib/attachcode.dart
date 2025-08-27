@@ -4,15 +4,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
-import 'gemini_key_dialog.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_navigation/src/snackbar/snackbar.dart';
-import 'ai_service.dart';
 
 class attachcode extends StatefulWidget {
   final String docId;
   final String discussionId;
-   attachcode({super.key, required this.docId,required this.discussionId});
+  const attachcode({super.key, required this.docId,required this.discussionId});
 
 
   @override
@@ -28,8 +26,6 @@ class _attachcodeState extends State<attachcode> {
   final _formKey = GlobalKey<FormState>();
   String markdownContent = ''; // Markdown content for Preview
   String code = ''; // Code content to show in the 'Code' tab
-  String? _aiReview; // AI generated code review
-  bool _reviewLoading = false;
 
   String? selectedSubject;
   sharepost() async {
@@ -43,7 +39,7 @@ class _attachcodeState extends State<attachcode> {
 
       if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
         // Show error if any field is empty
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(const GetSnackBar(
           title: "Error",
           message: "All fields must be filled!",
           icon: Icon(
@@ -80,7 +76,7 @@ class _attachcodeState extends State<attachcode> {
           .set(data)
           .then((_) {
         debugPrint("AddUser: User Added");
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(const GetSnackBar(
           title: "Post Created",
           message: "Success",
           icon: Icon(
@@ -107,7 +103,7 @@ class _attachcodeState extends State<attachcode> {
   //
   //     if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
   //       // Show error if any field is empty
-  //       Get.showSnackbar( GetSnackBar(
+  //       Get.showSnackbar(const GetSnackBar(
   //         title: "Error",
   //         message: "All fields must be filled!",
   //         icon: Icon(
@@ -140,7 +136,7 @@ class _attachcodeState extends State<attachcode> {
   //         .set(Data)
   //         .then((_) => {
   //               debugPrint("AddUser: User Added"),
-  //               Get.showSnackbar( GetSnackBar(
+  //               Get.showSnackbar(const GetSnackBar(
   //                 title: "Post Created",
   //                 message: "Success",
   //                 icon: Icon(
@@ -241,66 +237,6 @@ class _attachcodeState extends State<attachcode> {
     }
   }
 
-  Future<void> _generateAIReview() async {
-    if (code.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(content: Text('Add code before requesting review.')),
-      );
-      return;
-    }
-    setState(() {
-      _reviewLoading = true;
-      _aiReview = null;
-    });
-    try {
-      final review = await AIService().reviewCode(
-        code: code,
-        context: _descriptionController.text,
-      );
-      if (review == AIService.missingKeyMessage) {
-        if (mounted) _showMissingKeyDialog();
-      } else {
-        setState(() { _aiReview = review; });
-      }
-    } catch (e) {
-      setState(() {
-        _aiReview = 'Failed to generate review: $e';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _reviewLoading = false;
-        });
-      }
-    }
-  }
-
-  void _showMissingKeyDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('API Key Required'),
-        content: const Text('To use AI reviews, please add your Gemini API key in settings.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              // Show input dialog directly
-              Future.microtask(() async {
-                final saved = await showGeminiKeyInputDialog(context);
-                if (saved == true && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gemini key saved. Retry AI action.')));
-                }
-              });
-            },
-            child: const Text('Add Key'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void initState() {
     super.initState();
@@ -317,11 +253,11 @@ class _attachcodeState extends State<attachcode> {
         Form(
             child: SingleChildScrollView(
               child: Padding(
-                padding:  EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(16.0),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                     Text(
+                    const Text(
                       "Attach your code...",
                       style: TextStyle(
                         color: Colors.black,
@@ -335,7 +271,7 @@ class _attachcodeState extends State<attachcode> {
                     SizedBox(height: 20),
 
                     DefaultTabController(
-                      length: 3, // Code / Preview / Review
+                      length: 2, // Two tabs: one for code and one for preview
                       child: Column(
                         children: [
                           TabBar(
@@ -346,20 +282,17 @@ class _attachcodeState extends State<attachcode> {
                               Tab(
                                 icon: Icon(Icons.visibility),
                               ),
-                              Tab(
-                                icon: Icon(Icons.reviews),
-                              ),
                             ],
                           ),
                           SizedBox(
-                            height: 260, // accommodate review content
+                            height: 200, // Set height to accommodate both tabs
                             child: TabBarView(
                               children: [
                                 // Code Tab: Displays the code as a TextField
                                 Card(
                                   child: Padding(
 
-                                    padding:  EdgeInsets.all(16.0),
+                                    padding: const EdgeInsets.all(16.0),
                                     child: TextField(
                                       controller: _markdownController, // Use _codeController for TextField
                                       maxLines: null, // Allow multiple lines
@@ -387,7 +320,7 @@ class _attachcodeState extends State<attachcode> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Padding(
-                                          padding:  EdgeInsets.all(16.0),
+                                          padding: const EdgeInsets.all(16.0),
                                           child: MarkdownBody(
                                             data: "```\n$code\n```",
                                             styleSheet: MarkdownStyleSheet(
@@ -409,49 +342,7 @@ class _attachcodeState extends State<attachcode> {
                                       ],
                                     ),
                                   ),
-                                ),
-                                // Review Tab
-                                Card(
-                                  child: Padding(
-                                    padding:  EdgeInsets.all(16.0),
-                                    child: _reviewLoading
-                                        ?  Center(child: CircularProgressIndicator())
-                                        : _aiReview == null
-                                            ? Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                   Text('Ask AI for a code review.'),
-                                                   SizedBox(height: 12),
-                                                  ElevatedButton.icon(
-                                                    onPressed: _generateAIReview,
-                                                    icon:  Icon(Icons.auto_fix_high),
-                                                    label:  Text('Generate Review'),
-                                                  )
-                                                ],
-                                              )
-                                            : SingleChildScrollView(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Row(
-                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                      children: [
-                                                         Text('AI Code Review', style: TextStyle(fontWeight: FontWeight.bold)),
-                                                        IconButton(
-                                                          tooltip: 'Refresh review',
-                                                          onPressed: _generateAIReview,
-                                                          icon:  Icon(Icons.refresh),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                     SizedBox(height: 8),
-                                                    Text(_aiReview!),
-                                                  ],
-                                                ),
-                                              ),
-                                  ),
-                                ),
-                              ],
+                                )],
                             ),
                           ),
                         ],
@@ -473,13 +364,6 @@ class _attachcodeState extends State<attachcode> {
 
                       ),
                     ),
-                     SizedBox(height: 12),
-                    if (!_reviewLoading && code.trim().isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: _generateAIReview,
-                        icon:  Icon(Icons.reviews),
-                        label:  Text('AI Review'),
-                      ),
                   ],
                 ),
               ),

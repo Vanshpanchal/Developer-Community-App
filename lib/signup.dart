@@ -39,12 +39,12 @@ class signup extends StatelessWidget {
         Get.showSnackbar(GetSnackBar(
           title: "User-Creation",
           message: "Success",
-          icon:  Icon(
+          icon: const Icon(
             Icons.cloud_done_sharp,
             color: Colors.white,
           ),
           backgroundColor: Get.context?.theme.colorScheme.secondary ?? Colors.black,
-          duration:  Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ))
       })
           .catchError((e) {
@@ -75,7 +75,7 @@ class signup extends StatelessWidget {
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
         child: Padding(
-          padding:  EdgeInsets.symmetric(horizontal: 20.0),
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -143,7 +143,7 @@ class signup extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10.0),
                   ),
                 ),
-                child: Text('Sign Up',style:  TextStyle(color: Colors.white)),
+                child: Text('Sign Up',style: const TextStyle(color: Colors.white)),
               ),
               SizedBox(height: 20.0),
               TextButton(
