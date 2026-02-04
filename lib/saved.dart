@@ -7,22 +7,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-
+import 'utils/app_theme.dart';
+import 'widgets/modern_widgets.dart';
 
 class saved extends StatefulWidget {
-   saved({super.key});
+  const saved({super.key});
 
   @override
   savedState createState() => savedState();
 }
 
-class savedState extends State<saved> {
+class savedState extends State<saved> with SingleTickerProviderStateMixin {
   final user = FirebaseAuth.instance.currentUser;
   String username = '';
   String imageUrl = '';
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
-  // Sample static data
   var exploreStream = FirebaseFirestore.instance
       .collection('Explore')
       .where('Report', isEqualTo: false)
@@ -30,8 +31,7 @@ class savedState extends State<saved> {
 
   final savedIdsStream = FirebaseFirestore.instance
       .collection('User')
-      .doc(FirebaseAuth
-          .instance.currentUser?.uid) // Replace with the actual document ID
+      .doc(FirebaseAuth.instance.currentUser?.uid)
       .snapshots();
 
   void openbottmsheet() {
@@ -47,11 +47,10 @@ class savedState extends State<saved> {
           .collection('User')
           .doc(user?.uid)
           .get();
-      print(userData);
       if (userData.exists) {
         setState(() {
           username = userData['Username'] ?? 'No name available';
-          imageUrl = userData['profilePicture'] ?? null;
+          imageUrl = userData['profilePicture'] ?? '';
         });
       } else {
         setState(() {
@@ -61,78 +60,245 @@ class savedState extends State<saved> {
     }
   }
 
-
   @override
   void initState() {
     super.initState();
     fetchuser();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-        appBar: AppBar(
-          title: Text('DevSphere'),
-          automaticallyImplyLeading: false,
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            children: [
+              // Modern Header
+              _buildHeader(theme),
 
-        ),
-        body: StreamBuilder(
-            stream: savedIdsStream,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Text('Error');
-              }
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return  Center(child: CircularProgressIndicator());
-              }
+              // Content
+              Expanded(
+                child: StreamBuilder(
+                  stream: savedIdsStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return _buildErrorState('Something went wrong');
+                    }
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return _buildLoadingState();
+                    }
 
-              if (!snapshot.hasData || !snapshot.data!.exists) {
-                return  Center(child: Text('No saved IDs available'));
-              }
-              List<String> documentIds =
-                  List.from(snapshot.data!['Saved'] ?? []);
-              return StreamBuilder(
-                stream: exploreStream,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
-                  }
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return Center(child: Text('No Post found.'));
-                  }
+                    if (!snapshot.hasData || !snapshot.data!.exists) {
+                      return _buildEmptyState();
+                    }
 
-                  var docs = snapshot.data!.docs
-                      .where((doc) => documentIds.contains(doc.id))
-                      .toList();
-                  if (docs.length == 0){
-                    return Center(child: Text('No saved IDs available'));
-                  }else {
-                    return ListView.builder(
-                      itemCount: docs.length,
-                      itemBuilder: (context, index) {
-                        final data = docs[index].data();
-                        return QuestionCard(
-                          title: data['Title'] ?? '',
-                          description: data['Description'] ?? '',
-                          tags: List<String>.from(data['Tags'] ?? []),
-                          votes: data['likescount'] ?? 0,
-                          answers: data['answers'] ?? 0,
-                          timestamp:
-                          (data['Timestamp'] as Timestamp?)?.toDate() ??
-                              DateTime.now(),
-                          code: data['code'] ?? '',
-                          uid: data['Uid'] ?? '',
-                          docid: data['docId'] ?? '',
+                    List<String> documentIds =
+                        List.from(snapshot.data!['Saved'] ?? []);
+
+                    if (documentIds.isEmpty) {
+                      return _buildEmptyState();
+                    }
+
+                    return StreamBuilder(
+                      stream: exploreStream,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return _buildLoadingState();
+                        }
+                        if (snapshot.hasError) {
+                          return _buildErrorState(snapshot.error.toString());
+                        }
+                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                          return _buildEmptyState();
+                        }
+
+                        var docs = snapshot.data!.docs
+                            .where((doc) => documentIds.contains(doc.id))
+                            .toList();
+
+                        if (docs.isEmpty) {
+                          return _buildEmptyState();
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          itemCount: docs.length,
+                          itemBuilder: (context, index) {
+                            final data = docs[index].data();
+                            return TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0.0, end: 1.0),
+                              duration:
+                                  Duration(milliseconds: 300 + (index * 100)),
+                              builder: (context, value, child) {
+                                return Transform.translate(
+                                  offset: Offset(0, 20 * (1 - value)),
+                                  child: Opacity(opacity: value, child: child),
+                                );
+                              },
+                              child: QuestionCard(
+                                title: data['Title'] ?? '',
+                                description: data['Description'] ?? '',
+                                tags: List<String>.from(data['Tags'] ?? []),
+                                votes: data['likescount'] ?? 0,
+                                answers: data['answers'] ?? 0,
+                                timestamp: (data['Timestamp'] as Timestamp?)
+                                        ?.toDate() ??
+                                    DateTime.now(),
+                                code: data['code'] ?? '',
+                                uid: data['Uid'] ?? '',
+                                docid: data['docId'] ?? '',
+                              ),
+                            );
+                          },
                         );
                       },
                     );
-                  }
-                },
-              );
-            }));
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              gradient: AppTheme.primaryGradient,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.bookmark_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Saved Posts',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              Text(
+                'Your bookmarked content',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ListShimmer(itemCount: 4),
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline_rounded, size: 64, color: Colors.red[300]),
+          const SizedBox(height: 16),
+          Text(
+            'Something went wrong',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[800],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            error,
+            style: TextStyle(color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.bookmark_outline_rounded,
+              size: 64,
+              color: AppTheme.primaryColor,
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'No saved posts',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Bookmark posts to see them here',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -147,7 +313,7 @@ class QuestionCard extends StatefulWidget {
   final String docid;
   final DateTime timestamp;
 
-   QuestionCard({
+  QuestionCard({
     super.key,
     required this.title,
     required this.code,
@@ -286,7 +452,7 @@ class _QuestionCardState extends State<QuestionCard> {
           .doc(widget.uid)
           .get();
       if (userDoc.exists) {
-        return userDoc['XP'];
+        return userDoc['XP']?.toString();
       } else {
         return '100';
       }
@@ -315,6 +481,7 @@ class _QuestionCardState extends State<QuestionCard> {
       duration: Duration(seconds: 2),
     ));
   }
+
   save(itemId) async {
     var usercredential = FirebaseAuth.instance.currentUser;
     await FirebaseFirestore.instance
@@ -323,8 +490,6 @@ class _QuestionCardState extends State<QuestionCard> {
         .update({
       'Saved': FieldValue.arrayUnion([itemId])
     });
-
-
   }
 
   @override
@@ -333,7 +498,7 @@ class _QuestionCardState extends State<QuestionCard> {
     String? code;
     return Card(
         child: Padding(
-      padding:  EdgeInsets.all(16.0),
+      padding: EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -345,12 +510,14 @@ class _QuestionCardState extends State<QuestionCard> {
                   future: _fetchUserProfileImage(widget.uid),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return  CircleAvatar(
+                      return CircleAvatar(
                         backgroundColor: Colors.grey,
                       );
-                    } else if (snapshot.hasError) {
+                    } else if (snapshot.hasError ||
+                        snapshot.data == null ||
+                        snapshot.data!.isEmpty) {
                       print(snapshot.error);
-                      return  CircleAvatar(
+                      return CircleAvatar(
                         foregroundImage: NetworkImage(
                           'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                         ),
@@ -361,21 +528,21 @@ class _QuestionCardState extends State<QuestionCard> {
                       );
                     }
                   }),
-               SizedBox(width: 8), // Space between avatar and text
+              SizedBox(width: 8), // Space between avatar and text
               // Fetch and display the user's name
               // if (!isFetchingUserName)
               FutureBuilder<String?>(
                 future: _userNameFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return  Text('Loading...');
+                    return Text('Loading...');
                   } else if (snapshot.hasError) {
-                    return  Text('Error fetching user name');
+                    return Text('Error fetching user name');
                   } else if (snapshot.hasData) {
                     String userName = "~ ${snapshot.data}";
                     return Text(userName);
                   } else {
-                    return  Text('User not found');
+                    return Text('User not found');
                   }
                 },
               ),
@@ -384,14 +551,14 @@ class _QuestionCardState extends State<QuestionCard> {
                 future: _fetchUserXP(widget.uid),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return  Text('XP: Loading...');
+                    return Text('XP: Loading...');
                   } else if (snapshot.hasError) {
-                    return  Text('Error fetching XP');
+                    return Text('Error fetching XP');
                   } else if (snapshot.hasData) {
                     Object xp = snapshot.data ?? 0;
                     return Container(
-                      padding:  EdgeInsets.symmetric(
-                          horizontal: 15, vertical: 8),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 15, vertical: 8),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -416,7 +583,7 @@ class _QuestionCardState extends State<QuestionCard> {
                         children: [
                           Text(
                             'XP: $xp',
-                            style:  TextStyle(
+                            style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
@@ -426,18 +593,18 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                     );
                   } else {
-                    return  Text('XP: 0');
+                    return Text('XP: 0');
                   }
                 },
               ),
             ],
           ),
-           SizedBox(height: 16), // Space between user info and title
+          SizedBox(height: 16), // Space between user info and title
           Text(
             widget.title,
             style: theme.textTheme.titleLarge,
           ),
-           SizedBox(height: 8),
+          SizedBox(height: 8),
           RichText(
             text: TextSpan(
               style: theme.textTheme.bodyMedium,
@@ -447,7 +614,7 @@ class _QuestionCardState extends State<QuestionCard> {
             textAlign: TextAlign.justify,
             overflow: TextOverflow.ellipsis,
           ),
-           SizedBox(height: 8),
+          SizedBox(height: 8),
           // code = widget.code!!
           if (widget.code != null && widget.code!.isNotEmpty)
             Container(
@@ -455,15 +622,15 @@ class _QuestionCardState extends State<QuestionCard> {
                 borderRadius: BorderRadius.circular(8),
               ),
               width: double.infinity,
-              margin:  EdgeInsets.symmetric(vertical: 5),
+              margin: EdgeInsets.symmetric(vertical: 5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Padding(
                     // Background color for the body
-                    padding:  EdgeInsets.all(0.0),
+                    padding: EdgeInsets.all(0.0),
                     child: Padding(
-                      padding:  EdgeInsets.all(0.0),
+                      padding: EdgeInsets.all(0.0),
                       child: GestureDetector(
                         onLongPress: () => {
                           Clipboard.setData(ClipboardData(text: widget.code!)),
@@ -516,7 +683,7 @@ class _QuestionCardState extends State<QuestionCard> {
                     ))
                 .toList(),
           ),
-           Divider(height: 24),
+          Divider(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -537,9 +704,9 @@ class _QuestionCardState extends State<QuestionCard> {
                       ),
                       onPressed: _handleLike,
                     ),
-                     SizedBox(width: 4),
+                    SizedBox(width: 4),
                     Text('${widget.votes}', style: theme.textTheme.labelLarge),
-                     SizedBox(width: 24),
+                    SizedBox(width: 24),
                     IconButton(
                       icon: Icon(Icons.bookmark),
                       onPressed: () {

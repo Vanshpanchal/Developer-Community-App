@@ -5,17 +5,13 @@ import 'package:developer_community_app/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_rx/src/rx_types/rx_types.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
-import 'package:get/get_state_manager/src/simple/get_controllers.dart';
 
 import 'chat.dart';
 import 'saved.dart';
-
+import 'utils/app_theme.dart';
 
 class home extends StatefulWidget {
-   home({super.key});
+  const home({super.key});
 
   @override
   State<home> createState() => _homepageState();
@@ -30,10 +26,7 @@ class _homepageState extends State<home> {
   }
 
   void determineUserRole() {
-    final adminEmails = [
-      'acc.studies.123@gmail.com',
-      'superadmin@example.com'
-    ]; // Add your admin emails here
+    final adminEmails = ['acc.studies.123@gmail.com', 'superadmin@example.com'];
 
     if (user != null && adminEmails.contains(user!.email)) {
       setState(() {
@@ -50,21 +43,33 @@ class _homepageState extends State<home> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final controller = Get.put(navigatorcontroller(userRole: userRole));
-    return Scaffold(
 
+    return Scaffold(
       body: Obx(() => controller.screen[controller.selectedindex.value]),
-      bottomNavigationBar: Obx(() => NavigationBar(
-        selectedIndex: controller.selectedindex.value,
-        onDestinationSelected: (index) =>
-        controller.selectedindex.value = index,
-        destinations: controller.navigationDestinations,
-      )),
+      bottomNavigationBar: Obx(() => Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: NavigationBar(
+              selectedIndex: controller.selectedindex.value,
+              onDestinationSelected: (index) =>
+                  controller.selectedindex.value = index,
+              destinations: controller.navigationDestinations,
+              height: 70,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            ),
+          )),
     );
   }
 }
-
 
 class navigatorcontroller extends GetxController {
   final Rx<int> selectedindex = 0.obs;
@@ -77,93 +82,48 @@ class navigatorcontroller extends GetxController {
       return [
         explore(),
         ongoing_discussion(),
-        // Container(color: Colors.black,),
-        // Container(color: Colors.brown,),
-
-        // ChatScreen1(),
-         saved(),
-        // ChatScreen(),
+        saved(),
         profile(),
-        //  mypost(),
-        //  profile(),
-        //  reported()
-        // Add more admin-specific screens here
       ];
     } else {
       return [
         explore(),
         ongoing_discussion(),
-        // Container(color: Colors.grey,),
-        // Container(color: Colors.grey,),
-
-        // ChatScreen1(),
-         saved(),
-        // ChatScreen(),
+        saved(),
         profile(),
-        // ---
-        // explore(),
-        // ongoing_discussion(),
-        // // ChatScreen(),
-        // // ChatScreen1(),
-        //  saved(),
-        // // ChatScreen(),
-        // profile(),
-        // //  saved(),
-        // //  mypost(),
-        // //  profile(),
       ];
     }
   }
 
   List<NavigationDestination> get navigationDestinations {
-    if (userRole == 'admin') {
-      return  [
-        NavigationDestination(
-            icon: Icon(Icons.looks, color: Colors.black),
-            label: "Explore"),
-        NavigationDestination(
-            icon: Icon(Icons.forum_rounded, color: Colors.black),
-            label: "Saved"),
-        NavigationDestination(
-            icon: Icon(Icons.book, color: Colors.black),
-            label: "Saved"),
-        // NavigationDestination(
-        //     icon: Icon(Icons.chat_rounded, color: Colors.black),
-        //     label: "Chat"),
-        NavigationDestination(
-            icon: Icon(Icons.person_outline, color: Colors.black),
-            label: "Profile"),
-        NavigationDestination(
-            icon: Icon(Icons.person, color: Colors.black),
-            label: "Reported"),
-
-        // Add more admin-specific navigation destinations here
-      ];
-    } else {
-      return  [
-        NavigationDestination(
-            icon: Icon(Icons.looks_rounded, color: Colors.black),
-            label: "Explore"),
-        NavigationDestination(
-            icon: Icon(Icons.forum_rounded, color: Colors.black),
-            label: "Discussion"),
-        NavigationDestination(
-            icon: Icon(Icons.book, color: Colors.black),
-            label: "Saved"),
-        // NavigationDestination(
-        //     icon: Icon(Icons.chat_rounded, color: Colors.black),
-        //     label: "Chat"),
-        NavigationDestination(
-            icon: Icon(Icons.person, color: Colors.black),
-            label: "Profile"),
-      ];
-    }
+    return const [
+      NavigationDestination(
+        icon: Icon(Icons.explore_outlined),
+        selectedIcon: Icon(Icons.explore_rounded),
+        label: "Explore",
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.forum_outlined),
+        selectedIcon: Icon(Icons.forum_rounded),
+        label: "Discuss",
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.bookmark_outline_rounded),
+        selectedIcon: Icon(Icons.bookmark_rounded),
+        label: "Saved",
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.person_outline_rounded),
+        selectedIcon: Icon(Icons.person_rounded),
+        label: "Profile",
+      ),
+    ];
   }
 
   String getAppBarTitle() {
     switch (selectedindex.value) {
       case 0:
-        return 'saved';
+        return 'Explore';
       case 1:
         return 'Discussion';
       case 2:
@@ -171,7 +131,7 @@ class navigatorcontroller extends GetxController {
       case 3:
         return 'Profile';
       default:
-        return 'Reported';
+        return 'DevSphere';
     }
   }
 }

@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'detail_discussion.dart';
+import 'widgets/modern_widgets.dart';
 
 // if (snapshot.connectionState == ConnectionState.waiting) {
 // return Center(child: CircularProgressIndicator());
@@ -28,7 +29,7 @@ import 'detail_discussion.dart';
 // );
 
 class saved_discussion extends StatefulWidget {
-   saved_discussion({super.key});
+  saved_discussion({super.key});
 
   @override
   State<saved_discussion> createState() => _saved_discussionState();
@@ -48,7 +49,7 @@ class _saved_discussionState extends State<saved_discussion> {
   final savedIdsStream = FirebaseFirestore.instance
       .collection('User')
       .doc(FirebaseAuth
-      .instance.currentUser?.uid) // Replace with the actual document ID
+          .instance.currentUser?.uid) // Replace with the actual document ID
       .snapshots();
   all() {
     setState(() {
@@ -114,61 +115,69 @@ class _saved_discussionState extends State<saved_discussion> {
           title: Text('Developer Community'),
           automaticallyImplyLeading: false,
         ),
-        body:StreamBuilder(
-              stream: savedIdsStream,
+        body: StreamBuilder(
+          stream: savedIdsStream,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Text('Error');
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: ListShimmer(itemCount: 4),
+              );
+            }
+
+            if (!snapshot.hasData || !snapshot.data!.exists) {
+              return Center(child: Text('No saved IDs available'));
+            }
+            // final questions = snapshot.data!.docs;
+            List<String> documentIds =
+                List.from(snapshot.data!['SavedDiscussion'] ?? []);
+            return StreamBuilder(
+              stream: discussionStream,
               builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Error');
-                }
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return  Center(child: CircularProgressIndicator());
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: ListShimmer(itemCount: 4),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(child: Text('No Post found.'));
                 }
 
-                if (!snapshot.hasData || !snapshot.data!.exists) {
-                  return  Center(child: Text('No saved IDs available'));
+                var docs = snapshot.data!.docs
+                    .where((doc) => documentIds.contains(doc.id))
+                    .toList();
+                if (docs.length == 0) {
+                  return Center(child: Text('No saved IDs available'));
+                } else {
+                  return ListView.builder(
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data();
+                      return displayCard(
+                        title: data['Title'] ?? '',
+                        description: data['Description'] ?? '',
+                        tags: List<String>.from(data['Tags'] ?? []),
+                        timestamp:
+                            (data['Timestamp'] as Timestamp?)?.toDate() ??
+                                DateTime.now(),
+                        uid: data['Uid'] ?? '',
+                        docid: data['docId'] ?? '',
+                        replies: [],
+                      );
+                    },
+                  );
                 }
-                // final questions = snapshot.data!.docs;
-                List<String> documentIds = List.from(snapshot.data!['SavedDiscussion'] ?? []);
-                return StreamBuilder(
-                  stream: discussionStream,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}'));
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return Center(child: Text('No Post found.'));
-                    }
-
-                    var docs = snapshot.data!.docs
-                        .where((doc) => documentIds.contains(doc.id))
-                        .toList();
-                    if (docs.length == 0){
-                      return Center(child: Text('No saved IDs available'));
-                    }else {
-                      return ListView.builder(
-                          itemCount: docs.length,
-                          itemBuilder: (context, index) {
-                        final data = docs[index].data();
-                        return displayCard(
-                          title: data['Title'] ?? '',
-                          description: data['Description'] ?? '',
-                          tags: List<String>.from(data['Tags'] ?? []),
-                          timestamp: (data['Timestamp'] as Timestamp?)?.toDate() ??
-                              DateTime.now(),
-                          uid: data['Uid'] ?? '',
-                          docid: data['docId'] ?? '',
-                          replies: [],
-                        );
-                      },
-                      );}
-                  },
-                );
-            },
-          ));
-
+              },
+            );
+          },
+        ));
   }
 }
 
@@ -181,7 +190,7 @@ class displayCard extends StatefulWidget {
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
 
-   displayCard({
+  displayCard({
     super.key,
     required this.title,
     required this.description,
@@ -270,7 +279,7 @@ class displayCardState extends State<displayCard> {
           .doc(widget.uid)
           .get();
       if (userDoc.exists) {
-        return userDoc['XP'];
+        return userDoc['XP']?.toString();
       } else {
         return '100';
       }
@@ -279,6 +288,7 @@ class displayCardState extends State<displayCard> {
       return 'Error';
     }
   }
+
   removesaved(itemId) async {
     var usercredential = FirebaseAuth.instance.currentUser;
     await FirebaseFirestore.instance
@@ -298,6 +308,7 @@ class displayCardState extends State<displayCard> {
       duration: Duration(seconds: 2),
     ));
   }
+
   save(itemId) async {
     var usercredential = FirebaseAuth.instance.currentUser;
     await FirebaseFirestore.instance
@@ -326,10 +337,13 @@ class displayCardState extends State<displayCard> {
         child: InkWell(
             onTap: () {
               // Logic to handle card click, for example, navigating to a discussion detail screen
-              Get.to(detail_discussion(docId: widget.docid,creatorId: widget.uid,));
+              Get.to(detail_discussion(
+                docId: widget.docid,
+                creatorId: widget.uid,
+              ));
             },
             child: Padding(
-              padding:  EdgeInsets.all(16.0),
+              padding: EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -342,12 +356,14 @@ class displayCardState extends State<displayCard> {
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
-                              return  CircleAvatar(
+                              return CircleAvatar(
                                 backgroundColor: Colors.grey,
                               );
-                            } else if (snapshot.hasError) {
+                            } else if (snapshot.hasError ||
+                                snapshot.data == null ||
+                                snapshot.data!.isEmpty) {
                               print(snapshot.error);
-                              return  CircleAvatar(
+                              return CircleAvatar(
                                 foregroundImage: NetworkImage(
                                   'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                 ),
@@ -358,7 +374,7 @@ class displayCardState extends State<displayCard> {
                               );
                             }
                           }),
-                       SizedBox(width: 8), // Space between avatar and text
+                      SizedBox(width: 8), // Space between avatar and text
                       // Fetch and display the user's name
                       // if (!isFetchingUserName)
                       FutureBuilder<String?>(
@@ -366,14 +382,14 @@ class displayCardState extends State<displayCard> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return  Text('Loading...');
+                            return Text('Loading...');
                           } else if (snapshot.hasError) {
-                            return  Text('Error fetching user name');
+                            return Text('Error fetching user name');
                           } else if (snapshot.hasData) {
                             String userName = "~ ${snapshot.data}";
                             return Text(userName);
                           } else {
-                            return  Text('User not found');
+                            return Text('User not found');
                           }
                         },
                       ),
@@ -383,13 +399,13 @@ class displayCardState extends State<displayCard> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return  Text('XP: Loading...');
+                            return Text('XP: Loading...');
                           } else if (snapshot.hasError) {
-                            return  Text('Error fetching XP');
+                            return Text('Error fetching XP');
                           } else if (snapshot.hasData) {
                             Object xp = snapshot.data ?? 0;
                             return Container(
-                              padding:  EdgeInsets.symmetric(
+                              padding: EdgeInsets.symmetric(
                                   horizontal: 15, vertical: 8),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
@@ -415,7 +431,7 @@ class displayCardState extends State<displayCard> {
                                 children: [
                                   Text(
                                     'XP: $xp',
-                                    style:  TextStyle(
+                                    style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
@@ -425,19 +441,19 @@ class displayCardState extends State<displayCard> {
                               ),
                             );
                           } else {
-                            return  Text('XP: 0');
+                            return Text('XP: 0');
                           }
                         },
                       ),
                     ],
                   ),
-                   SizedBox(height: 16),
+                  SizedBox(height: 16),
                   // Space between user info and title
                   Text(
                     widget.title,
                     style: theme.textTheme.titleLarge,
                   ),
-                   SizedBox(height: 8),
+                  SizedBox(height: 8),
                   RichText(
                     text: TextSpan(
                       style: theme.textTheme.bodyMedium,
@@ -447,22 +463,22 @@ class displayCardState extends State<displayCard> {
                     textAlign: TextAlign.justify,
                     overflow: TextOverflow.ellipsis,
                   ),
-                   SizedBox(height: 8),
+                  SizedBox(height: 8),
                   // code = widget.code!!
                   Wrap(
                     spacing: 5,
                     children: widget.tags
                         .map((tag) => Chip(
-                      label: Text(tag),
-                      backgroundColor:
-                      theme.colorScheme.secondaryContainer,
-                      labelStyle: TextStyle(
-                          color:
-                          theme.colorScheme.onSecondaryContainer),
-                    ))
+                              label: Text(tag),
+                              backgroundColor:
+                                  theme.colorScheme.secondaryContainer,
+                              labelStyle: TextStyle(
+                                  color:
+                                      theme.colorScheme.onSecondaryContainer),
+                            ))
                         .toList(),
                   ),
-                   Divider(height: 24),
+                  Divider(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -478,10 +494,10 @@ class displayCardState extends State<displayCard> {
                               icon: Icon(Icons.comment_bank_rounded),
                               onPressed: () => {},
                             ),
-                             SizedBox(width: 4),
+                            SizedBox(width: 4),
                             Text('${_repliesCount}',
                                 style: theme.textTheme.labelLarge),
-                             SizedBox(width: 24),
+                            SizedBox(width: 24),
                             IconButton(
                               icon: Icon(Icons.bookmark_add_outlined),
                               onPressed: () {

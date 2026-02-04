@@ -10,17 +10,20 @@ import 'messagemodel.dart';
 import 'ai_service.dart';
 import 'api_key_manager.dart';
 import 'gemini_key_dialog.dart';
+import 'utils/app_theme.dart';
+import 'widgets/modern_widgets.dart';
 
 class CopyOverlay extends StatefulWidget {
   final BuildContext context;
 
-   CopyOverlay({super.key, required this.context});
+  CopyOverlay({super.key, required this.context});
 
   @override
   State<CopyOverlay> createState() => _CopyOverlayState();
 }
 
-class _CopyOverlayState extends State<CopyOverlay> with SingleTickerProviderStateMixin {
+class _CopyOverlayState extends State<CopyOverlay>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
 
@@ -28,7 +31,7 @@ class _CopyOverlayState extends State<CopyOverlay> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration:  Duration(milliseconds: 1500),
+      duration: Duration(milliseconds: 1500),
       vsync: this,
     );
     _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -55,7 +58,7 @@ class _CopyOverlayState extends State<CopyOverlay> with SingleTickerProviderStat
       opacity: _animation,
       child: AlertDialog(
         backgroundColor: Colors.black87,
-        content:  Row(
+        content: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.check_circle_outline, color: Colors.white),
@@ -85,7 +88,8 @@ class _ChatScreenState extends State<ChatScreen1> {
   bool _isLoading = false;
   bool _isTyping = false;
   String? _apiKey; // dynamically loaded user key
-  static const String _apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  static const String _apiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
   @override
   void initState() {
@@ -95,7 +99,6 @@ class _ChatScreenState extends State<ChatScreen1> {
       _scrollToBottom();
     });
   }
-
 
   Future<bool> _ensureApiKey() async {
     if (_apiKey != null && _apiKey!.trim().isNotEmpty) return true;
@@ -117,7 +120,9 @@ class _ChatScreenState extends State<ChatScreen1> {
         body: jsonEncode({
           'contents': [
             {
-              'parts': [ {'text': prompt} ]
+              'parts': [
+                {'text': prompt}
+              ]
             }
           ]
         }),
@@ -127,7 +132,9 @@ class _ChatScreenState extends State<ChatScreen1> {
         final candidates = data['candidates'];
         if (candidates is List && candidates.isNotEmpty) {
           final content = candidates[0]['content'];
-          if (content is Map && content['parts'] is List && content['parts'].isNotEmpty) {
+          if (content is Map &&
+              content['parts'] is List &&
+              content['parts'].isNotEmpty) {
             final text = content['parts'][0]['text'];
             if (text is String) return text;
           }
@@ -137,8 +144,10 @@ class _ChatScreenState extends State<ChatScreen1> {
       if (response.statusCode == 401 || response.statusCode == 403) {
         return 'Authentication error (${response.statusCode}). Check your API key.';
       }
-      if (response.statusCode == 429) return 'Rate limit reached. Please retry later.';
-      if (response.statusCode >= 500) return 'Service temporarily unavailable (${response.statusCode}).';
+      if (response.statusCode == 429)
+        return 'Rate limit reached. Please retry later.';
+      if (response.statusCode >= 500)
+        return 'Service temporarily unavailable (${response.statusCode}).';
       return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
     } catch (e) {
       return 'Error: $e';
@@ -148,9 +157,9 @@ class _ChatScreenState extends State<ChatScreen1> {
   void _showCopiedSnackBar() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content:  Text('Message copied to clipboard'),
+        content: Text('Message copied to clipboard'),
         behavior: SnackBarBehavior.floating,
-        duration:  Duration(seconds: 1),
+        duration: Duration(seconds: 1),
         action: SnackBarAction(
           label: 'Dismiss',
           onPressed: () {
@@ -164,7 +173,7 @@ class _ChatScreenState extends State<ChatScreen1> {
   Future<void> _sendMessage() async {
     if (_controller.text.trim().isEmpty) return;
 
-  final userMessage = Message(text: _controller.text, isUser: true);
+    final userMessage = Message(text: _controller.text, isUser: true);
     await _messageBox.add(userMessage);
     setState(() {
       _isLoading = true;
@@ -173,7 +182,7 @@ class _ChatScreenState extends State<ChatScreen1> {
     _controller.clear();
     _scrollToBottom();
 
-  final botResponse = await getGeminiResponse(userMessage.text);
+    final botResponse = await getGeminiResponse(userMessage.text);
     final botMessage = Message(text: botResponse, isUser: false);
     await _messageBox.add(botMessage);
 
@@ -189,7 +198,7 @@ class _ChatScreenState extends State<ChatScreen1> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration:  Duration(milliseconds: 300),
+          duration: Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
       }
@@ -198,19 +207,17 @@ class _ChatScreenState extends State<ChatScreen1> {
 
   void _scrollBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed( Duration(milliseconds: 500), () {
+      Future.delayed(Duration(milliseconds: 500), () {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,
-            duration:  Duration(milliseconds: 100),
+            duration: Duration(milliseconds: 100),
             curve: Curves.easeOut,
           );
         }
       });
     });
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -224,23 +231,23 @@ class _ChatScreenState extends State<ChatScreen1> {
             end: Alignment.bottomRight,
             colors: isDark
                 ? [
-               Color(0xFF1A1A1A),
-               Color(0xFF2D2D2D),
-            ]
+                    Color(0xFF1A1A1A),
+                    Color(0xFF2D2D2D),
+                  ]
                 : [
-               Color(0xFFF8F9FA),
-               Color(0xFFE9ECEF),
-            ],
+                    Color(0xFFF8F9FA),
+                    Color(0xFFE9ECEF),
+                  ],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
               Container(
-                padding:  EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface.withOpacity(0.8),
-                  borderRadius:  BorderRadius.only(
+                  borderRadius: BorderRadius.only(
                     bottomLeft: Radius.circular(20),
                     bottomRight: Radius.circular(20),
                   ),
@@ -248,7 +255,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.05),
                       blurRadius: 10,
-                      offset:  Offset(0, 2),
+                      offset: Offset(0, 2),
                     ),
                   ],
                 ),
@@ -256,9 +263,9 @@ class _ChatScreenState extends State<ChatScreen1> {
                   children: [
                     CircleAvatar(
                       backgroundColor: Theme.of(context).colorScheme.primary,
-                      child:  Icon(Icons.smart_toy, color: Colors.white),
+                      child: Icon(Icons.smart_toy, color: Colors.white),
                     ),
-                     SizedBox(width: 12),
+                    SizedBox(width: 12),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -269,16 +276,18 @@ class _ChatScreenState extends State<ChatScreen1> {
                         if (_isTyping)
                           Text(
                             'typing...',
-                            style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall!
+                                .copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
                           ),
                       ],
                     ),
                   ],
                 ),
               ),
-
               Expanded(
                 child: ValueListenableBuilder(
                   valueListenable: _messageBox.listenable(),
@@ -289,22 +298,32 @@ class _ChatScreenState extends State<ChatScreen1> {
                     });
                     return ListView.builder(
                       controller: _scrollController,
-                      padding:  EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16),
                       itemCount: messages.length,
                       itemBuilder: (context, index) {
                         final message = messages[index];
                         final showTimestamp = index == 0 ||
-                            messages[index].timestamp.difference(messages[index - 1].timestamp).inMinutes > 5;
+                            messages[index]
+                                    .timestamp
+                                    .difference(messages[index - 1].timestamp)
+                                    .inMinutes >
+                                5;
                         return Column(
                           children: [
                             if (showTimestamp)
                               Padding(
-                                padding:  EdgeInsets.symmetric(vertical: 8),
+                                padding: EdgeInsets.symmetric(vertical: 8),
                                 child: Text(
-                                  DateFormat('MMM d, h:mm a').format(message.timestamp),
-                                  style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
+                                  DateFormat('MMM d, h:mm a')
+                                      .format(message.timestamp),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall!
+                                      .copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
                                 ),
                               ),
                             MessageBubble(
@@ -318,14 +337,12 @@ class _ChatScreenState extends State<ChatScreen1> {
                   },
                 ),
               ),
-
-
               if (_isLoading)
                 Padding(
-                  padding:  EdgeInsets.all(8.0),
+                  padding: EdgeInsets.all(8.0),
                   child: Row(
                     children: [
-                       SizedBox(width: 16),
+                      SizedBox(width: 16),
                       SizedBox(
                         width: 20,
                         height: 20,
@@ -334,7 +351,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
-                       SizedBox(width: 8),
+                      SizedBox(width: 8),
                       Text(
                         'Thinking...',
                         style: Theme.of(context).textTheme.bodySmall,
@@ -342,12 +359,11 @@ class _ChatScreenState extends State<ChatScreen1> {
                     ],
                   ),
                 ),
-
               Container(
-                padding:  EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface.withOpacity(0.8),
-                  borderRadius:  BorderRadius.only(
+                  borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
                   ),
@@ -355,7 +371,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.05),
                       blurRadius: 10,
-                      offset:  Offset(0, -2),
+                      offset: Offset(0, -2),
                     ),
                   ],
                 ),
@@ -367,7 +383,10 @@ class _ChatScreenState extends State<ChatScreen1> {
                           color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(24),
                           border: Border.all(
-                            color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outline
+                                .withOpacity(0.2),
                           ),
                         ),
                         child: TextField(
@@ -378,7 +397,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                               borderRadius: BorderRadius.circular(24),
                               borderSide: BorderSide.none,
                             ),
-                            contentPadding:  EdgeInsets.symmetric(
+                            contentPadding: EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 12,
                             ),
@@ -389,7 +408,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                         ),
                       ),
                     ),
-                     SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -405,7 +424,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(24),
                           onTap: _sendMessage,
-                          child:  Padding(
+                          child: Padding(
                             padding: EdgeInsets.all(12),
                             child: Icon(
                               Icons.send_rounded,
@@ -437,7 +456,7 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final VoidCallback onCopy;
 
-   MessageBubble({
+  MessageBubble({
     super.key,
     required this.message,
     required this.onCopy,
@@ -461,52 +480,52 @@ class MessageBubble extends StatelessWidget {
             CircleAvatar(
               radius: 16,
               backgroundColor: Theme.of(context).colorScheme.primary,
-              child:  Icon(Icons.smart_toy, size: 18, color: Colors.white),
+              child: Icon(Icons.smart_toy, size: 18, color: Colors.white),
             ),
-             SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
           Flexible(
             child: GestureDetector(
-              onLongPress: !message.isUser ? () => _copyToClipboard(context) : null,
+              onLongPress:
+                  !message.isUser ? () => _copyToClipboard(context) : null,
               child: Container(
-
-                margin:  EdgeInsets.symmetric(vertical: 4),
-                padding:  EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                margin: EdgeInsets.symmetric(vertical: 4),
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 decoration: BoxDecoration(
                   color: message.isUser
-                      ? Theme.of(context).colorScheme.primary
+                      ? AppTheme.primaryColor
                       : Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(20).copyWith(
-                    bottomLeft: message.isUser ? null :  Radius.circular(0),
-                    bottomRight: message.isUser ?  Radius.circular(0) : null,
+                    bottomLeft: message.isUser ? null : Radius.circular(0),
+                    bottomRight: message.isUser ? Radius.circular(0) : null,
                   ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.05),
                       blurRadius: 5,
-                      offset:  Offset(0, 2),
+                      offset: Offset(0, 2),
                     ),
                   ],
                 ),
                 child: MarkdownBody(
                   data: message.text,
-                  styleSheet: MarkdownStyleSheet(
-                    p: Theme.of(context).textTheme.bodyLarge!.copyWith(
-                      color: message.isUser
-                          ? Colors.white
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
+                  styleSheet: message.isUser
+                      ? MarkdownStyleSheet(
+                          p: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                                color: Colors.white,
+                              ),
+                        )
+                      : AppMarkdownStyles.getCodeStyle(context),
                 ),
               ),
             ),
           ),
           if (message.isUser) ...[
-             SizedBox(width: 8),
+            SizedBox(width: 8),
             CircleAvatar(
               radius: 16,
-              backgroundColor: Theme.of(context).colorScheme.secondary,
-              child:  Icon(Icons.person, size: 18, color: Colors.white),
+              backgroundColor: AppTheme.secondaryColor,
+              child: Icon(Icons.person, size: 18, color: Colors.white),
             ),
           ],
         ],

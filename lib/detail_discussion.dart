@@ -9,15 +9,16 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter/services.dart';
+import 'services/gamification_service.dart';
+import 'models/gamification_models.dart';
+import 'utils/app_theme.dart';
+import 'widgets/modern_widgets.dart';
 
 class detail_discussion extends StatefulWidget {
   final String docId;
   final String creatorId;
 
-   detail_discussion(
-      {Key? key, required this.docId, required this.creatorId});
+  detail_discussion({Key? key, required this.docId, required this.creatorId});
 
   @override
   State<detail_discussion> createState() => _detail_discussionState();
@@ -29,11 +30,13 @@ class _detail_discussionState extends State<detail_discussion> {
   final user = FirebaseAuth.instance.currentUser;
   String? _threadSummary;
   bool _summaryLoading = false;
+  final _gamificationService = GamificationService();
+
   Future<void> updateXP2(String uid, int points) async {
     try {
       // Fetch the current XP value as a String
       final userDoc =
-      await FirebaseFirestore.instance.collection('User').doc(uid).get();
+          await FirebaseFirestore.instance.collection('User').doc(uid).get();
 
       if (userDoc.exists) {
         // Get the current XP as a String
@@ -59,12 +62,10 @@ class _detail_discussionState extends State<detail_discussion> {
 
   Future<String?> _fetchUserXP(String uid) async {
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await FirebaseFirestore.instance.collection('User').doc(uid).get();
       if (userDoc.exists) {
-        return userDoc['XP'];
+        return userDoc['XP']?.toString();
       } else {
         return '100';
       }
@@ -73,12 +74,11 @@ class _detail_discussionState extends State<detail_discussion> {
       return 'Error';
     }
   }
+
   Future<String?> _fetchUserProfileImage(String uid) async {
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(uid)
-          .get();
+      DocumentSnapshot userDoc =
+          await FirebaseFirestore.instance.collection('User').doc(uid).get();
       if (userDoc.exists) {
         return userDoc['profilePicture'];
       } else {
@@ -89,6 +89,7 @@ class _detail_discussionState extends State<detail_discussion> {
       return 'Error';
     }
   }
+
   Future<int> getRepliesCount() async {
     try {
       // Fetch the Replies collection for a specific document
@@ -150,9 +151,16 @@ class _detail_discussionState extends State<detail_discussion> {
         // Clear the reply text field
         _replyController.clear();
 
+        // Award XP for posting reply
+        await _gamificationService.awardXp(XpAction.postReply);
+        await _gamificationService.incrementCounter('repliesCount');
+        await _gamificationService.recordActivity();
+
         // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reply added successfully!')),
+          SnackBar(
+              content: Text(
+                  'Reply added successfully! +${XpAction.postReply.defaultXp} XP')),
         );
       } else {
         // Handle case where user document does not exist
@@ -207,50 +215,73 @@ class _detail_discussionState extends State<detail_discussion> {
         IconButton(
           tooltip: 'Summarize Thread',
           icon: _summaryLoading
-              ?  SizedBox(width: 20,height:20,child: CircularProgressIndicator(strokeWidth: 2))
-              :  Icon(Icons.summarize),
-          onPressed: _summaryLoading ? null : () async {
-            setState(() { _summaryLoading = true; _threadSummary = null; });
-            try {
-              // Fetch discussion doc & replies once.
-              final discSnap = await FirebaseFirestore.instance.collection('Discussions').doc(widget.docId).get();
-              final repliesSnap = await FirebaseFirestore.instance.collection('Discussions').doc(widget.docId).collection('Replies').orderBy('timestamp').get();
-              final title = discSnap.data()?['Title'] ?? 'Untitled';
-              final desc = discSnap.data()?['Description'] ?? '';
-              final replies = repliesSnap.docs.map((d) => d.data()).toList();
-              final summary = await AIService().summarizeThread(
-                title: title,
-                description: desc,
-                replies: replies.cast<Map<String,dynamic>>()
-              );
-              if (mounted) {
-                setState(() { _threadSummary = summary; });
-                // Show in bottom sheet
-                if (summary.isNotEmpty) {
-                  // ignore: use_build_context_synchronously
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: theme.colorScheme.surface,
-                    shape:  RoundedRectangleBorder(
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                    ),
-                    builder: (_) => _ThreadSummarySheet(summary: summary),
-                  );
-                }
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Summary failed: $e')));
-              }
-            } finally {
-              if (mounted) setState(() { _summaryLoading = false; });
-            }
-          },
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(Icons.summarize),
+          onPressed: _summaryLoading
+              ? null
+              : () async {
+                  setState(() {
+                    _summaryLoading = true;
+                    _threadSummary = null;
+                  });
+                  try {
+                    // Fetch discussion doc & replies once.
+                    final discSnap = await FirebaseFirestore.instance
+                        .collection('Discussions')
+                        .doc(widget.docId)
+                        .get();
+                    final repliesSnap = await FirebaseFirestore.instance
+                        .collection('Discussions')
+                        .doc(widget.docId)
+                        .collection('Replies')
+                        .orderBy('timestamp')
+                        .get();
+                    final title = discSnap.data()?['Title'] ?? 'Untitled';
+                    final desc = discSnap.data()?['Description'] ?? '';
+                    final replies =
+                        repliesSnap.docs.map((d) => d.data()).toList();
+                    final summary = await AIService().summarizeThread(
+                        title: title,
+                        description: desc,
+                        replies: replies.cast<Map<String, dynamic>>());
+                    if (mounted) {
+                      setState(() {
+                        _threadSummary = summary;
+                      });
+                      // Show in bottom sheet
+                      if (summary.isNotEmpty) {
+                        // ignore: use_build_context_synchronously
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: theme.colorScheme.surface,
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.vertical(top: Radius.circular(24)),
+                          ),
+                          builder: (_) => _ThreadSummarySheet(summary: summary),
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Summary failed: $e')));
+                    }
+                  } finally {
+                    if (mounted)
+                      setState(() {
+                        _summaryLoading = false;
+                      });
+                  }
+                },
         ),
       ]),
       body: Padding(
-        padding:  EdgeInsets.all(6.0),
+        padding: EdgeInsets.all(6.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -317,10 +348,11 @@ class _detail_discussionState extends State<detail_discussion> {
                             return ListView.builder(
                               itemCount: replies.length,
                               itemBuilder: (context, index) {
-                                var replyData = replies[index].data() as Map<String, dynamic>;
+                                var replyData = replies[index].data()
+                                    as Map<String, dynamic>;
 
                                 return GestureDetector(
-                                  onTap: ()async{
+                                  onTap: () async {
                                     print("hello vansh");
                                     var code = replyData['code']!!;
                                     print(code);
@@ -340,72 +372,88 @@ class _detail_discussionState extends State<detail_discussion> {
                                               top: 16,
                                               left: 16,
                                               right: 16,
-                                              bottom: MediaQuery.of(context).viewInsets.bottom + 16, // Adjust for keyboard visibility
+                                              bottom: MediaQuery.of(context)
+                                                      .viewInsets
+                                                      .bottom +
+                                                  16, // Adjust for keyboard visibility
                                             ),
                                             child: SizedBox(
-                                              width: MediaQuery.of(context).size.width, // Full screen width
+                                              width: MediaQuery.of(context)
+                                                  .size
+                                                  .width, // Full screen width
                                               child: Column(
-                                                mainAxisSize: MainAxisSize.min, // Adjusts height based on content
+                                                mainAxisSize: MainAxisSize
+                                                    .min, // Adjusts height based on content
                                                 children: [
                                                   // Heading
                                                   Text(
                                                     'Code Snippet', // Change the heading as needed
-                                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                                      fontWeight: FontWeight.bold,
-                                                    ),
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .titleLarge
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
                                                     textAlign: TextAlign.center,
                                                   ),
-                                                  SizedBox(height: 8), // Spacing between heading and content
+                                                  SizedBox(
+                                                      height:
+                                                          8), // Spacing between heading and content
 
                                                   // Additional Info (can be a description or metadata)
                                                   Text(
                                                     'Description: This is a sample code snippet. Feel free to copy it and use it in your project.',
-                                                    style: Theme.of(context).textTheme.bodyMedium,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium,
                                                     textAlign: TextAlign.center,
                                                   ),
-                                                  SizedBox(height: 16), // Spacing between description and code block
+                                                  SizedBox(
+                                                      height:
+                                                          16), // Spacing between description and code block
 
                                                   // Code Block
                                                   GestureDetector(
                                                     onLongPress: () {
                                                       Clipboard.setData(
-                                                        ClipboardData(text: replyData['code'] ?? 'Sample Code Here'), // Replace with dynamic code
+                                                        ClipboardData(
+                                                            text: replyData[
+                                                                    'code'] ??
+                                                                'Sample Code Here'), // Replace with dynamic code
                                                       );
-                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                      ScaffoldMessenger.of(
+                                                              context)
+                                                          .showSnackBar(
                                                         SnackBar(
-                                                          content: Text('Code Copied to Clipboard!'),
-                                                          duration: Duration(seconds: 2),
-                                                          backgroundColor: Colors.green,
+                                                          content: Text(
+                                                              'Code Copied to Clipboard!'),
+                                                          duration: Duration(
+                                                              seconds: 2),
+                                                          backgroundColor:
+                                                              AppTheme
+                                                                  .successColor,
                                                         ),
                                                       );
                                                     },
                                                     child: MarkdownBody(
-                                                      data: "```\n${replyData['code'] ?? 'Sample Code Here'}\n```", // Display dynamic code block
-                                                      styleSheet: MarkdownStyleSheet(
-                                                        codeblockPadding: EdgeInsets.all(15),
-                                                        code: TextStyle(
-                                                          fontFamily: 'monospace',
-                                                          fontWeight: FontWeight.normal,
-                                                          fontSize: 14,
-                                                          backgroundColor: Colors.transparent,
-                                                        ),
-                                                        blockquoteDecoration: BoxDecoration(
-                                                          color: Theme.of(context).colorScheme.primaryContainer,
-                                                          borderRadius: BorderRadius.circular(15),
-                                                        ),
-                                                        codeblockDecoration: BoxDecoration(
-                                                          color: Theme.of(context).colorScheme.primaryContainer,
-                                                          borderRadius: BorderRadius.circular(15),
-                                                        ),
-                                                      ),
+                                                      data:
+                                                          "```\n${replyData['code'] ?? 'Sample Code Here'}\n```", // Display dynamic code block
+                                                      styleSheet:
+                                                          AppMarkdownStyles
+                                                              .getCodeStyle(
+                                                                  context),
                                                     ),
                                                   ),
-                                                  SizedBox(height: 16), // Spacing between code block and button
+                                                  SizedBox(
+                                                      height:
+                                                          16), // Spacing between code block and button
 
                                                   // Close Button
                                                   ElevatedButton(
                                                     onPressed: () {
-                                                      Navigator.pop(context); // Close the Bottom Sheet
+                                                      Navigator.pop(
+                                                          context); // Close the Bottom Sheet
                                                     },
                                                     child: Text("Close"),
                                                   ),
@@ -413,38 +461,32 @@ class _detail_discussionState extends State<detail_discussion> {
                                               ),
                                             ),
                                           );
-
-
                                         },
                                       );
                                     }
                                   },
-                                  onLongPress: ()async{
+                                  onLongPress: () async {
                                     if (user?.uid == replyData['uid']) {
                                       bool? confirmDelete = await showDialog(
                                         barrierDismissible: false,
                                         context: context,
-                                        builder: (context) =>
-                                            AlertDialog(
-                                              title:  Text("Delete Reply"),
-
-                                              content:  Text(
-                                                  "Are you sure you want to delete this reply?"),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                          context, false),
-                                                  child:  Text("Cancel"),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () =>
-                                                      Navigator.pop(
-                                                          context, true),
-                                                  child:  Text("Delete"),
-                                                ),
-                                              ],
+                                        builder: (context) => AlertDialog(
+                                          title: Text("Delete Reply"),
+                                          content: Text(
+                                              "Are you sure you want to delete this reply?"),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, false),
+                                              child: Text("Cancel"),
                                             ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context, true),
+                                              child: Text("Delete"),
+                                            ),
+                                          ],
+                                        ),
                                       );
 
                                       if (confirmDelete == true) {
@@ -459,15 +501,16 @@ class _detail_discussionState extends State<detail_discussion> {
 
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
-                                             SnackBar(content: Text(
-                                                'Reply deleted successfully!')),
+                                            SnackBar(
+                                                content: Text(
+                                                    'Reply deleted successfully!')),
                                           );
                                         } catch (e) {
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
-                                            SnackBar(content: Text(
-                                                'Failed to delete reply: $e'))
-                                            ,
+                                            SnackBar(
+                                                content: Text(
+                                                    'Failed to delete reply: $e')),
                                           );
                                           print(e);
                                         }
@@ -479,92 +522,128 @@ class _detail_discussionState extends State<detail_discussion> {
                                     }
                                   },
                                   child: Card(
-
-                                    margin:  EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+                                    margin: EdgeInsets.symmetric(
+                                        vertical: 8.0, horizontal: 12.0),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12.0),
                                     ),
                                     elevation: 5,
                                     child: Padding(
-                                      padding:  EdgeInsets.all(12.0),
+                                      padding: EdgeInsets.all(12.0),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           // Row with Circle Avatar and User Name
                                           Row(
                                             children: [
                                               FutureBuilder<String?>(
-                                                  future: _fetchUserProfileImage(replyData['uid']),
+                                                  future:
+                                                      _fetchUserProfileImage(
+                                                          replyData['uid']),
                                                   builder: (context, snapshot) {
-                                                    if (snapshot.connectionState ==
-                                                        ConnectionState.waiting) {
-                                                      return  CircleAvatar(
-                                                        backgroundColor: Colors.grey,
+                                                    if (snapshot
+                                                            .connectionState ==
+                                                        ConnectionState
+                                                            .waiting) {
+                                                      return CircleAvatar(
+                                                        backgroundColor:
+                                                            Colors.grey,
                                                       );
-                                                    } else if (snapshot.hasError) {
+                                                    } else if (snapshot
+                                                        .hasError) {
                                                       print(snapshot.error);
-                                                      return  CircleAvatar(
-                                                        foregroundImage: NetworkImage(
+                                                      return CircleAvatar(
+                                                        foregroundImage:
+                                                            NetworkImage(
                                                           'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                                         ),
                                                       );
                                                     } else {
                                                       return CircleAvatar(
-                                                        foregroundImage: NetworkImage(snapshot.data!),
+                                                        foregroundImage:
+                                                            NetworkImage(
+                                                                snapshot.data!),
                                                       );
                                                     }
                                                   }),
-                                               SizedBox(width: 12),
+                                              SizedBox(width: 12),
                                               // User Name
                                               Expanded(
                                                 child: Text(
-                                                  "~"+replyData['user_name'] ?? 'Unknown User',
-                                                  style:  TextStyle(
+                                                  "~" +
+                                                          replyData[
+                                                              'user_name'] ??
+                                                      'Unknown User',
+                                                  style: TextStyle(
                                                     fontSize: 14,
                                                     color: Colors.black87,
                                                   ),
                                                 ),
                                               ),
                                               FutureBuilder<String?>(
-                                                future: _fetchUserXP(replyData['uid']),
+                                                future: _fetchUserXP(
+                                                    replyData['uid']),
                                                 builder: (context, snapshot) {
-                                                  if (snapshot.connectionState ==
+                                                  if (snapshot
+                                                          .connectionState ==
                                                       ConnectionState.waiting) {
-                                                    return  Text('XP: Loading...');
-                                                  } else if (snapshot.hasError) {
-                                                    return  Text('Error fetching XP');
+                                                    return Text(
+                                                        'XP: Loading...');
+                                                  } else if (snapshot
+                                                      .hasError) {
+                                                    return Text(
+                                                        'Error fetching XP');
                                                   } else if (snapshot.hasData) {
-                                                    Object xp = snapshot.data ?? 0;
+                                                    Object xp =
+                                                        snapshot.data ?? 0;
                                                     return Container(
-                                                      padding:  EdgeInsets.symmetric(
-                                                          horizontal: 12, vertical: 6),
+                                                      padding:
+                                                          EdgeInsets.symmetric(
+                                                              horizontal: 12,
+                                                              vertical: 6),
                                                       decoration: BoxDecoration(
-                                                        gradient: LinearGradient(
+                                                        gradient:
+                                                            LinearGradient(
                                                           colors: [
-                                                            Colors.lightBlueAccent, // Light blue
-                                                            Colors.blue, // Regular blue
-                                                            Colors.blueAccent, // Darker blue
+                                                            Colors
+                                                                .lightBlueAccent, // Light blue
+                                                            Colors
+                                                                .blue, // Regular blue
+                                                            Colors
+                                                                .blueAccent, // Darker blue
                                                           ],
-                                                          begin: Alignment.topLeft,
-                                                          end: Alignment.bottomRight,
+                                                          begin:
+                                                              Alignment.topLeft,
+                                                          end: Alignment
+                                                              .bottomRight,
                                                         ),
-                                                        borderRadius: BorderRadius.circular(30),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(30),
                                                         boxShadow: [
                                                           BoxShadow(
-                                                            color: Colors.black.withOpacity(0.2),
+                                                            color: Colors.black
+                                                                .withOpacity(
+                                                                    0.2),
                                                             blurRadius: 10,
-                                                            offset: Offset(4, 4),
+                                                            offset:
+                                                                Offset(4, 4),
                                                           ),
                                                         ],
                                                       ),
                                                       child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
                                                         children: [
                                                           Text(
                                                             'XP: $xp',
-                                                            style:  TextStyle(
-                                                              color: Colors.white,
-                                                              fontWeight: FontWeight.bold,
+                                                            style: TextStyle(
+                                                              color:
+                                                                  Colors.white,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
                                                               fontSize: 12,
                                                             ),
                                                           ),
@@ -572,19 +651,23 @@ class _detail_discussionState extends State<detail_discussion> {
                                                       ),
                                                     );
                                                   } else {
-                                                    return  Text('XP: 0');
+                                                    return Text('XP: 0');
                                                   }
                                                 },
                                               ),
                                             ],
                                           ),
-                                           SizedBox(height: 12), // Space between Row and content
+                                          SizedBox(
+                                              height:
+                                                  12), // Space between Row and content
 
                                           RichText(
                                             text: TextSpan(
                                               style: theme.textTheme.bodyMedium,
-                                              children:
-                                              _buildDescription(replyData['reply'] ?? 'No reply content', theme),
+                                              children: _buildDescription(
+                                                  replyData['reply'] ??
+                                                      'No reply content',
+                                                  theme),
                                             ),
                                             // maxLines: 10,
                                             textAlign: TextAlign.justify,
@@ -601,7 +684,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                           //   textAlign: TextAlign.justify,
                                           // ),
 
-                                           SizedBox(height: 5),
+                                          SizedBox(height: 5),
 
                                           // Timestamp
 
@@ -614,7 +697,9 @@ class _detail_discussionState extends State<detail_discussion> {
                                                   color: Colors.grey[600],
                                                 ),
                                               ),
-                                              if (replyData['code'].toString().isNotEmpty)
+                                              if (replyData['code']
+                                                  .toString()
+                                                  .isNotEmpty)
                                                 IconButton(
                                                   onPressed: () {
                                                     // Your onPressed action here
@@ -622,45 +707,51 @@ class _detail_discussionState extends State<detail_discussion> {
                                                   icon: Icon(
                                                     size: 18,
                                                     Icons.attach_file,
-                                                    color: Colors.blue, // Optional: icon color
+                                                    color: Colors
+                                                        .blue, // Optional: icon color
                                                   ),
                                                 ),
                                             ],
                                           ),
 
-                                           SizedBox(height: 5),
+                                          SizedBox(height: 5),
 
-                                          if (!replyData['code'].toString().isNotEmpty && replyData['uid'] == user?.uid)
+                                          if (!replyData['code']
+                                                  .toString()
+                                                  .isNotEmpty &&
+                                              replyData['uid'] == user?.uid)
                                             OutlinedButton.icon(
                                               onPressed: () {
                                                 // Your onPressed action here
-                                                Get.to(() =>
-                                                    attachcode(
-                                                        docId: replyData['replyId'],
-                                                        discussionId: widget
-                                                            .docId));
+                                                Get.to(() => attachcode(
+                                                    docId: replyData['replyId'],
+                                                    discussionId:
+                                                        widget.docId));
                                               },
                                               icon: Icon(Icons.attach_file),
-                                              label: Text('Attach Code Snippet'),
+                                              label:
+                                                  Text('Attach Code Snippet'),
                                               // Optional, can be used if you want text with the icon
                                               style: OutlinedButton.styleFrom(
-                                                side: BorderSide(color: Colors
-                                                    .blue), // Optional: color of the outline
+                                                side: BorderSide(
+                                                    color: Colors
+                                                        .blue), // Optional: color of the outline
                                               ),
                                             ),
-                                              // Accepted Reply Indicator or Button
+                                          // Accepted Reply Indicator or Button
 
                                           if (replyData['accepted'] == true)
                                             Container(
-                                              padding:
-                                               EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                                              padding: EdgeInsets.symmetric(
+                                                  vertical: 6, horizontal: 12),
                                               decoration: BoxDecoration(
                                                 color: Colors.green,
-                                                borderRadius: BorderRadius.circular(20),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
-                                                children:  [
+                                                children: [
                                                   Icon(
                                                     Icons.check_circle,
                                                     color: Colors.white,
@@ -671,7 +762,8 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     'Accepted',
                                                     style: TextStyle(
                                                       color: Colors.white,
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                       fontSize: 14,
                                                     ),
                                                   ),
@@ -680,61 +772,72 @@ class _detail_discussionState extends State<detail_discussion> {
                                             )
                                           else
                                             FutureBuilder<User?>(
-                                              future: FirebaseAuth.instance.authStateChanges().first,
+                                              future: FirebaseAuth.instance
+                                                  .authStateChanges()
+                                                  .first,
                                               builder: (context, snapshot) {
-                                                if (snapshot.connectionState == ConnectionState.waiting) {
-                                                  return  CircularProgressIndicator();
+                                                if (snapshot.connectionState ==
+                                                    ConnectionState.waiting) {
+                                                  return CircularProgressIndicator();
                                                 } else if (snapshot.hasData &&
-                                                    snapshot.data!.uid == widget.creatorId) {
+                                                    snapshot.data!.uid ==
+                                                        widget.creatorId) {
                                                   return GestureDetector(
                                                     onTap: () async {
-                                                        if (user?.uid != replyData['uid']) {
-                                                          try {
-                                                            await FirebaseFirestore
-                                                                .instance
-                                                                .collection(
-                                                                'Discussions')
-                                                                .doc(widget.docId)
-                                                                .collection(
-                                                                'Replies')
-                                                                .doc(
-                                                                replyData['replyId'])
-                                                                .update({
-                                                              'accepted': true
-                                                            });
+                                                      if (user?.uid !=
+                                                          replyData['uid']) {
+                                                        try {
+                                                          await FirebaseFirestore
+                                                              .instance
+                                                              .collection(
+                                                                  'Discussions')
+                                                              .doc(widget.docId)
+                                                              .collection(
+                                                                  'Replies')
+                                                              .doc(replyData[
+                                                                  'replyId'])
+                                                              .update({
+                                                            'accepted': true
+                                                          });
 
-                                                            updateXP(
-                                                                replyData['uid']);
-                                                            ScaffoldMessenger.of(
-                                                                context)
-                                                                .showSnackBar(
-                                                               SnackBar(
-                                                                  content: Text(
-                                                                      'Reply accepted!')),
-                                                            );
-                                                          } catch (e) {
-                                                            ScaffoldMessenger.of(
-                                                                context)
-                                                                .showSnackBar(
-                                                               SnackBar(
-                                                                  content: Text(
-                                                                      'Failed to accept.')),
-                                                            );
-                                                          }
+                                                          updateXP(
+                                                              replyData['uid']);
+                                                          ScaffoldMessenger.of(
+                                                                  context)
+                                                              .showSnackBar(
+                                                            SnackBar(
+                                                                content: Text(
+                                                                    'Reply accepted!')),
+                                                          );
+                                                        } catch (e) {
+                                                          ScaffoldMessenger.of(
+                                                                  context)
+                                                              .showSnackBar(
+                                                            SnackBar(
+                                                                content: Text(
+                                                                    'Failed to accept.')),
+                                                          );
                                                         }
+                                                      }
                                                     },
                                                     child: Container(
-                                                      padding:  EdgeInsets.symmetric(
-                                                          vertical: 6, horizontal: 12),
+                                                      padding:
+                                                          EdgeInsets.symmetric(
+                                                              vertical: 6,
+                                                              horizontal: 12),
                                                       decoration: BoxDecoration(
                                                         color: Colors.blue,
-                                                        borderRadius: BorderRadius.circular(20),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(20),
                                                       ),
                                                       child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children:  [
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
                                                           Icon(
-                                                            Icons.check_circle_outline,
+                                                            Icons
+                                                                .check_circle_outline,
                                                             color: Colors.white,
                                                             size: 20,
                                                           ),
@@ -742,8 +845,11 @@ class _detail_discussionState extends State<detail_discussion> {
                                                           Text(
                                                             'Accept Reply',
                                                             style: TextStyle(
-                                                              color: Colors.white,
-                                                              fontWeight: FontWeight.bold,
+                                                              color:
+                                                                  Colors.white,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
                                                               fontSize: 14,
                                                             ),
                                                           ),
@@ -752,7 +858,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     ),
                                                   );
                                                 } else {
-                                                  return  SizedBox.shrink();
+                                                  return SizedBox.shrink();
                                                 }
                                               },
                                             ),
@@ -763,7 +869,6 @@ class _detail_discussionState extends State<detail_discussion> {
                                 );
                               },
                             );
-
                           },
                         ),
                       ),
@@ -774,7 +879,7 @@ class _detail_discussionState extends State<detail_discussion> {
             ),
             // Material 3 style reply TextField at the bottom
             Padding(
-              padding:  EdgeInsets.symmetric(vertical: 0),
+              padding: EdgeInsets.symmetric(vertical: 0),
               child: Row(
                 children: [
                   // Wrap the TextField with an Expanded widget to allow it to take up remaining space
@@ -817,8 +922,8 @@ class _detail_discussionState extends State<detail_discussion> {
                   IconButton(
                     icon: Icon(Icons.send),
                     onPressed: () async {
-                      if (_replyController.text.trim().isNotEmpty){
-                      addReply();
+                      if (_replyController.text.trim().isNotEmpty) {
+                        addReply();
                       }
                     },
                   ),
@@ -841,7 +946,7 @@ class display_discussion extends StatefulWidget {
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
 
-   display_discussion({
+  display_discussion({
     super.key,
     required this.title,
     required this.description,
@@ -912,7 +1017,7 @@ class display_discussionCardState extends State<display_discussion> {
           .doc(widget.uid)
           .get();
       if (userDoc.exists) {
-        return userDoc['XP'];
+        return userDoc['XP']?.toString();
       } else {
         return '100';
       }
@@ -967,7 +1072,7 @@ class display_discussionCardState extends State<display_discussion> {
                 builder: (context) {
                   return Container(
                     width: double.infinity, // Full width of the screen
-                    padding:  EdgeInsets.all(16.0),
+                    padding: EdgeInsets.all(16.0),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surface,
                       // Material 3 background color
@@ -984,7 +1089,7 @@ class display_discussionCardState extends State<display_discussion> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                         SizedBox(height: 8),
+                        SizedBox(height: 8),
                         // Description of the discussion
                         RichText(
                           text: TextSpan(
@@ -996,7 +1101,7 @@ class display_discussionCardState extends State<display_discussion> {
                           textAlign: TextAlign.justify,
                           overflow: TextOverflow.ellipsis,
                         ),
-                         SizedBox(height: 16),
+                        SizedBox(height: 16),
 
                         Wrap(
                           spacing: 5,
@@ -1026,7 +1131,7 @@ class display_discussionCardState extends State<display_discussion> {
               );
             },
             child: Padding(
-              padding:  EdgeInsets.all(10.0),
+              padding: EdgeInsets.all(10.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1039,12 +1144,14 @@ class display_discussionCardState extends State<display_discussion> {
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
-                              return  CircleAvatar(
+                              return CircleAvatar(
                                 backgroundColor: Colors.grey,
                               );
-                            } else if (snapshot.hasError) {
+                            } else if (snapshot.hasError ||
+                                snapshot.data == null ||
+                                snapshot.data!.isEmpty) {
                               print(snapshot.error);
-                              return  CircleAvatar(
+                              return CircleAvatar(
                                 foregroundImage: NetworkImage(
                                   'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                 ),
@@ -1055,7 +1162,7 @@ class display_discussionCardState extends State<display_discussion> {
                               );
                             }
                           }),
-                       SizedBox(width: 2), // Space between avatar and text
+                      SizedBox(width: 2), // Space between avatar and text
                       // Fetch and display the user's name
                       // if (!isFetchingUserName)
                       FutureBuilder<String?>(
@@ -1063,14 +1170,14 @@ class display_discussionCardState extends State<display_discussion> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return  Text('Loading...');
+                            return Text('Loading...');
                           } else if (snapshot.hasError) {
-                            return  Text('Error fetching user name');
+                            return Text('Error fetching user name');
                           } else if (snapshot.hasData) {
                             String userName = "~ ${snapshot.data}";
                             return Text(userName);
                           } else {
-                            return  Text('User not found');
+                            return Text('User not found');
                           }
                         },
                       ),
@@ -1080,13 +1187,13 @@ class display_discussionCardState extends State<display_discussion> {
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return  Text('XP: Loading...');
+                            return Text('XP: Loading...');
                           } else if (snapshot.hasError) {
-                            return  Text('Error fetching XP');
+                            return Text('Error fetching XP');
                           } else if (snapshot.hasData) {
                             Object xp = snapshot.data ?? 0;
                             return Container(
-                              padding:  EdgeInsets.symmetric(
+                              padding: EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
@@ -1112,7 +1219,7 @@ class display_discussionCardState extends State<display_discussion> {
                                 children: [
                                   Text(
                                     'XP: $xp',
-                                    style:  TextStyle(
+                                    style: TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
@@ -1122,19 +1229,19 @@ class display_discussionCardState extends State<display_discussion> {
                               ),
                             );
                           } else {
-                            return  Text('XP: 0');
+                            return Text('XP: 0');
                           }
                         },
                       ),
                     ],
                   ),
-                   SizedBox(height: 6),
+                  SizedBox(height: 6),
                   // Space between user info and title
                   Text(
                     widget.title,
                     style: theme.textTheme.titleMedium,
                   ),
-                   SizedBox(height: 0),
+                  SizedBox(height: 0),
                   RichText(
                     text: TextSpan(
                       style: theme.textTheme.bodyMedium,
@@ -1234,7 +1341,7 @@ void _launchURL(String url) async {
 
 class _ThreadSummarySheet extends StatefulWidget {
   final String summary;
-   _ThreadSummarySheet({required this.summary});
+  _ThreadSummarySheet({required this.summary});
 
   @override
   State<_ThreadSummarySheet> createState() => _ThreadSummarySheetState();
@@ -1255,7 +1362,7 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
       builder: (ctx, scrollController) => Column(
         children: [
           Padding(
-            padding:  EdgeInsets.only(top: 12),
+            padding: EdgeInsets.only(top: 12),
             child: Container(
               width: 48,
               height: 5,
@@ -1266,14 +1373,15 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
             ),
           ),
           Padding(
-            padding:  EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                 Icon(Icons.summarize),
-                 SizedBox(width: 8),
+                Icon(Icons.summarize),
+                SizedBox(width: 8),
                 Expanded(
                   child: Text('AI Thread Summary',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
                 ),
                 IconButton(
                   tooltip: _expanded ? 'Collapse' : 'Expand',
@@ -1283,14 +1391,15 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
                 IconButton(
                   tooltip: 'Copy Markdown',
                   onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: widget.summary));
+                    await Clipboard.setData(
+                        ClipboardData(text: widget.summary));
                     setState(() => _copied = true);
-                    Future.delayed( Duration(seconds: 2), () {
+                    Future.delayed(Duration(seconds: 2), () {
                       if (mounted) setState(() => _copied = false);
                     });
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                         SnackBar(content: Text('Summary copied to clipboard')),
+                        SnackBar(content: Text('Summary copied to clipboard')),
                       );
                     }
                   },
@@ -1299,22 +1408,25 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
                 IconButton(
                   tooltip: 'Close',
                   onPressed: () => Navigator.pop(context),
-                  icon:  Icon(Icons.close),
+                  icon: Icon(Icons.close),
                 ),
               ],
             ),
           ),
-           Divider(height: 1),
+          Divider(height: 1),
           Expanded(
             child: AnimatedCrossFade(
-              duration:  Duration(milliseconds: 250),
-              crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+              duration: Duration(milliseconds: 250),
+              crossFadeState: _expanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
               firstChild: Markdown(
                 controller: scrollController,
                 data: widget.summary,
                 selectable: true,
                 styleSheet: MarkdownStyleSheet(
-                  h2: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.primary),
+                  h2: theme.textTheme.titleMedium
+                      ?.copyWith(color: theme.colorScheme.primary),
                   listBullet: theme.textTheme.bodyMedium,
                   p: theme.textTheme.bodyMedium,
                   blockquoteDecoration: BoxDecoration(
@@ -1329,31 +1441,32 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
             ),
           ),
           Padding(
-            padding:  EdgeInsets.fromLTRB(16,4,16,12),
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Row(
               children: [
                 ElevatedButton.icon(
                   onPressed: () => setState(() => _expanded = true),
-                  icon:  Icon(Icons.visibility),
-                  label:  Text('Expand'),
+                  icon: Icon(Icons.visibility),
+                  label: Text('Expand'),
                 ),
-                 SizedBox(width: 12),
+                SizedBox(width: 12),
                 OutlinedButton.icon(
                   onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: widget.summary));
+                    await Clipboard.setData(
+                        ClipboardData(text: widget.summary));
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                         SnackBar(content: Text('Copied')), 
+                        SnackBar(content: Text('Copied')),
                       );
                     }
                   },
-                  icon:  Icon(Icons.copy_all),
-                  label:  Text('Copy'),
+                  icon: Icon(Icons.copy_all),
+                  label: Text('Copy'),
                 ),
-                 Spacer(),
+                Spacer(),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child:  Text('Done'),
+                  child: Text('Done'),
                 ),
               ],
             ),

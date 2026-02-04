@@ -54,6 +54,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.6.0"
+  asset_tree_shaker:
+    dependency: "direct dev"
+    description:
+      name: asset_tree_shaker
+      sha256: "8d4e6c20915689c471488c6c4aef8c564016301b5a9595fd510f60ccd2de2b82"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.2"
   async:
     dependency: transitive
     description:
