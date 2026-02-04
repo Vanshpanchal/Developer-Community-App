@@ -163,7 +163,7 @@ class addpostState extends State<addpost> {
 
   void _addTag() {
     final tag = _tagController.text.toUpperCase().trim();
-    if (tag!.isNotEmpty && !_tags.contains(tag)) {
+    if (tag.isNotEmpty && !_tags.contains(tag)) {
       setState(() {
         _tags.add(tag);
       });
@@ -180,221 +180,372 @@ class addpostState extends State<addpost> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Express Yourself'),
+        title: const Text('Create Post'),
+        elevation: 0,
       ),
       body: Form(
-          child: SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                "Add your thoughts or Knowledge Resource to the Community.....",
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                ),
-                textAlign: TextAlign.justify,
-              ),
-              SizedBox(height: 20),
-              TextField(
-                controller: _titleController,
-                maxLength: null,
-                maxLines: 3,
-                enabled: true,
-                minLines: 1,
-                decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.title_rounded,
-                      color: Theme.of(context).colorScheme.primary),
-                  hintText: 'Title',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  filled: true,
-                  fillColor: Colors.transparent,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: 15,
-                    horizontal: 20,
-                  ),
-                ),
-              ),
-              SizedBox(height: 20),
-              TextField(
-                controller: _descriptionController,
-                maxLines: 12,
-                minLines: 1,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: 15,
-                    horizontal: 20,
-                  ),
-                  hintText: 'description',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  filled: true,
-                  fillColor: Colors.transparent,
-                  prefixIcon: Icon(Icons.question_answer_outlined,
-                      color: Theme.of(context).colorScheme.primary),
-                ),
-              ),
-              SizedBox(height: 20),
-              TextField(
-                textCapitalization: TextCapitalization.characters,
-                controller: _tagController,
-                maxLines: 12,
-                minLines: 1,
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: 15,
-                    horizontal: 20,
-                  ),
-                  suffixIcon: IconButton(
-                    icon: Icon(Icons.add_box_rounded,
-                        color: Theme.of(context).colorScheme.primary),
-                    onPressed: () {
-                      _addTag();
-                      print(_tags);
-                    },
-                  ),
-                  hintText: 'Tag',
-                  hintStyle: TextStyle(color: Colors.grey),
-                  filled: true,
-                  fillColor: Colors.transparent,
-                  prefixIcon: Icon(Icons.tag_rounded,
-                      color: Theme.of(context).colorScheme.primary),
-                ),
-              ),
-              Wrap(
-                spacing: 8.0,
-                children: _tags.map((tag) {
-                  return Chip(
-                    label: Text(tag),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12.0)),
-                    onDeleted: () => _removeTag(tag),
-                    deleteIcon: Icon(
-                      Icons.cancel_outlined,
-                      size: Checkbox.width,
-                      color: Colors.black,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Section
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        theme.colorScheme.primary.withValues(alpha: 0.1),
+                        theme.colorScheme.secondary.withValues(alpha: 0.05),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                  );
-                }).toList(),
-              ),
-              SizedBox(height: 20),
-              DefaultTabController(
-                length: 2, // Two tabs: one for code and one for preview
-                child: Column(
-                  children: [
-                    TabBar(
-                      tabs: [
-                        Tab(
-                          icon: Icon(Icons.code),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color:
+                              theme.colorScheme.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        Tab(
-                          icon: Icon(Icons.visibility),
+                        child: Icon(
+                          Icons.lightbulb_outline,
+                          color: theme.colorScheme.primary,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Text(
+                          "Share your knowledge and insights with the developer community",
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.8),
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Title Field
+                Text(
+                  'Title',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _titleController,
+                  maxLines: 3,
+                  minLines: 1,
+                  decoration: InputDecoration(
+                    hintText: 'Enter a compelling title...',
+                    prefixIcon: Icon(
+                      Icons.title_rounded,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Description Field
+                Text(
+                  'Description',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _descriptionController,
+                  maxLines: 8,
+                  minLines: 4,
+                  decoration: InputDecoration(
+                    hintText: 'Describe your post in detail...',
+                    prefixIcon: Icon(
+                      Icons.description_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Tags Field
+                Text(
+                  'Tags',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  textCapitalization: TextCapitalization.characters,
+                  controller: _tagController,
+                  decoration: InputDecoration(
+                    hintText: 'Add tags (e.g., FLUTTER, DART)',
+                    prefixIcon: Icon(
+                      Icons.tag_rounded,
+                      color: theme.colorScheme.primary,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        Icons.add_circle,
+                        color: theme.colorScheme.primary,
+                      ),
+                      onPressed: _addTag,
+                      tooltip: 'Add tag',
+                    ),
+                  ),
+                  onSubmitted: (_) => _addTag(),
+                ),
+
+                // Tags Display
+                if (_tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children: _tags.map((tag) {
+                      return Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              theme.colorScheme.primary.withValues(alpha: 0.15),
+                              theme.colorScheme.secondary
+                                  .withValues(alpha: 0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: theme.colorScheme.primary
+                                .withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Chip(
+                          label: Text(
+                            tag,
+                            style: TextStyle(
+                              color: theme.colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                          backgroundColor: Colors.transparent,
+                          deleteIcon: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: theme.colorScheme.primary,
+                          ),
+                          onDeleted: () => _removeTag(tag),
+                          elevation: 0,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+                const SizedBox(height: 24),
+
+                // Code Section
+                Text(
+                  'Code Snippet (Optional)',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(12),
+                            ),
+                          ),
+                          child: TabBar(
+                            labelColor: theme.colorScheme.primary,
+                            unselectedLabelColor:
+                                theme.colorScheme.onSurfaceVariant,
+                            indicatorColor: theme.colorScheme.primary,
+                            dividerColor: Colors.transparent,
+                            tabs: const [
+                              Tab(
+                                icon: Icon(Icons.code),
+                                text: 'Code',
+                              ),
+                              Tab(
+                                icon: Icon(Icons.visibility),
+                                text: 'Preview',
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          height: 250,
+                          child: TabBarView(
+                            children: [
+                              // Code Tab
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.grey[900]
+                                      : Colors.grey[50],
+                                  borderRadius: const BorderRadius.vertical(
+                                    bottom: Radius.circular(12),
+                                  ),
+                                ),
+                                child: TextField(
+                                  controller: _markdownController,
+                                  maxLines: null,
+                                  expands: true,
+                                  decoration: const InputDecoration(
+                                    hintText: '// Enter your code here...',
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.all(16),
+                                  ),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontFamily: 'monospace',
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                  onChanged: (text) {
+                                    setState(() {
+                                      code = text;
+                                    });
+                                  },
+                                ),
+                              ),
+                              // Preview Tab
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surface,
+                                  borderRadius: const BorderRadius.vertical(
+                                    bottom: Radius.circular(12),
+                                  ),
+                                ),
+                                child: SingleChildScrollView(
+                                  padding: const EdgeInsets.all(16),
+                                  child: code.isEmpty
+                                      ? Center(
+                                          child: Text(
+                                            'No code to preview',
+                                            style: TextStyle(
+                                              color: theme
+                                                  .colorScheme.onSurfaceVariant,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        )
+                                      : MarkdownBody(
+                                          data: "```\n$code\n```",
+                                          styleSheet: MarkdownStyleSheet(
+                                            code: TextStyle(
+                                              fontFamily: 'monospace',
+                                              fontSize: 14,
+                                              backgroundColor:
+                                                  Colors.transparent,
+                                            ),
+                                            codeblockDecoration: BoxDecoration(
+                                              color: isDark
+                                                  ? Colors.grey[900]
+                                                  : Colors.grey[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            codeblockPadding:
+                                                const EdgeInsets.all(12),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    SizedBox(
-                      height: 200, // Set height to accommodate both tabs
-                      child: TabBarView(
-                        children: [
-                          // Code Tab: Displays the code as a TextField
-                          Card(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: TextField(
-                                controller:
-                                    _markdownController, // Use _codeController for TextField
-                                maxLines: null, // Allow multiple lines
-                                decoration: InputDecoration(
-                                  hintText: 'Enter your code here',
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.all(16),
-                                ),
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface,
-                                ),
-                                onChanged: (text) {
-                                  setState(() {
-                                    code =
-                                        text; // Update code with the text field input
-                                  });
-                                },
-                              ),
-                            ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                // Submit Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      if (_titleController.text.trim().isEmpty ||
+                          _descriptionController.text.trim().isEmpty ||
+                          _tags.isEmpty) {
+                        Get.showSnackbar(
+                          GetSnackBar(
+                            title: "Missing Information",
+                            message: "Please fill in all required fields",
+                            icon: const Icon(Icons.error_outline,
+                                color: Colors.white),
+                            backgroundColor: theme.colorScheme.error,
+                            duration: const Duration(seconds: 3),
+                            snackPosition: SnackPosition.TOP,
                           ),
-                          // Preview Tab: Renders the Markdown content
-                          Card(
-                            child: SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Padding(
-                                    padding: EdgeInsets.all(16.0),
-                                    child: MarkdownBody(
-                                      data: "```\n$code\n```",
-                                      styleSheet: MarkdownStyleSheet(
-                                        code: TextStyle(
-                                            fontFamily: 'monospace',
-                                            fontWeight: FontWeight.normal,
-                                            fontSize: 16,
-                                            backgroundColor:
-                                                Colors.transparent),
-                                        codeblockDecoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(15)),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                        ],
+                        );
+                        return;
+                      }
+                      sharepost();
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text(
+                      'Publish Post',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 10),
-              ElevatedButton.icon(
-                icon: Icon(
-                  Icons.post_add_rounded,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  sharepost();
-                  Navigator.pop(context);
-                },
-                label: Text(
-                  'Express',
-                  style: TextStyle(color: Colors.white),
-                ),
-                style: ElevatedButton.styleFrom(
-                  elevation: 2.0, // Border color and width
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12.0), // Border radius
+                    style: ElevatedButton.styleFrom(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
-                  backgroundColor: Theme.of(context).colorScheme.primary,
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
-      )),
+      ),
     );
   }
 }

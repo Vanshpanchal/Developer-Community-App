@@ -1,14 +1,11 @@
 import 'package:developer_community_app/Ongoing_discussion.dart';
-import 'package:developer_community_app/chatbot.dart';
 import 'package:developer_community_app/explore.dart';
 import 'package:developer_community_app/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import 'chat.dart';
 import 'saved.dart';
-import 'utils/app_theme.dart';
 
 class home extends StatefulWidget {
   const home({super.key});

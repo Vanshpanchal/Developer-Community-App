@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'services/firebase_cache_service.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'dart:math' as math;
@@ -21,15 +22,24 @@ class ongoing_discussion extends StatefulWidget {
 class _ongoing_discussionState extends State<ongoing_discussion>
     with SingleTickerProviderStateMixin {
   final user = FirebaseAuth.instance.currentUser;
+  final _cacheService = FirebaseCacheService();
   String username = '';
   String imageUrl = '';
   TextEditingController search_controller = TextEditingController();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
+  final ScrollController _scrollController = ScrollController();
+  final int _limit = 20;
+  DocumentSnapshot? _lastDocument;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+  final List<QueryDocumentSnapshot> _discussions = [];
+
   var discussionStream = FirebaseFirestore.instance
       .collection('Discussions')
       .where('Report', isEqualTo: false)
+      .limit(20)
       .snapshots();
 
   all() {
@@ -37,7 +47,9 @@ class _ongoing_discussionState extends State<ongoing_discussion>
       discussionStream = FirebaseFirestore.instance
           .collection('Discussions')
           .where('Report', isEqualTo: false)
+          .limit(20)
           .snapshots();
+      // .snapshots();
     });
     search_controller.clear();
   }
@@ -114,13 +126,59 @@ class _ongoing_discussionState extends State<ongoing_discussion>
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
     _animationController.forward();
+
+    // Setup scroll listener for pagination
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
     _animationController.dispose();
     search_controller.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent * 0.8) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || _lastDocument == null) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final nextBatch = await FirebaseFirestore.instance
+          .collection('Discussions')
+          .where('Report', isEqualTo: false)
+          .startAfterDocument(_lastDocument!)
+          .limit(_limit)
+          .get();
+
+      if (nextBatch.docs.isNotEmpty) {
+        setState(() {
+          _discussions.addAll(nextBatch.docs);
+          _lastDocument = nextBatch.docs.last;
+          _hasMore = nextBatch.docs.length == _limit;
+        });
+      } else {
+        setState(() {
+          _hasMore = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading more discussions: $e');
+    } finally {
+      setState(() {
+        _isLoadingMore = false;
+      });
+    }
   }
 
   @override
@@ -154,6 +212,13 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                       return _buildEmptyState();
                     }
 
+                    // Update pagination state on first load only
+                    if (_discussions.isEmpty &&
+                        snapshot.data!.docs.isNotEmpty) {
+                      _discussions.addAll(snapshot.data!.docs);
+                      _lastDocument = snapshot.data!.docs.last;
+                    }
+
                     // Apply advanced search algorithm
                     final questions = _performSearch(snapshot.data!.docs);
 
@@ -162,10 +227,18 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                     }
 
                     return ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
-                      itemCount: questions.length,
+                      itemCount: questions.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index == questions.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
                         final data =
                             questions[index].data() as Map<String, dynamic>;
                         return TweenAnimationBuilder<double>(

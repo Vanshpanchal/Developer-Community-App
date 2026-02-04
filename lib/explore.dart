@@ -13,6 +13,7 @@ import 'ai_service.dart';
 import 'repo_analyzer.dart';
 import 'portfolio.dart';
 import 'services/gamification_service.dart';
+import 'services/firebase_cache_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
@@ -27,9 +28,17 @@ class explore extends StatefulWidget {
 
 class exploreState extends State<explore> with SingleTickerProviderStateMixin {
   final user = FirebaseAuth.instance.currentUser;
+  final _cacheService = FirebaseCacheService();
   TextEditingController search_controller = TextEditingController();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+
+  final ScrollController _scrollController = ScrollController();
+  final int _limit = 20;
+  DocumentSnapshot? _lastDocument;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+  final List<QueryDocumentSnapshot> _posts = [];
 
   String username = '';
   String imageUrl = '';
@@ -37,6 +46,7 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
   var exploreStream = FirebaseFirestore.instance
       .collection('Explore')
       .where('Report', isEqualTo: false)
+      .limit(20)
       .snapshots();
 
   @override
@@ -51,13 +61,62 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
     _animationController.forward();
+
+    // Setup scroll listener for pagination
+    _scrollController.addListener(_onScroll);
+
+    // The stream automatically listens to updates from Firebase
+    // Cache service will cache the data when it arrives
   }
 
   @override
   void dispose() {
     _animationController.dispose();
     search_controller.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent * 0.8) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || _lastDocument == null) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final nextBatch = await FirebaseFirestore.instance
+          .collection('Explore')
+          .where('Report', isEqualTo: false)
+          .startAfterDocument(_lastDocument!)
+          .limit(_limit)
+          .get();
+
+      if (nextBatch.docs.isNotEmpty) {
+        setState(() {
+          _posts.addAll(nextBatch.docs);
+          _lastDocument = nextBatch.docs.last;
+          _hasMore = nextBatch.docs.length == _limit;
+        });
+      } else {
+        setState(() {
+          _hasMore = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading more posts: $e');
+    } finally {
+      setState(() {
+        _isLoadingMore = false;
+      });
+    }
   }
 
   void openbottmsheet() {
@@ -169,6 +228,12 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
                       return _buildEmptyState();
                     }
 
+                    // Update pagination state on first load only
+                    if (_posts.isEmpty && snapshot.data!.docs.isNotEmpty) {
+                      _posts.addAll(snapshot.data!.docs);
+                      _lastDocument = snapshot.data!.docs.last;
+                    }
+
                     // Apply advanced search algorithm
                     final questions = _performSearch(snapshot.data!.docs);
 
@@ -177,10 +242,18 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
                     }
 
                     return ListView.builder(
+                      controller: _scrollController,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
-                      itemCount: questions.length,
+                      itemCount: questions.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index == questions.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
                         final data =
                             questions[index].data() as Map<String, dynamic>;
                         return TweenAnimationBuilder<double>(
@@ -584,13 +657,17 @@ class _QuestionCardState extends State<QuestionCard> {
       if (questionDoc.exists) {
         var likes = questionDoc['likes'];
         if (likes is List) {
-          setState(() {
-            isLiked = likes.contains(FirebaseAuth.instance.currentUser?.uid);
-          });
+          if (mounted) {
+            setState(() {
+              isLiked = likes.contains(FirebaseAuth.instance.currentUser?.uid);
+            });
+          }
         } else {
-          setState(() {
-            isLiked = false;
-          });
+          if (mounted) {
+            setState(() {
+              isLiked = false;
+            });
+          }
         }
       }
     } catch (e) {
@@ -634,9 +711,11 @@ class _QuestionCardState extends State<QuestionCard> {
           'likescount': updatedLikes.length,
         });
 
-        setState(() {
-          isLiked = !isLiked;
-        });
+        if (mounted) {
+          setState(() {
+            isLiked = !isLiked;
+          });
+        }
       }
     } catch (e) {
       print('Error handling like/dislike: $e');

@@ -12,8 +12,8 @@ import 'package:lottie/lottie.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'Authservice.dart';
-import 'ThemeController.dart';
 import 'messagemodel.dart';
+import 'services/firebase_cache_service.dart';
 import 'utils/app_theme.dart';
 
 void main() async {
@@ -30,6 +30,16 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await GetStorage.init();
   await Hive.initFlutter();
+
+  // Initialize cache service (optional: prefetch critical data)
+  final cacheService = FirebaseCacheService();
+  // Prefetch important collections in the background
+  cacheService.prefetchCollections(['Explore', 'Discussions']).then((_) {
+    debugPrint('📦 Initial data cached successfully');
+  }).catchError((e) {
+    debugPrint('⚠️ Cache prefetch error: $e');
+  });
+
   // Load environment variables (e.g., GEMINI_API_KEY)
   try {
     await dotenv.load(fileName: '.env');
