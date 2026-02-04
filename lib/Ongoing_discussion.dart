@@ -9,6 +9,7 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'dart:math' as math;
 
 class ongoing_discussion extends StatefulWidget {
   const ongoing_discussion({super.key});
@@ -60,23 +61,45 @@ class _ongoing_discussionState extends State<ongoing_discussion>
     }
   }
 
-  onSearch2(String msg) {
-    if (msg.isNotEmpty) {
-      setState(() {
-        discussionStream = FirebaseFirestore.instance
-            .collection('Discussions')
-            .where("Title", isGreaterThanOrEqualTo: msg.capitalizeFirst)
-            .where("Title", isLessThan: '${msg.capitalizeFirst}z')
-            .snapshots();
-      });
-    } else {
-      setState(() {
-        discussionStream = FirebaseFirestore.instance
-            .collection('Discussions')
-            .where('Report', isEqualTo: false)
-            .snapshots();
-      });
-    }
+  String _searchQuery = '';
+  List<QueryDocumentSnapshot> _allDiscussions = [];
+  List<QueryDocumentSnapshot> _filteredDiscussions = [];
+
+  onSearch2(String query) {
+    setState(() {
+      _searchQuery = query.trim().toLowerCase();
+    });
+  }
+
+  List<QueryDocumentSnapshot> _performSearch(List<QueryDocumentSnapshot> docs) {
+    if (_searchQuery.isEmpty) return docs;
+
+    // Store all discussions
+    _allDiscussions = docs;
+
+    // Calculate relevance scores for each document
+    final scoredDocs = docs
+        .map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final score = SearchAlgorithm.calculateRelevance(
+            query: _searchQuery,
+            title: data['Title']?.toString() ?? '',
+            description: data['Description']?.toString() ?? '',
+            tags: List<String>.from(data['Tags'] ?? []),
+          );
+          return {'doc': doc, 'score': score};
+        })
+        .where((item) => (item['score'] as double) > 0.0)
+        .toList();
+
+    // Sort by relevance score (highest first)
+    scoredDocs.sort(
+        (a, b) => (b['score']! as double).compareTo(a['score']! as double));
+
+    // Return sorted documents
+    return scoredDocs
+        .map((item) => item['doc']! as QueryDocumentSnapshot)
+        .toList();
   }
 
   @override
@@ -131,14 +154,20 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                       return _buildEmptyState();
                     }
 
-                    final questions = snapshot.data!.docs;
+                    // Apply advanced search algorithm
+                    final questions = _performSearch(snapshot.data!.docs);
+
+                    if (questions.isEmpty && _searchQuery.isNotEmpty) {
+                      return _buildNoResultsState();
+                    }
 
                     return ListView.builder(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       itemCount: questions.length,
                       itemBuilder: (context, index) {
-                        final data = questions[index].data();
+                        final data =
+                            questions[index].data() as Map<String, dynamic>;
                         return TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
                           duration: Duration(milliseconds: 300 + (index * 100)),
@@ -365,6 +394,36 @@ class _ongoing_discussionState extends State<ongoing_discussion>
       ),
     );
   }
+
+  Widget _buildNoResultsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No results for "$_searchQuery"',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try different keywords or tags',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class displayCard extends StatefulWidget {
@@ -498,193 +557,213 @@ class displayCardState extends State<displayCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    String? code;
-    return Card(
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
         child: InkWell(
-            onTap: () {
-              // Logic to handle card click, for example, navigating to a discussion detail screen
-              Get.to(detail_discussion(
-                docId: widget.docid,
-                creatorId: widget.uid,
-              ));
-            },
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // User Info Row (Profile Picture and Username)
-                  Row(
-                    // mainAxisAlignment: Maina,
-                    children: [
-                      FutureBuilder<String?>(
-                          future: _fetchUserProfileImage(widget.uid),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return CircleAvatar(
-                                backgroundColor: Colors.grey,
-                              );
-                            } else if (snapshot.hasError ||
-                                snapshot.data == null ||
-                                snapshot.data!.isEmpty) {
-                              print(snapshot.error);
-                              return CircleAvatar(
-                                foregroundImage: NetworkImage(
-                                  'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                ),
-                              );
-                            } else {
-                              return CircleAvatar(
-                                foregroundImage: NetworkImage(snapshot.data!),
-                              );
-                            }
-                          }),
-                      SizedBox(width: 8), // Space between avatar and text
-                      // Fetch and display the user's name
-                      // if (!isFetchingUserName)
-                      FutureBuilder<String?>(
-                        future: _userNameFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Text('Loading...');
-                          } else if (snapshot.hasError) {
-                            return Text('Error fetching user name');
-                          } else if (snapshot.hasData) {
-                            String userName = "~ ${snapshot.data}";
-                            return Text(userName);
-                          } else {
-                            return Text('User not found');
-                          }
-                        },
-                      ),
-                      Spacer(),
-                      FutureBuilder<String?>(
-                        future: _fetchUserXP(widget.uid),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Text('XP: Loading...');
-                          } else if (snapshot.hasError) {
-                            return Text('Error fetching XP');
-                          } else if (snapshot.hasData) {
-                            Object xp = snapshot.data ?? 0;
-                            return Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 15, vertical: 8),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.lightBlueAccent, // Light blue
-                                    Colors.blue, // Regular blue
-                                    Colors.blueAccent, // Darker blue
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(30),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 10,
-                                    offset: Offset(4, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'XP: $xp',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          } else {
-                            return Text('XP: 0');
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  // Space between user info and title
-                  Text(
-                    widget.title,
-                    style: theme.textTheme.titleLarge,
-                  ),
-                  SizedBox(height: 8),
-                  RichText(
-                    text: TextSpan(
-                      style: theme.textTheme.bodyMedium,
-                      children: _buildDescription(widget.description, theme),
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Get.to(detail_discussion(
+              docId: widget.docid,
+              creatorId: widget.uid,
+            ));
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // User Info Row
+                Row(
+                  children: [
+                    FutureBuilder<String?>(
+                      future: _fetchUserProfileImage(widget.uid),
+                      builder: (context, snapshot) {
+                        return Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color:
+                                  AppTheme.primaryColor.withValues(alpha: 0.3),
+                              width: 2,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 18,
+                            backgroundColor:
+                                theme.colorScheme.surfaceContainerHighest,
+                            foregroundImage:
+                                snapshot.hasData && snapshot.data!.isNotEmpty
+                                    ? NetworkImage(snapshot.data!)
+                                    : const NetworkImage(
+                                        'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                                      ),
+                          ),
+                        );
+                      },
                     ),
-                    maxLines: 3,
-                    textAlign: TextAlign.justify,
-                    overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FutureBuilder<String?>(
+                            future: _userNameFuture,
+                            builder: (context, snapshot) {
+                              return Text(
+                                snapshot.hasData
+                                    ? snapshot.data!
+                                    : 'Loading...',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            },
+                          ),
+                          Text(
+                            _formatDate(widget.timestamp),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FutureBuilder<String?>(
+                      future: _fetchUserXP(widget.uid),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) return const SizedBox.shrink();
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: AppTheme.primaryGradient,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${snapshot.data} XP',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Title
+                Text(
+                  widget.title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    height: 1.3,
                   ),
-                  SizedBox(height: 8),
-                  // code = widget.code!!
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                // Description
+                RichText(
+                  text: TextSpan(
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                    children: _buildDescription(widget.description, theme),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (widget.tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  // Tags
                   Wrap(
-                    spacing: 5,
-                    children: widget.tags
-                        .map((tag) => Chip(
-                              label: Text(tag),
-                              backgroundColor:
-                                  theme.colorScheme.secondaryContainer,
-                              labelStyle: TextStyle(
-                                  color:
-                                      theme.colorScheme.onSecondaryContainer),
-                            ))
-                        .toList(),
-                  ),
-                  Divider(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      InkWell(
-                        onTap: () {
-                          // Logic to handle like button click
-                          // Update the votes count and Firestore if needed
-                          // _handleLike();
-                        },
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.comment_bank_rounded),
-                              onPressed: () => {},
-                            ),
-                            SizedBox(width: 4),
-                            Text('${_repliesCount}',
-                                style: theme.textTheme.labelLarge),
-                            SizedBox(width: 24),
-                            IconButton(
-                              icon: Icon(Icons.bookmark_add_outlined),
-                              onPressed: () {
-                                save(widget.docid);
-                              },
-                              // onPressed: _handleLike,
-                            ),
-                          ],
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: widget.tags.take(3).map((tag) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
                         ),
-                      ),
-                      Text(
-                        'Posted ${_formatDate(widget.timestamp)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer
+                              .withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ),
-                    ],
+                        child: Text(
+                          tag,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
-              ),
-            )));
+                const SizedBox(height: 12),
+                // Footer
+                Row(
+                  children: [
+                    Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      size: 16,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$_repliesCount',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(
+                        Icons.bookmark_outline_rounded,
+                        size: 20,
+                        color: theme.colorScheme.primary,
+                      ),
+                      onPressed: () => save(widget.docid),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _formatDate(DateTime date) {
@@ -760,5 +839,155 @@ class SearchController extends GetxController {
 
   void updateSearchText(String text) {
     searchText.value = text;
+  }
+}
+
+/// Production-level search algorithm with fuzzy matching and relevance scoring
+class SearchAlgorithm {
+  /// Calculate relevance score for a discussion based on search query
+  /// Returns a score between 0.0 and 1.0, where higher is more relevant
+  static double calculateRelevance({
+    required String query,
+    required String title,
+    required String description,
+    required List<String> tags,
+  }) {
+    if (query.isEmpty) return 1.0;
+
+    final queryLower = query.toLowerCase();
+    final titleLower = title.toLowerCase();
+    final descLower = description.toLowerCase();
+    final queryTerms =
+        queryLower.split(' ').where((t) => t.isNotEmpty).toList();
+
+    double score = 0.0;
+
+    // 1. Exact match in title (highest weight)
+    if (titleLower.contains(queryLower)) {
+      score += 100.0;
+      // Bonus for match at start
+      if (titleLower.startsWith(queryLower)) {
+        score += 50.0;
+      }
+    }
+
+    // 2. Exact match in tags (high weight)
+    for (final tag in tags) {
+      if (tag.toLowerCase() == queryLower) {
+        score += 80.0;
+      } else if (tag.toLowerCase().contains(queryLower)) {
+        score += 40.0;
+      }
+    }
+
+    // 3. Exact match in description (medium weight)
+    if (descLower.contains(queryLower)) {
+      score += 30.0;
+    }
+
+    // 4. Term-based matching (for multi-word queries)
+    double termScore = 0.0;
+    for (final term in queryTerms) {
+      if (term.length < 2) continue;
+
+      // Title matches
+      if (titleLower.contains(term)) {
+        termScore += 15.0;
+      }
+
+      // Tag matches
+      for (final tag in tags) {
+        if (tag.toLowerCase().contains(term)) {
+          termScore += 10.0;
+        }
+      }
+
+      // Description matches
+      if (descLower.contains(term)) {
+        termScore += 5.0;
+      }
+    }
+    score += termScore;
+
+    // 5. Fuzzy matching using Levenshtein distance
+    final titleWords = titleLower.split(' ');
+    final descWords =
+        descLower.split(' ').take(20).toList(); // Limit desc words
+
+    double fuzzyScore = 0.0;
+    for (final term in queryTerms) {
+      if (term.length < 3) continue;
+
+      // Check title words
+      for (final word in titleWords) {
+        final distance = _levenshteinDistance(term, word);
+        final similarity =
+            1.0 - (distance / math.max(term.length, word.length));
+        if (similarity > 0.7) {
+          fuzzyScore += similarity * 10.0;
+        }
+      }
+
+      // Check tag words
+      for (final tag in tags) {
+        final distance = _levenshteinDistance(term, tag.toLowerCase());
+        final similarity = 1.0 - (distance / math.max(term.length, tag.length));
+        if (similarity > 0.75) {
+          fuzzyScore += similarity * 8.0;
+        }
+      }
+
+      // Check description words (less weight)
+      for (final word in descWords) {
+        final distance = _levenshteinDistance(term, word);
+        final similarity =
+            1.0 - (distance / math.max(term.length, word.length));
+        if (similarity > 0.8) {
+          fuzzyScore += similarity * 2.0;
+        }
+      }
+    }
+    score += fuzzyScore;
+
+    // 6. Normalize score to 0-1 range
+    return math.min(1.0, score / 100.0);
+  }
+
+  /// Calculate Levenshtein distance between two strings (edit distance)
+  static int _levenshteinDistance(String s1, String s2) {
+    if (s1 == s2) return 0;
+    if (s1.isEmpty) return s2.length;
+    if (s2.isEmpty) return s1.length;
+
+    final len1 = s1.length;
+    final len2 = s2.length;
+
+    // Create a matrix
+    List<List<int>> matrix = List.generate(
+      len1 + 1,
+      (i) => List.filled(len2 + 1, 0),
+    );
+
+    // Initialize first row and column
+    for (int i = 0; i <= len1; i++) {
+      matrix[i][0] = i;
+    }
+    for (int j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    // Fill the matrix
+    for (int i = 1; i <= len1; i++) {
+      for (int j = 1; j <= len2; j++) {
+        final cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
+        matrix[i][j] = [
+          matrix[i - 1][j] + 1, // deletion
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j - 1] + cost, // substitution
+        ].reduce(math.min);
+      }
+    }
+
+    return matrix[len1][len2];
   }
 }

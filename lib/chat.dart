@@ -9,7 +9,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'messagemodel.dart';
 import 'ai_service.dart';
 import 'api_key_manager.dart';
-import 'gemini_key_dialog.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 
@@ -89,7 +88,7 @@ class _ChatScreenState extends State<ChatScreen1> {
   bool _isTyping = false;
   String? _apiKey; // dynamically loaded user key
   static const String _apiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 
   @override
   void initState() {
@@ -101,11 +100,7 @@ class _ChatScreenState extends State<ChatScreen1> {
   }
 
   Future<bool> _ensureApiKey() async {
-    if (_apiKey != null && _apiKey!.trim().isNotEmpty) return true;
-    _apiKey = await ApiKeyManager.instance.getLocalKey();
-    if (_apiKey != null && _apiKey!.trim().isNotEmpty) return true;
-    // Show dialog to capture key
-    await showGeminiKeyInputDialog(context);
+    // Fetch the saved API key from secure storage (set in profile)
     _apiKey = await ApiKeyManager.instance.getLocalKey();
     return _apiKey != null && _apiKey!.trim().isNotEmpty;
   }
@@ -144,8 +139,8 @@ class _ChatScreenState extends State<ChatScreen1> {
       if (response.statusCode == 401 || response.statusCode == 403) {
         return 'Authentication error (${response.statusCode}). Check your API key.';
       }
-      if (response.statusCode == 429)
-        return 'Rate limit reached. Please retry later.';
+      if (response.statusCode == 429) print(response.body);
+      return 'Rate limit reached. Please retry later.';
       if (response.statusCode >= 500)
         return 'Service temporarily unavailable (${response.statusCode}).';
       return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';

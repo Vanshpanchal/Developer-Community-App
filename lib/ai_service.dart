@@ -11,23 +11,23 @@ class AIService {
   static final AIService _instance = AIService._internal();
   factory AIService() => _instance;
 
-  static const String missingKeyMessage = 'No Gemini API key found. Set your key in profile settings to enable AI features.';
+  static const String missingKeyMessage =
+      'No Gemini API key found. Set your key in profile settings to enable AI features.';
 
-  bool _initialized = false;
-  String? _apiKey;
-  final String _modelEndpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  final String _modelEndpoint =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 
-  bool get hasApiKey => _apiKey != null && _apiKey!.trim().isNotEmpty;
+  Future<bool> _ensureApiKey() async {
+    final key = await ApiKeyManager.instance.getLocalKey();
+    return key != null && key.trim().isNotEmpty;
+  }
 
-  Future<void> ensureInitialized() async {
-    if (_initialized) return;
-    _apiKey = await ApiKeyManager.instance.getLocalKey();
-    _initialized = true;
+  Future<String?> _getApiKey() async {
+    return await ApiKeyManager.instance.getLocalKey();
   }
 
   Future<String> reviewCode({required String code, String? context}) async {
-    await ensureInitialized();
-    if (!hasApiKey) return missingKeyMessage;
+    if (!await _ensureApiKey()) return missingKeyMessage;
     if (code.trim().isEmpty) return 'No code provided for review.';
     final prompt = _buildCodeReviewPrompt(code: code, context: context);
     return _generate(prompt);
@@ -39,10 +39,10 @@ class AIService {
     required List<Map<String, dynamic>> replies,
     int maxReplies = 30,
   }) async {
-    await ensureInitialized();
-    if (!hasApiKey) return missingKeyMessage;
+    if (!await _ensureApiKey()) return missingKeyMessage;
     final limited = replies.take(maxReplies).toList();
-    final prompt = _buildThreadSummaryPrompt(title: title, description: description, replies: limited);
+    final prompt = _buildThreadSummaryPrompt(
+        title: title, description: description, replies: limited);
     return _generate(prompt);
   }
 
@@ -51,42 +51,46 @@ class AIService {
     String? readme,
     Map<String, String>? files,
   }) async {
-    await ensureInitialized();
-    if (!hasApiKey) return missingKeyMessage;
-    final prompt = _buildRepoAnalysisPrompt(repoUrl: repoUrl, readme: readme, files: files ?? {});
+    if (!await _ensureApiKey()) return missingKeyMessage;
+    final prompt = _buildRepoAnalysisPrompt(
+        repoUrl: repoUrl, readme: readme, files: files ?? {});
     return _generate(prompt);
   }
 
   Future<String> generatePortfolioSummary({
-    required Map<String,dynamic> stats,
-    Map<String,dynamic>? github,
+    required Map<String, dynamic> stats,
+    Map<String, dynamic>? github,
     String? userHandle,
   }) async {
-    await ensureInitialized();
-    if (!hasApiKey) return missingKeyMessage;
-    final prompt = _buildPortfolioPrompt(stats: stats, github: github, userHandle: userHandle);
+    if (!await _ensureApiKey()) return missingKeyMessage;
+    final prompt = _buildPortfolioPrompt(
+        stats: stats, github: github, userHandle: userHandle);
     return _generate(prompt);
   }
 
-  Future<String> analyzeComplexity({required String code, String? language, String? context}) async {
-    await ensureInitialized();
-    if (!hasApiKey) return missingKeyMessage;
+  Future<String> analyzeComplexity(
+      {required String code, String? language, String? context}) async {
+    if (!await _ensureApiKey()) return missingKeyMessage;
     if (code.trim().isEmpty) return 'No code provided.';
-    final prompt = _buildComplexityPrompt(code: code, language: language, context: context);
+    final prompt = _buildComplexityPrompt(
+        code: code, language: language, context: context);
     return _generate(prompt);
   }
 
   Future<String> _generate(String prompt) async {
     try {
-      if (!hasApiKey) return missingKeyMessage;
-      final uri = Uri.parse('$_modelEndpoint?key=$_apiKey');
+      final apiKey = await _getApiKey();
+      if (apiKey == null || apiKey.trim().isEmpty) return missingKeyMessage;
+      final uri = Uri.parse('$_modelEndpoint?key=$apiKey');
       final response = await http.post(
         uri,
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({
           'contents': [
             {
-              'parts': [ {'text': prompt} ]
+              'parts': [
+                {'text': prompt}
+              ]
             }
           ]
         }),
@@ -96,7 +100,9 @@ class AIService {
         final candidates = data['candidates'];
         if (candidates is List && candidates.isNotEmpty) {
           final content = candidates[0]['content'];
-          if (content is Map && content['parts'] is List && content['parts'].isNotEmpty) {
+          if (content is Map &&
+              content['parts'] is List &&
+              content['parts'].isNotEmpty) {
             final text = content['parts'][0]['text'];
             if (text is String && text.trim().isNotEmpty) return text.trim();
           }
@@ -106,8 +112,10 @@ class AIService {
       if (response.statusCode == 401 || response.statusCode == 403) {
         return 'Authentication error (${response.statusCode}). Check that your API key is valid and has access.';
       }
-      if (response.statusCode == 429) return 'Rate limit reached. Please wait and try again.';
-      if (response.statusCode >= 500) return 'Service unavailable (${response.statusCode}). Retry later.';
+      if (response.statusCode == 429)
+        return 'Rate limit reached. Please wait and try again.';
+      if (response.statusCode >= 500)
+        return 'Service unavailable (${response.statusCode}). Retry later.';
       return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
     } catch (e, st) {
       if (kDebugMode) debugPrint('Gemini request failed: $e\n$st');
@@ -116,12 +124,13 @@ class AIService {
   }
 
   String _buildPortfolioPrompt({
-    required Map<String,dynamic> stats,
-    Map<String,dynamic>? github,
+    required Map<String, dynamic> stats,
+    Map<String, dynamic>? github,
     String? userHandle,
   }) {
     final buf = StringBuffer();
-    buf.writeln('Create a concise, professional GitHub-Flavored Markdown developer portfolio summary.');
+    buf.writeln(
+        'Create a concise, professional GitHub-Flavored Markdown developer portfolio summary.');
     buf.writeln('Sections (use headings, omit empty):');
     buf.writeln('## Profile Snapshot');
     buf.writeln('## Key Activity Metrics');
@@ -146,7 +155,8 @@ class AIService {
     final buf = StringBuffer();
     buf.writeln('You are an expert open-source project analyst.');
     buf.writeln('Analyze the repository at: $repoUrl');
-    buf.writeln('Produce ONLY GitHub-Flavored Markdown with these sections (use headings):');
+    buf.writeln(
+        'Produce ONLY GitHub-Flavored Markdown with these sections (use headings):');
     buf.writeln('## Tech Stack');
     buf.writeln('## Complexity Level');
     buf.writeln('- Choose exactly one: Beginner / Intermediate / Advanced');
@@ -157,7 +167,8 @@ class AIService {
     buf.writeln('## Quick Win Ideas');
     buf.writeln('Keep total under 300 words.');
     if (readme != null && readme.trim().isNotEmpty) {
-      buf.writeln('\nREADME (truncated):\n```md\n${_truncate(readme, 3000)}\n```');
+      buf.writeln(
+          '\nREADME (truncated):\n```md\n${_truncate(readme, 3000)}\n```');
     }
     if (files.isNotEmpty) {
       buf.writeln('\nKey Files (truncated):');
@@ -169,7 +180,8 @@ class AIService {
     return buf.toString();
   }
 
-  String _buildComplexityPrompt({required String code, String? language, String? context}) {
+  String _buildComplexityPrompt(
+      {required String code, String? language, String? context}) {
     final lang = language ?? 'code';
     return '''You are an expert algorithm analyst.
 Given the following $lang snippet, produce a concise complexity analysis.
@@ -231,7 +243,8 @@ Keep output under ~350 words.
   }) {
     final buffer = StringBuffer();
     buffer.writeln('You are summarizing a developer discussion thread.');
-    buffer.writeln('Return ONLY valid GitHub-Flavored Markdown with the following section order.');
+    buffer.writeln(
+        'Return ONLY valid GitHub-Flavored Markdown with the following section order.');
     buffer.writeln('Use concise language; total < 230 words.');
     buffer.writeln('Sections (omit if not applicable):');
     buffer.writeln('## High-Level Summary');

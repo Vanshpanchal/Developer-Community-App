@@ -16,6 +16,7 @@ import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'dart:math' as math;
 
 class explore extends StatefulWidget {
   explore({super.key});
@@ -66,41 +67,46 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
         builder: (ctx) => addpost());
   }
 
-  onSearch(String msg) {
-    if (msg.isNotEmpty) {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Explore')
-            .where("Tags", arrayContains: msg.toUpperCase())
-            .snapshots();
-      });
-    } else if (msg.isEmpty) {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Question-Answer')
-            .where('Report', isEqualTo: false)
-            .snapshots();
-      });
-    }
+  String _searchQuery = '';
+  List<QueryDocumentSnapshot> _allPosts = [];
+  List<QueryDocumentSnapshot> _filteredPosts = [];
+
+  onSearch2(String query) {
+    setState(() {
+      _searchQuery = query.trim().toLowerCase();
+    });
   }
 
-  onSearch2(String msg) {
-    if (msg.isNotEmpty) {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Explore')
-            .where("Title", isGreaterThanOrEqualTo: msg.capitalizeFirst)
-            .where("Title", isLessThan: '${msg.capitalizeFirst}z')
-            .snapshots();
-      });
-    } else {
-      setState(() {
-        exploreStream = FirebaseFirestore.instance
-            .collection('Question-Answer')
-            .where('Report', isEqualTo: false)
-            .snapshots();
-      });
-    }
+  List<QueryDocumentSnapshot> _performSearch(List<QueryDocumentSnapshot> docs) {
+    if (_searchQuery.isEmpty) return docs;
+
+    // Store all posts
+    _allPosts = docs;
+
+    // Calculate relevance scores for each document
+    final scoredDocs = docs
+        .map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final score = ExploreSearchAlgorithm.calculateRelevance(
+            query: _searchQuery,
+            title: data['Title']?.toString() ?? '',
+            description: data['Description']?.toString() ?? '',
+            tags: List<String>.from(data['Tags'] ?? []),
+            code: data['code']?.toString() ?? '',
+          );
+          return {'doc': doc, 'score': score};
+        })
+        .where((item) => (item['score'] as double) > 0.0)
+        .toList();
+
+    // Sort by relevance score (highest first)
+    scoredDocs.sort(
+        (a, b) => (b['score']! as double).compareTo(a['score']! as double));
+
+    // Return sorted documents
+    return scoredDocs
+        .map((item) => item['doc']! as QueryDocumentSnapshot)
+        .toList();
   }
 
   all() {
@@ -163,14 +169,20 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
                       return _buildEmptyState();
                     }
 
-                    final questions = snapshot.data!.docs;
+                    // Apply advanced search algorithm
+                    final questions = _performSearch(snapshot.data!.docs);
+
+                    if (questions.isEmpty && _searchQuery.isNotEmpty) {
+                      return _buildNoResultsState();
+                    }
 
                     return ListView.builder(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       itemCount: questions.length,
                       itemBuilder: (context, index) {
-                        final data = questions[index].data();
+                        final data =
+                            questions[index].data() as Map<String, dynamic>;
                         return TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
                           duration: Duration(milliseconds: 300 + (index * 100)),
@@ -288,16 +300,24 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildSearchBar(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          color:
-              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: theme.colorScheme.outline.withValues(alpha: 0.1),
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+            width: 1.5,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: TextField(
           controller: search_controller,
@@ -414,6 +434,36 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
     );
   }
 
+  Widget _buildNoResultsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No results for "$_searchQuery"',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try different keywords or tags',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFloatingActions(ThemeData theme) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -516,6 +566,7 @@ class _QuestionCardState extends State<QuestionCard> {
   bool _showComplexity = false;
   String? _complexityResult;
   bool _complexityLoading = false;
+  bool _showFullCode = false;
   final _gamificationService = GamificationService();
 
   @override
@@ -645,84 +696,250 @@ class _QuestionCardState extends State<QuestionCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(20),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.1),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // User Info Row
             _buildUserInfoRow(theme),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
             // Title
             Text(
               widget.title,
-              style: theme.textTheme.titleLarge?.copyWith(
+              style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 height: 1.3,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
 
             // Description
             RichText(
               text: TextSpan(
-                style: theme.textTheme.bodyMedium?.copyWith(
+                style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.5,
+                  height: 1.4,
                 ),
                 children: _buildDescription(widget.description, theme),
               ),
-              maxLines: 10,
-              textAlign: TextAlign.justify,
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
 
-            // Code Block
+            // Code Block Preview or Full
             if (widget.code != null && widget.code!.isNotEmpty)
-              _buildCodeBlock(theme),
+              _showFullCode ? _buildCodeBlock(theme) : _buildCodePreview(theme),
 
-            const SizedBox(height: 12),
-
-            // Tags
-            _buildTags(theme),
-
-            const SizedBox(height: 16),
-
-            // Divider
-            Container(
-              height: 1,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    theme.dividerColor.withValues(alpha: 0.5),
-                    Colors.transparent,
-                  ],
-                ),
+            if (widget.tags.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              // Tags
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: widget.tags.take(3).map((tag) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer
+                          .withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      tag,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 11,
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
-            ),
+            ],
 
             const SizedBox(height: 12),
 
             // Actions Row
-            _buildActionsRow(theme),
+            Row(
+              children: [
+                _buildCompactAction(
+                  icon: isLiked ? Icons.favorite : Icons.favorite_border,
+                  label: '${widget.votes}',
+                  onTap: _handleLike,
+                  theme: theme,
+                  isActive: isLiked,
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(
+                    Icons.bookmark_outline_rounded,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  onPressed: () => save(widget.docid),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCodePreview(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final codeLines = widget.code?.split('\n') ?? [];
+    final previewLines = codeLines.take(4).join('\n');
+    final hasMore = codeLines.length > 4;
+
+    return InkWell(
+      onTap: () => setState(() => _showFullCode = true),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(top: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Code header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(8),
+                  topRight: Radius.circular(8),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.code_rounded,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Code Snippet',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (hasMore) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Tap to expand',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.expand_more_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+            // Code content
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                previewLines,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: isDark ? Colors.grey[300] : Colors.grey[800],
+                  height: 1.4,
+                ),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required ThemeData theme,
+    bool isActive = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: isActive
+                ? AppTheme.primaryColor
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isActive
+                  ? AppTheme.primaryColor
+                  : theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -849,13 +1066,15 @@ class _QuestionCardState extends State<QuestionCard> {
   }
 
   Widget _buildCodeBlock(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
-      margin: const EdgeInsets.only(top: 16),
+      margin: const EdgeInsets.only(top: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(16),
+        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.1),
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
@@ -863,55 +1082,78 @@ class _QuestionCardState extends State<QuestionCard> {
         children: [
           // Code Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
             ),
             child: Row(
               children: [
-                Icon(Icons.code_rounded,
-                    size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
+                Icon(
+                  Icons.code_rounded,
+                  size: 14,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
                 Text(
-                  'Code',
-                  style: theme.textTheme.labelLarge?.copyWith(
+                  'Code Snippet',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w600,
+                    fontSize: 11,
                   ),
                 ),
                 const Spacer(),
+                // Copy button
+                IconButton(
+                  icon: Icon(Icons.copy_rounded, size: 14),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: widget.code!));
+                    AppSnackbar.success(
+                      context,
+                      title: 'Copied!',
+                      message: 'Code copied to clipboard',
+                    );
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Copy code',
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                // Analyze button
                 _buildAnalyzeButton(theme),
+                const SizedBox(width: 8),
+                // Collapse button
+                IconButton(
+                  icon: Icon(Icons.expand_less_rounded, size: 16),
+                  onPressed: () => setState(() => _showFullCode = false),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Collapse',
+                  color: theme.colorScheme.primary,
+                ),
               ],
             ),
           ),
 
           // Code Content
-          Padding(
+          Container(
             padding: const EdgeInsets.all(12),
-            child: GestureDetector(
-              onLongPress: () {
-                Clipboard.setData(ClipboardData(text: widget.code!));
-                AppSnackbar.success(
-                  context,
-                  title: 'Copied!',
-                  message: 'Code copied to clipboard',
-                );
-              },
-              child: MarkdownBody(
-                data: "```\n${widget.code}\n```",
-                styleSheet: MarkdownStyleSheet(
-                  codeblockPadding: const EdgeInsets.all(15),
-                  code: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.normal,
-                    fontSize: 13,
-                    backgroundColor: Colors.transparent,
-                  ),
-                  codeblockDecoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: SingleChildScrollView(
+              child: Text(
+                widget.code!,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: isDark ? Colors.grey[300] : Colors.grey[800],
+                  height: 1.4,
                 ),
               ),
             ),
@@ -923,13 +1165,46 @@ class _QuestionCardState extends State<QuestionCard> {
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
+                color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  color: theme.colorScheme.primary.withValues(alpha: 0.2),
                 ),
               ),
-              child: MarkdownBody(data: _complexityResult!),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.analytics_rounded,
+                        size: 14,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Complexity Analysis',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  MarkdownBody(
+                    data: _complexityResult!,
+                    styleSheet: MarkdownStyleSheet(
+                      p: theme.textTheme.bodySmall,
+                      h1: theme.textTheme.titleSmall,
+                      h2: theme.textTheme.titleSmall,
+                      h3: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -937,52 +1212,45 @@ class _QuestionCardState extends State<QuestionCard> {
   }
 
   Widget _buildAnalyzeButton(ThemeData theme) {
-    return TextButton.icon(
-      onPressed: _complexityLoading
-          ? null
-          : () async {
-              if (_showComplexity) {
-                setState(() => _showComplexity = false);
-                return;
-              }
-              if (widget.code != null && widget.code!.trim().isNotEmpty) {
-                setState(() => _complexityLoading = true);
-                final res = await AIService()
-                    .analyzeComplexity(code: widget.code!, language: 'dart');
-                if (mounted) {
-                  setState(() {
-                    _complexityResult = res;
-                    _showComplexity = true;
-                    _complexityLoading = false;
-                  });
-                }
-              }
-            },
-      icon: _complexityLoading
-          ? SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: theme.colorScheme.primary,
-              ),
-            )
-          : Icon(
-              _showComplexity
-                  ? Icons.visibility_off_rounded
-                  : Icons.speed_rounded,
-              size: 16,
-            ),
-      label: Text(
-        _showComplexity ? 'Hide' : 'Analyze',
-        style: const TextStyle(fontSize: 12),
-      ),
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+    if (_complexityLoading) {
+      return SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: theme.colorScheme.primary,
         ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(
+        _showComplexity ? Icons.visibility_off_rounded : Icons.speed_rounded,
+        size: 14,
       ),
+      onPressed: () async {
+        if (_showComplexity) {
+          setState(() => _showComplexity = false);
+          return;
+        }
+        if (widget.code != null && widget.code!.trim().isNotEmpty) {
+          setState(() => _complexityLoading = true);
+          final res = await AIService()
+              .analyzeComplexity(code: widget.code!, language: 'dart');
+          if (mounted) {
+            setState(() {
+              _complexityResult = res;
+              _showComplexity = true;
+              _complexityLoading = false;
+            });
+          }
+        }
+      },
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+      visualDensity: VisualDensity.compact,
+      tooltip: _showComplexity ? 'Hide analysis' : 'Analyze complexity',
+      color: theme.colorScheme.primary,
     );
   }
 
@@ -1189,5 +1457,175 @@ class SearchController extends GetxController {
 
   void updateSearchText(String text) {
     searchText.value = text;
+  }
+}
+
+/// Production-level search algorithm for explore posts with code search support
+class ExploreSearchAlgorithm {
+  /// Calculate relevance score for a post based on search query
+  static double calculateRelevance({
+    required String query,
+    required String title,
+    required String description,
+    required List<String> tags,
+    required String code,
+  }) {
+    if (query.isEmpty) return 1.0;
+
+    final queryLower = query.toLowerCase();
+    final titleLower = title.toLowerCase();
+    final descLower = description.toLowerCase();
+    final codeLower = code.toLowerCase();
+    final queryTerms =
+        queryLower.split(' ').where((t) => t.isNotEmpty).toList();
+
+    double score = 0.0;
+
+    // 1. Exact match in title (highest weight)
+    if (titleLower.contains(queryLower)) {
+      score += 100.0;
+      if (titleLower.startsWith(queryLower)) {
+        score += 50.0;
+      }
+    }
+
+    // 2. Exact match in tags (high weight)
+    for (final tag in tags) {
+      if (tag.toLowerCase() == queryLower) {
+        score += 80.0;
+      } else if (tag.toLowerCase().contains(queryLower)) {
+        score += 40.0;
+      }
+    }
+
+    // 3. Exact match in code (medium-high weight)
+    if (code.isNotEmpty && codeLower.contains(queryLower)) {
+      score += 50.0;
+    }
+
+    // 4. Exact match in description (medium weight)
+    if (descLower.contains(queryLower)) {
+      score += 30.0;
+    }
+
+    // 5. Term-based matching (for multi-word queries)
+    double termScore = 0.0;
+    for (final term in queryTerms) {
+      if (term.length < 2) continue;
+
+      // Title matches
+      if (titleLower.contains(term)) {
+        termScore += 15.0;
+      }
+
+      // Tag matches
+      for (final tag in tags) {
+        if (tag.toLowerCase().contains(term)) {
+          termScore += 10.0;
+        }
+      }
+
+      // Code matches
+      if (code.isNotEmpty && codeLower.contains(term)) {
+        termScore += 8.0;
+      }
+
+      // Description matches
+      if (descLower.contains(term)) {
+        termScore += 5.0;
+      }
+    }
+    score += termScore;
+
+    // 6. Fuzzy matching using Levenshtein distance
+    final titleWords = titleLower.split(' ');
+    final descWords = descLower.split(' ').take(20).toList();
+    final codeWords = code.isNotEmpty
+        ? codeLower.split(RegExp(r'[\s\n;{}()[\]]')).take(30).toList()
+        : [];
+
+    double fuzzyScore = 0.0;
+    for (final term in queryTerms) {
+      if (term.length < 3) continue;
+
+      // Check title words
+      for (final word in titleWords) {
+        final distance = _levenshteinDistance(term, word);
+        final similarity =
+            1.0 - (distance / math.max(term.length, word.length));
+        if (similarity > 0.7) {
+          fuzzyScore += similarity * 10.0;
+        }
+      }
+
+      // Check tag words
+      for (final tag in tags) {
+        final distance = _levenshteinDistance(term, tag.toLowerCase());
+        final similarity = 1.0 - (distance / math.max(term.length, tag.length));
+        if (similarity > 0.75) {
+          fuzzyScore += similarity * 8.0;
+        }
+      }
+
+      // Check code words (programming terms)
+      for (final word in codeWords) {
+        if (word.length < 2) continue;
+        final distance = _levenshteinDistance(term, word);
+        final similarity =
+            1.0 - (distance / math.max(term.length, word.length));
+        if (similarity > 0.8) {
+          fuzzyScore += similarity * 6.0;
+        }
+      }
+
+      // Check description words
+      for (final word in descWords) {
+        final distance = _levenshteinDistance(term, word);
+        final similarity =
+            1.0 - (distance / math.max(term.length, word.length));
+        if (similarity > 0.8) {
+          fuzzyScore += similarity * 2.0;
+        }
+      }
+    }
+    score += fuzzyScore;
+
+    // 7. Normalize score to 0-1 range
+    return math.min(1.0, score / 100.0);
+  }
+
+  /// Calculate Levenshtein distance between two strings
+  static int _levenshteinDistance(String s1, String s2) {
+    if (s1 == s2) return 0;
+    if (s1.isEmpty) return s2.length;
+    if (s2.isEmpty) return s1.length;
+
+    final len1 = s1.length;
+    final len2 = s2.length;
+
+    List<List<int>> matrix = List.generate(
+      len1 + 1,
+      (i) => List.filled(len2 + 1, 0),
+    );
+
+    for (int i = 0; i <= len1; i++) {
+      matrix[i][0] = i;
+    }
+    for (int j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (int i = 1; i <= len1; i++) {
+      for (int j = 1; j <= len2; j++) {
+        final cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
+        matrix[i][j] = [
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        ].reduce(math.min);
+      }
+    }
+
+    return matrix[len1][len2];
   }
 }

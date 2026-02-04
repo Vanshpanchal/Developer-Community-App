@@ -12,8 +12,7 @@ import 'ai_service.dart';
 class attachcode extends StatefulWidget {
   final String docId;
   final String discussionId;
-   attachcode({super.key, required this.docId,required this.discussionId});
-
+  attachcode({super.key, required this.docId, required this.discussionId});
 
   @override
   State<attachcode> createState() => _attachcodeState();
@@ -23,7 +22,7 @@ class _attachcodeState extends State<attachcode> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _markdownController =
-  TextEditingController(); // Controller for the code field
+      TextEditingController(); // Controller for the code field
   late var reply = "";
   final _formKey = GlobalKey<FormState>();
   String markdownContent = ''; // Markdown content for Preview
@@ -43,7 +42,7 @@ class _attachcodeState extends State<attachcode> {
 
       if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
         // Show error if any field is empty
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(GetSnackBar(
           title: "Error",
           message: "All fields must be filled!",
           icon: Icon(
@@ -80,7 +79,7 @@ class _attachcodeState extends State<attachcode> {
           .set(data)
           .then((_) {
         debugPrint("AddUser: User Added");
-        Get.showSnackbar( GetSnackBar(
+        Get.showSnackbar(GetSnackBar(
           title: "Post Created",
           message: "Success",
           icon: Icon(
@@ -180,6 +179,7 @@ class _attachcodeState extends State<attachcode> {
       _tags.remove(tag);
     });
   }
+
   Future<void> _fetchDocumentData() async {
     try {
       // Access the reply document from the subcollection
@@ -199,7 +199,7 @@ class _attachcodeState extends State<attachcode> {
 
         // Populate the text controllers with the fetched data
         _markdownController.text = data['code'] ?? ''; // Fetch 'code' field
-        _descriptionController.text = data['reply'] ; // Fetch 'title' field
+        _descriptionController.text = data['reply']; // Fetch 'title' field
       } else {
         // Handle the case where the document does not exist
         ScaffoldMessenger.of(context).showSnackBar(
@@ -226,7 +226,8 @@ class _attachcodeState extends State<attachcode> {
 
       // Update the 'code' and 'title' fields in the reply document
       await docRef.update({
-        'code': _markdownController.text,  // Optionally, update the 'title' field
+        'code':
+            _markdownController.text, // Optionally, update the 'title' field
       });
 
       // Show success message
@@ -244,7 +245,7 @@ class _attachcodeState extends State<attachcode> {
   Future<void> _generateAIReview() async {
     if (code.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(content: Text('Add code before requesting review.')),
+        SnackBar(content: Text('Add code before requesting review.')),
       );
       return;
     }
@@ -260,7 +261,9 @@ class _attachcodeState extends State<attachcode> {
       if (review == AIService.missingKeyMessage) {
         if (mounted) _showMissingKeyDialog();
       } else {
-        setState(() { _aiReview = review; });
+        setState(() {
+          _aiReview = review;
+        });
       }
     } catch (e) {
       setState(() {
@@ -280,22 +283,12 @@ class _attachcodeState extends State<attachcode> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('API Key Required'),
-        content: const Text('To use AI reviews, please add your Gemini API key in settings.'),
+        content: const Text(
+            'To use AI reviews, please add your Gemini API key in settings.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Close')),
           TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              // Show input dialog directly
-              Future.microtask(() async {
-                final saved = await showGeminiKeyInputDialog(context);
-                if (saved == true && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gemini key saved. Retry AI action.')));
-                }
-              });
-            },
-            child: const Text('Add Key'),
-          ),
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close')),
         ],
       ),
     );
@@ -306,184 +299,193 @@ class _attachcodeState extends State<attachcode> {
     super.initState();
     _fetchDocumentData(); // Fetch the document data when the screen is initialized
   }
+
   @override
   Widget build(BuildContext context) {
-    return
-      Scaffold(
-        appBar: AppBar(
-          title: Text('Express Yourself'),
-        ),
-        body:
-        Form(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding:  EdgeInsets.all(16.0),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Express Yourself'),
+      ),
+      body: Form(
+          child: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                "Attach your code...",
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
+                textAlign: TextAlign.justify,
+              ),
+              SizedBox(height: 20),
+              DefaultTabController(
+                length: 3, // Code / Preview / Review
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                     Text(
-                      "Attach your code...",
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 16,
-
-                        fontWeight: FontWeight.w400,
-                      ),
-                      textAlign: TextAlign.justify,
+                    TabBar(
+                      tabs: [
+                        Tab(
+                          icon: Icon(Icons.code),
+                        ),
+                        Tab(
+                          icon: Icon(Icons.visibility),
+                        ),
+                        Tab(
+                          icon: Icon(Icons.reviews),
+                        ),
+                      ],
                     ),
-
-                    SizedBox(height: 20),
-
-                    DefaultTabController(
-                      length: 3, // Code / Preview / Review
-                      child: Column(
+                    SizedBox(
+                      height: 260, // accommodate review content
+                      child: TabBarView(
                         children: [
-                          TabBar(
-                            tabs: [
-                              Tab(
-                                icon: Icon(Icons.code),
+                          // Code Tab: Displays the code as a TextField
+                          Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: TextField(
+                                controller:
+                                    _markdownController, // Use _codeController for TextField
+                                maxLines: null, // Allow multiple lines
+                                decoration: InputDecoration(
+                                  hintText: 'Enter your code here',
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.all(16),
+                                ),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color:
+                                      Theme.of(context).colorScheme.onSurface,
+                                ),
+                                onChanged: (text) {
+                                  setState(() {
+                                    code =
+                                        text; // Update code with the text field input
+                                  });
+                                },
                               ),
-                              Tab(
-                                icon: Icon(Icons.visibility),
-                              ),
-                              Tab(
-                                icon: Icon(Icons.reviews),
-                              ),
-                            ],
+                            ),
                           ),
-                          SizedBox(
-                            height: 260, // accommodate review content
-                            child: TabBarView(
-                              children: [
-                                // Code Tab: Displays the code as a TextField
-                                Card(
-                                  child: Padding(
-
-                                    padding:  EdgeInsets.all(16.0),
-                                    child: TextField(
-                                      controller: _markdownController, // Use _codeController for TextField
-                                      maxLines: null, // Allow multiple lines
-                                      decoration: InputDecoration(
-                                        hintText: 'Enter your code here',
-                                        border: InputBorder.none,
-                                        contentPadding: EdgeInsets.all(16),
+                          // Preview Tab: Renders the Markdown content
+                          Card(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: MarkdownBody(
+                                      data: "```\n$code\n```",
+                                      styleSheet: MarkdownStyleSheet(
+                                        code: TextStyle(
+                                            fontFamily: 'monospace',
+                                            fontWeight: FontWeight.normal,
+                                            fontSize: 16,
+                                            backgroundColor:
+                                                Colors.transparent),
+                                        codeblockDecoration: BoxDecoration(
+                                            borderRadius:
+                                                BorderRadius.circular(15)),
                                       ),
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: Theme.of(context).colorScheme.onSurface,
-                                      ),
-                                      onChanged: (text) {
-                                        setState(() {
-                                          code = text; // Update code with the text field input
-                                        });
-                                      },
                                     ),
                                   ),
-                                ),
-                                // Preview Tab: Renders the Markdown content
-                                Card(
-                                  child : SingleChildScrollView(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Padding(
-                                          padding:  EdgeInsets.all(16.0),
-                                          child: MarkdownBody(
-                                            data: "```\n$code\n```",
-                                            styleSheet: MarkdownStyleSheet(
-                                              code: TextStyle(
-                                                  fontFamily: 'monospace',
-                                                  fontWeight: FontWeight.normal,
-                                                  fontSize: 16,
-                                                  backgroundColor: Colors.transparent
+                                ],
+                              ),
+                            ),
+                          ),
+                          // Review Tab
+                          Card(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: _reviewLoading
+                                  ? Center(child: CircularProgressIndicator())
+                                  : _aiReview == null
+                                      ? Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Text('Ask AI for a code review.'),
+                                            SizedBox(height: 12),
+                                            ElevatedButton.icon(
+                                              onPressed: _generateAIReview,
+                                              icon: Icon(Icons.auto_fix_high),
+                                              label: Text('Generate Review'),
+                                            )
+                                          ],
+                                        )
+                                      : SingleChildScrollView(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Text('AI Code Review',
+                                                      style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold)),
+                                                  IconButton(
+                                                    tooltip: 'Refresh review',
+                                                    onPressed:
+                                                        _generateAIReview,
+                                                    icon: Icon(Icons.refresh),
+                                                  ),
+                                                ],
                                               ),
-                                              codeblockDecoration: BoxDecoration(
-                                                  borderRadius:BorderRadius.circular(15)
-
-                                              ),
-
-                                            ),
-
+                                              SizedBox(height: 8),
+                                              Text(_aiReview!),
+                                            ],
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                // Review Tab
-                                Card(
-                                  child: Padding(
-                                    padding:  EdgeInsets.all(16.0),
-                                    child: _reviewLoading
-                                        ?  Center(child: CircularProgressIndicator())
-                                        : _aiReview == null
-                                            ? Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                   Text('Ask AI for a code review.'),
-                                                   SizedBox(height: 12),
-                                                  ElevatedButton.icon(
-                                                    onPressed: _generateAIReview,
-                                                    icon:  Icon(Icons.auto_fix_high),
-                                                    label:  Text('Generate Review'),
-                                                  )
-                                                ],
-                                              )
-                                            : SingleChildScrollView(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Row(
-                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                      children: [
-                                                         Text('AI Code Review', style: TextStyle(fontWeight: FontWeight.bold)),
-                                                        IconButton(
-                                                          tooltip: 'Refresh review',
-                                                          onPressed: _generateAIReview,
-                                                          icon:  Icon(Icons.refresh),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                     SizedBox(height: 8),
-                                                    Text(_aiReview!),
-                                                  ],
-                                                ),
-                                              ),
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                    SizedBox(height: 10),
-                    ElevatedButton.icon(
-                      icon: Icon(Icons.attach_file,color: Colors.white,),
-                      onPressed: () {
-                        _updateCode();
-                        Navigator.pop(context);
-                      },
-                      label: Text('Attach Code',style: TextStyle(color: Colors.white),),
-                      style: ElevatedButton.styleFrom(elevation: 2.0, // Border color and width
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12.0), // Border radius
-                        ),
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-
-                      ),
-                    ),
-                     SizedBox(height: 12),
-                    if (!_reviewLoading && code.trim().isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: _generateAIReview,
-                        icon:  Icon(Icons.reviews),
-                        label:  Text('AI Review'),
-                      ),
                   ],
                 ),
               ),
-            )),
-      );
+              SizedBox(height: 10),
+              ElevatedButton.icon(
+                icon: Icon(
+                  Icons.attach_file,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  _updateCode();
+                  Navigator.pop(context);
+                },
+                label: Text(
+                  'Attach Code',
+                  style: TextStyle(color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  elevation: 2.0, // Border color and width
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0), // Border radius
+                  ),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              SizedBox(height: 12),
+              if (!_reviewLoading && code.trim().isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: _generateAIReview,
+                  icon: Icon(Icons.reviews),
+                  label: Text('AI Review'),
+                ),
+            ],
+          ),
+        ),
+      )),
+    );
   }
 }

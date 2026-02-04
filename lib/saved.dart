@@ -7,8 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'ai_service.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'dart:math' as math;
 
 class saved extends StatefulWidget {
   const saved({super.key});
@@ -492,242 +494,527 @@ class _QuestionCardState extends State<QuestionCard> {
     });
   }
 
+  bool _showComplexity = false;
+  String? _complexityResult;
+  bool _complexityLoading = false;
+  bool _showFullCode = false;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    String? code;
-    return Card(
-        child: Padding(
-      padding: EdgeInsets.all(16.0),
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // User Info Row
+            Row(
+              children: [
+                FutureBuilder<String?>(
+                  future: _fetchUserProfileImage(widget.uid),
+                  builder: (context, snapshot) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
+                        foregroundImage:
+                            snapshot.hasData && snapshot.data!.isNotEmpty
+                                ? NetworkImage(snapshot.data!)
+                                : const NetworkImage(
+                                    'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                                  ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FutureBuilder<String?>(
+                        future: _userNameFuture,
+                        builder: (context, snapshot) {
+                          return Text(
+                            snapshot.hasData ? snapshot.data! : 'Loading...',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          );
+                        },
+                      ),
+                      Text(
+                        _formatDate(widget.timestamp),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                FutureBuilder<String?>(
+                  future: _fetchUserXP(widget.uid),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) return const SizedBox.shrink();
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.primaryGradient,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${snapshot.data} XP',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Title
+            Text(
+              widget.title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                height: 1.3,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            // Description
+            RichText(
+              text: TextSpan(
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+                children: _buildDescription(widget.description, theme),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+
+            // Code Block Preview or Full
+            if (widget.code != null && widget.code!.isNotEmpty)
+              _showFullCode ? _buildCodeBlock(theme) : _buildCodePreview(theme),
+
+            if (widget.tags.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              // Tags
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: widget.tags.take(3).map((tag) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer
+                          .withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      tag,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 11,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+
+            const SizedBox(height: 12),
+
+            // Actions Row
+            Row(
+              children: [
+                _buildCompactAction(
+                  icon: isLiked ? Icons.favorite : Icons.favorite_border,
+                  label: '${widget.votes}',
+                  onTap: _handleLike,
+                  theme: theme,
+                  isActive: isLiked,
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(
+                    Icons.bookmark_rounded,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  onPressed: () => removesaved(widget.docid),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCodePreview(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    final codeLines = widget.code?.split('\n') ?? [];
+    final previewLines = codeLines.take(4).join('\n');
+    final hasMore = codeLines.length > 4;
+
+    return InkWell(
+      onTap: () => setState(() => _showFullCode = true),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(top: 12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Code header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(8),
+                  topRight: Radius.circular(8),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.code_rounded,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Code Snippet',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (hasMore) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Tap to expand',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.expand_more_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+            // Code content
+            Container(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                previewLines,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: isDark ? Colors.grey[300] : Colors.grey[800],
+                  height: 1.4,
+                ),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCodeBlock(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // User Info Row (Profile Picture and Username)
-          Row(
-            // mainAxisAlignment: Maina,
-            children: [
-              FutureBuilder<String?>(
-                  future: _fetchUserProfileImage(widget.uid),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return CircleAvatar(
-                        backgroundColor: Colors.grey,
-                      );
-                    } else if (snapshot.hasError ||
-                        snapshot.data == null ||
-                        snapshot.data!.isEmpty) {
-                      print(snapshot.error);
-                      return CircleAvatar(
-                        foregroundImage: NetworkImage(
-                          'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                        ),
-                      );
-                    } else {
-                      return CircleAvatar(
-                        foregroundImage: NetworkImage(snapshot.data!),
-                      );
-                    }
-                  }),
-              SizedBox(width: 8), // Space between avatar and text
-              // Fetch and display the user's name
-              // if (!isFetchingUserName)
-              FutureBuilder<String?>(
-                future: _userNameFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Text('Loading...');
-                  } else if (snapshot.hasError) {
-                    return Text('Error fetching user name');
-                  } else if (snapshot.hasData) {
-                    String userName = "~ ${snapshot.data}";
-                    return Text(userName);
-                  } else {
-                    return Text('User not found');
-                  }
-                },
+          // Code Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
               ),
-              Spacer(),
-              FutureBuilder<String?>(
-                future: _fetchUserXP(widget.uid),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Text('XP: Loading...');
-                  } else if (snapshot.hasError) {
-                    return Text('Error fetching XP');
-                  } else if (snapshot.hasData) {
-                    Object xp = snapshot.data ?? 0;
-                    return Container(
-                      padding:
-                          EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.lightBlueAccent, // Light blue
-                            Colors.blue, // Regular blue
-                            Colors.blueAccent, // Darker blue
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 10,
-                            offset: Offset(4, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'XP: $xp',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  } else {
-                    return Text('XP: 0');
-                  }
-                },
-              ),
-            ],
-          ),
-          SizedBox(height: 16), // Space between user info and title
-          Text(
-            widget.title,
-            style: theme.textTheme.titleLarge,
-          ),
-          SizedBox(height: 8),
-          RichText(
-            text: TextSpan(
-              style: theme.textTheme.bodyMedium,
-              children: _buildDescription(widget.description, theme),
             ),
-            maxLines: 10,
-            textAlign: TextAlign.justify,
-            overflow: TextOverflow.ellipsis,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.code_rounded,
+                  size: 14,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Code Snippet',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                ),
+                const Spacer(),
+                // Copy button
+                IconButton(
+                  icon: Icon(Icons.copy_rounded, size: 14),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: widget.code!));
+                    Get.showSnackbar(GetSnackBar(
+                      title: "Copied!",
+                      message: 'Code copied to clipboard',
+                      icon: const Icon(Icons.check, color: Colors.green),
+                      duration: const Duration(seconds: 2),
+                    ));
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Copy code',
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                // Analyze button
+                _buildAnalyzeButton(theme),
+                const SizedBox(width: 8),
+                // Collapse button
+                IconButton(
+                  icon: Icon(Icons.expand_less_rounded, size: 16),
+                  onPressed: () => setState(() => _showFullCode = false),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Collapse',
+                  color: theme.colorScheme.primary,
+                ),
+              ],
+            ),
           ),
-          SizedBox(height: 8),
-          // code = widget.code!!
-          if (widget.code != null && widget.code!.isNotEmpty)
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+
+          // Code Content
+          Container(
+            padding: const EdgeInsets.all(12),
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: SingleChildScrollView(
+              child: Text(
+                widget.code!,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: isDark ? Colors.grey[300] : Colors.grey[800],
+                  height: 1.4,
+                ),
               ),
-              width: double.infinity,
-              margin: EdgeInsets.symmetric(vertical: 5),
+            ),
+          ),
+
+          // Complexity Result
+          if (_showComplexity && _complexityResult != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.2),
+                ),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    // Background color for the body
-                    padding: EdgeInsets.all(0.0),
-                    child: Padding(
-                      padding: EdgeInsets.all(0.0),
-                      child: GestureDetector(
-                        onLongPress: () => {
-                          Clipboard.setData(ClipboardData(text: widget.code!)),
-                          Get.showSnackbar(GetSnackBar(
-                            title: "Success",
-                            message: "Code Copied to clipboard",
-                            icon: Icon(
-                              Icons.code,
-                              color: Colors.green,
-                            ),
-                            duration: Duration(seconds: 2),
-                          )),
-                          // ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          // content: Text('Code copied to clipboard!'),
-                        },
-                        child: MarkdownBody(
-                          data: "```\n${widget.code}\n```",
-                          styleSheet: MarkdownStyleSheet(
-                            codeblockPadding: EdgeInsets.all(15),
-                            code: TextStyle(
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.normal,
-                              fontSize: 14,
-                              backgroundColor: Colors.transparent,
-                            ),
-                            blockquoteDecoration: BoxDecoration(
-                              color: theme.colorScheme.primaryFixed,
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            codeblockDecoration: BoxDecoration(
-                              color: theme.colorScheme.primaryFixed,
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                          ),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.analytics_rounded,
+                        size: 14,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Complexity Analysis',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  MarkdownBody(
+                    data: _complexityResult!,
+                    styleSheet: MarkdownStyleSheet(
+                      p: theme.textTheme.bodySmall,
+                      h1: theme.textTheme.titleSmall,
+                      h2: theme.textTheme.titleSmall,
+                      h3: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
               ),
             ),
-          Wrap(
-            spacing: 5,
-            children: widget.tags
-                .map((tag) => Chip(
-                      label: Text(tag),
-                      backgroundColor: theme.colorScheme.secondaryContainer,
-                      labelStyle: TextStyle(
-                          color: theme.colorScheme.onSecondaryContainer),
-                    ))
-                .toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyzeButton(ThemeData theme) {
+    if (_complexityLoading) {
+      return SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: theme.colorScheme.primary,
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(
+        _showComplexity ? Icons.visibility_off_rounded : Icons.speed_rounded,
+        size: 14,
+      ),
+      onPressed: () async {
+        if (_showComplexity) {
+          setState(() => _showComplexity = false);
+          return;
+        }
+        if (widget.code != null && widget.code!.trim().isNotEmpty) {
+          setState(() => _complexityLoading = true);
+          final res = await AIService()
+              .analyzeComplexity(code: widget.code!, language: 'dart');
+          if (mounted) {
+            setState(() {
+              _complexityResult = res;
+              _showComplexity = true;
+              _complexityLoading = false;
+            });
+          }
+        }
+      },
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+      visualDensity: VisualDensity.compact,
+      tooltip: _showComplexity ? 'Hide analysis' : 'Analyze complexity',
+      color: theme.colorScheme.primary,
+    );
+  }
+
+  Widget _buildCompactAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required ThemeData theme,
+    bool isActive = false,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: isActive
+                ? AppTheme.primaryColor
+                : theme.colorScheme.onSurfaceVariant,
           ),
-          Divider(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              InkWell(
-                onTap: () {
-                  // Logic to handle like button click
-                  // Update the votes count and Firestore if needed
-                  // _handleLike();
-                },
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        isLiked
-                            ? Icons.thumb_up_alt_rounded
-                            : Icons.thumb_up_alt_outlined,
-                        color: isLiked ? Colors.blue : Colors.black,
-                      ),
-                      onPressed: _handleLike,
-                    ),
-                    SizedBox(width: 4),
-                    Text('${widget.votes}', style: theme.textTheme.labelLarge),
-                    SizedBox(width: 24),
-                    IconButton(
-                      icon: Icon(Icons.bookmark),
-                      onPressed: () {
-                        removesaved(widget.docid);
-                      },
-                      // onPressed: _handleLike,
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                'Posted ${_formatDate(widget.timestamp)}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: isActive
+                  ? AppTheme.primaryColor
+                  : theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
-    ));
+    );
   }
 
   String _formatDate(DateTime date) {

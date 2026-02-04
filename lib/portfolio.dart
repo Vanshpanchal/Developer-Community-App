@@ -195,19 +195,6 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
               child: const Text('Close')),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Future.microtask(() async {
-                final saved = await showGeminiKeyInputDialog(context);
-                if (saved == true && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Gemini key saved. Retry AI summary.')));
-                }
-              });
-            },
-            child: const Text('Add Key'),
-          ),
         ],
       ),
     );
