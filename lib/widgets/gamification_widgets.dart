@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/gamification_models.dart';
 import '../services/gamification_service.dart';
+import 'modern_widgets.dart';
 
 /// Widget showing user's level progress and stats
 class LevelProgressCard extends StatelessWidget {
@@ -116,14 +117,20 @@ class LevelProgressCard extends StatelessWidget {
                       'Progress to ${stats.level.nextLevel!.name}',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
                       ),
                     ),
                     Text(
                       '${stats.xpToNextLevel} XP needed',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -156,11 +163,14 @@ class LevelProgressCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildStatItem('📝', '${stats.postsCount}', 'Posts'),
                   _buildStatItem(
-                      '💬', '${stats.discussionsCount}', 'Discussions'),
-                  _buildStatItem('🏅', '${stats.badges.length}', 'Badges'),
-                  _buildStatItem('👍', '${stats.likesReceived}', 'Likes'),
+                      '📝', '${stats.postsCount}', 'Posts', colorScheme),
+                  _buildStatItem('💬', '${stats.discussionsCount}',
+                      'Discussions', colorScheme),
+                  _buildStatItem(
+                      '🏅', '${stats.badges.length}', 'Badges', colorScheme),
+                  _buildStatItem(
+                      '👍', '${stats.likesReceived}', 'Likes', colorScheme),
                 ],
               ),
             ],
@@ -170,7 +180,8 @@ class LevelProgressCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStatItem(String emoji, String value, String label) {
+  Widget _buildStatItem(
+      String emoji, String value, String label, ColorScheme colorScheme) {
     return Column(
       children: [
         Text(emoji, style: const TextStyle(fontSize: 20)),
@@ -186,7 +197,7 @@ class LevelProgressCard extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 11,
-            color: Colors.grey[600],
+            color: colorScheme.onSurface.withOpacity(0.6),
           ),
         ),
       ],
@@ -230,7 +241,10 @@ class StreakWidget extends StatelessWidget {
                         'Longest: ${streak.longestStreak} days',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey[600],
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withOpacity(0.6),
                         ),
                       ),
                     ],
@@ -336,7 +350,10 @@ class StreakWidget extends StatelessWidget {
                       _getDayName(day.weekday),
                       style: TextStyle(
                         fontSize: 10,
-                        color: Colors.grey[600],
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
                       ),
                     ),
                   ],
@@ -408,7 +425,11 @@ class BadgeShowcase extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text(
                         'No badges yet. Start contributing!',
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.6)),
                       ),
                     ],
                   ),
@@ -597,4 +618,60 @@ void showXpGainOverlay(BuildContext context, int xpAmount, String message) {
   );
 
   overlay.insert(overlayEntry);
+}
+
+/// Shimmer loading for Gamification Hub
+class GamificationHubShimmer extends StatelessWidget {
+  const GamificationHubShimmer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          // Level Progress Card Shimmer
+          CardShimmer(height: 200, showAvatar: false, lineCount: 4),
+          SizedBox(height: 16),
+          // Quick Actions Shimmer
+          Row(
+            children: [
+              Expanded(child: CardShimmer(height: 120, showAvatar: false, lineCount: 2)),
+              SizedBox(width: 12),
+              Expanded(child: CardShimmer(height: 120, showAvatar: false, lineCount: 2)),
+            ],
+          ),
+          SizedBox(height: 16),
+          // Streak Shimmer
+          CardShimmer(height: 150, showAvatar: false, lineCount: 3),
+          SizedBox(height: 16),
+          // Badges Shimmer
+          CardShimmer(height: 120, showAvatar: false, lineCount: 2),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shimmer for Badges Grid
+class BadgesGridShimmer extends StatelessWidget {
+  const BadgesGridShimmer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 0.8,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: 9,
+      itemBuilder: (context, index) {
+        return const ShimmerLoading(borderRadius: 12);
+      },
+    );
+  }
 }

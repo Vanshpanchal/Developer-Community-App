@@ -232,79 +232,119 @@ class GamificationService {
 
   // ==================== CHALLENGES ====================
 
-  /// Generate daily challenges
-  List<Challenge> generateDailyChallenges() {
+  // ==================== CHALLENGES ====================
+
+  static final List<Challenge> _dailyTemplates = [
+    const Challenge(id: 'd_post', title: 'Daily Share', description: 'Create 1 post', type: ChallengeType.daily, xpReward: 30, requirements: {'postsToday': 1}),
+    const Challenge(id: 'd_like', title: 'Spread Love', description: 'Like 3 posts', type: ChallengeType.daily, xpReward: 20, requirements: {'likesToday': 3}),
+    const Challenge(id: 'd_reply', title: 'Conversation', description: 'Reply to 1 post', type: ChallengeType.daily, xpReward: 25, requirements: {'repliesToday': 1}),
+    const Challenge(id: 'd_view', title: 'Explorer', description: 'View 5 posts', type: ChallengeType.daily, xpReward: 15, requirements: {'viewsToday': 5}),
+    const Challenge(id: 'd_poll', title: 'Curious Mind', description: 'Vote in a poll', type: ChallengeType.daily, xpReward: 20, requirements: {'pollsVotedToday': 1}),
+  ];
+
+  static final List<Challenge> _weeklyTemplates = [
+    const Challenge(id: 'w_posts', title: 'Weekly Writer', description: 'Create 5 posts', type: ChallengeType.weekly, xpReward: 150, requirements: {'postsThisWeek': 5}),
+    const Challenge(id: 'w_replies', title: 'Helpful Hand', description: 'Reply to 10 discussions', type: ChallengeType.weekly, xpReward: 200, requirements: {'repliesThisWeek': 10}),
+    const Challenge(id: 'w_streak', title: 'Consistent', description: '5 day streak', type: ChallengeType.weekly, xpReward: 175, requirements: {'streakDays': 5}),
+    const Challenge(id: 'w_likes', title: 'Popularity', description: 'Get 20 likes', type: ChallengeType.weekly, xpReward: 100, requirements: {'likesReceivedThisWeek': 20}),
+  ];
+
+  /// Get or Generate daily challenges
+  Future<List<Challenge>> getDailyChallenges() async {
     final today = DateTime.now();
+    final dateId = "${today.year}-${today.month}-${today.day}";
     final expiry = DateTime(today.year, today.month, today.day, 23, 59, 59);
 
-    return [
-      Challenge(
-        id: 'daily_post_${today.day}',
-        title: 'Daily Share',
-        description: 'Create at least 1 post today',
-        type: ChallengeType.daily,
-        xpReward: 30,
-        requirements: {'postsToday': 1},
-        expiresAt: expiry,
-      ),
-      Challenge(
-        id: 'daily_engage_${today.day}',
-        title: 'Community Spirit',
-        description: 'Like 3 posts and reply to 1 discussion',
-        type: ChallengeType.daily,
-        xpReward: 40,
-        requirements: {'likesToday': 3, 'repliesToday': 1},
-        expiresAt: expiry,
-      ),
-      Challenge(
-        id: 'daily_explore_${today.day}',
-        title: 'Explorer',
-        description: 'View 5 different posts',
-        type: ChallengeType.daily,
-        xpReward: 20,
-        requirements: {'viewsToday': 5},
-        expiresAt: expiry,
-      ),
-    ];
+    try {
+      final docRef = _firestore.collection('DailyChallenges').doc(dateId);
+      final docSnapshot = await docRef.get();
+
+      if (docSnapshot.exists) {
+        final data = docSnapshot.data();
+        final list = (data?['challenges'] as List<dynamic>?)
+            ?.map((e) => Challenge.fromMap(e))
+            .toList();
+        if (list != null && list.isNotEmpty) return list;
+      }
+
+      // Generate if not exists
+      final challenges = (_dailyTemplates..shuffle()).take(3).map((t) {
+        return Challenge(
+            id: "${t.id}_$dateId",
+            title: t.title,
+            description: t.description,
+            type: t.type,
+            xpReward: t.xpReward,
+            requirements: t.requirements,
+            expiresAt: expiry);
+      }).toList();
+
+      await docRef.set({
+        'date': dateId,
+        'challenges': challenges.map((c) => c.toMap()).toList(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return challenges;
+    } catch (e) {
+        debugPrint("Error fetching daily challenges: $e");
+        // Fallback
+        return [
+             Challenge(id: 'fallback_daily', title: 'Daily Share', description: 'Create 1 post', type: ChallengeType.daily, xpReward: 30, requirements: {'postsToday': 1}, expiresAt: expiry),
+        ];
+
+    }
   }
 
-  /// Generate weekly challenges
-  List<Challenge> generateWeeklyChallenges() {
+  /// Get or Generate weekly challenges
+  Future<List<Challenge>> getWeeklyChallenges() async {
     final now = DateTime.now();
+    // Calculate week number (ISO 8601-ish)
+    final days = now.difference(DateTime(now.year, 1, 1)).inDays;
+    final weekNum = ((days + DateTime(now.year, 1, 1).weekday) / 7).ceil();
+    final weekId = "${now.year}-W$weekNum";
+    
     final endOfWeek = now.add(Duration(days: 7 - now.weekday));
-    final expiry =
-        DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day, 23, 59, 59);
-    final weekNum = (now.day / 7).ceil();
+    final expiry = DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day, 23, 59, 59);
 
-    return [
-      Challenge(
-        id: 'weekly_posts_$weekNum',
-        title: 'Weekly Writer',
-        description: 'Create 5 posts this week',
-        type: ChallengeType.weekly,
-        xpReward: 150,
-        requirements: {'postsThisWeek': 5},
-        expiresAt: expiry,
-      ),
-      Challenge(
-        id: 'weekly_helper_$weekNum',
-        title: 'Community Helper',
-        description: 'Reply to 10 discussions this week',
-        type: ChallengeType.weekly,
-        xpReward: 200,
-        requirements: {'repliesThisWeek': 10},
-        expiresAt: expiry,
-      ),
-      Challenge(
-        id: 'weekly_streak_$weekNum',
-        title: 'Consistent Contributor',
-        description: 'Be active for 5 consecutive days',
-        type: ChallengeType.weekly,
-        xpReward: 175,
-        requirements: {'streakDays': 5},
-        expiresAt: expiry,
-      ),
-    ];
+     try {
+      final docRef = _firestore.collection('WeeklyChallenges').doc(weekId);
+      final docSnapshot = await docRef.get();
+
+      if (docSnapshot.exists) {
+         final data = docSnapshot.data();
+        final list = (data?['challenges'] as List<dynamic>?)
+            ?.map((e) => Challenge.fromMap(e))
+            .toList();
+        if (list != null && list.isNotEmpty) return list;
+      }
+
+       // Generate if not exists
+      final challenges = (_weeklyTemplates..shuffle()).take(3).map((t) {
+        return Challenge(
+            id: "${t.id}_$weekId",
+            title: t.title,
+            description: t.description,
+            type: t.type,
+            xpReward: t.xpReward,
+            requirements: t.requirements,
+            expiresAt: expiry);
+      }).toList();
+
+      await docRef.set({
+        'weekId': weekId,
+        'challenges': challenges.map((c) => c.toMap()).toList(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return challenges;
+
+     } catch (e) {
+        debugPrint("Error fetching weekly challenges: $e");
+         return [
+             Challenge(id: 'fallback_weekly', title: 'Weekly Writer', description: 'Create 5 posts', type: ChallengeType.weekly, xpReward: 150, requirements: {'postsThisWeek': 5}, expiresAt: expiry),
+        ];
+     }
   }
 
   // ==================== XP MANAGEMENT ====================
@@ -452,21 +492,63 @@ class GamificationService {
     return DailyStreak.empty();
   }
 
+  // ==================== CACHE MANAGEMENT ====================
+  
+  GamificationStats? _cachedStats;
+  DateTime? _lastStatsFetch;
+  
+  List<LeaderboardEntry>? _cachedLeaderboard;
+  DateTime? _lastLeaderboardFetch;
+  
+  List<EarnedBadge>? _cachedBadges;
+  DateTime? _lastBadgesFetch;
+  
+  static const Duration _cacheDuration = Duration(minutes: 5);
+
+  GamificationStats? get cachedStats => _cachedStats;
+  List<LeaderboardEntry>? get cachedLeaderboard => _cachedLeaderboard;
+  List<EarnedBadge>? get cachedBadges => _cachedBadges;
+
+  void clearCache() {
+    _cachedStats = null;
+    _lastStatsFetch = null;
+    _cachedLeaderboard = null;
+    _lastLeaderboardFetch = null;
+    _cachedBadges = null;
+    _lastBadgesFetch = null;
+  }
+
   // ==================== BADGES MANAGEMENT ====================
 
   /// Get user's earned badges
-  Future<List<EarnedBadge>> getUserBadges({String? targetUserId}) async {
+  Future<List<EarnedBadge>> getUserBadges({String? targetUserId, bool forceRefresh = false}) async {
     final userId = targetUserId ?? _currentUserId;
     if (userId == null) return [];
+
+    // Return cached if valid
+    if (!forceRefresh && 
+        userId == _currentUserId && 
+        _cachedBadges != null && 
+        _lastBadgesFetch != null && 
+        DateTime.now().difference(_lastBadgesFetch!) < _cacheDuration) {
+      return _cachedBadges!;
+    }
 
     try {
       final userDoc = await _firestore.collection('User').doc(userId).get();
       final badgesData = userDoc.data()?['badges'] as List<dynamic>?;
-      if (badgesData == null) return [];
-
-      return badgesData
-          .map((b) => EarnedBadge.fromMap(Map<String, dynamic>.from(b)))
-          .toList();
+      final badges = badgesData == null 
+          ? <EarnedBadge>[] 
+          : badgesData
+              .map((b) => EarnedBadge.fromMap(Map<String, dynamic>.from(b)))
+              .toList();
+      
+      if (userId == _currentUserId) {
+        _cachedBadges = badges;
+        _lastBadgesFetch = DateTime.now();
+      }
+      
+      return badges;
     } catch (e) {
       debugPrint('Error getting badges: $e');
       return [];
@@ -505,6 +587,12 @@ class GamificationService {
           'badges': FieldValue.arrayUnion([newBadge.toMap()]),
           'XP': FieldValue.increment(badge.xpReward),
         });
+
+        // Invalidate cache
+        if (userId == _currentUserId) {
+          _cachedBadges = null;
+          _cachedStats = null; 
+        }
 
         return true;
       });
@@ -557,7 +645,15 @@ class GamificationService {
   // ==================== LEADERBOARD ====================
 
   /// Get leaderboard entries
-  Future<List<LeaderboardEntry>> getLeaderboard({int limit = 50}) async {
+  Future<List<LeaderboardEntry>> getLeaderboard({int limit = 50, bool forceRefresh = false}) async {
+    // Return cached if valid
+    if (!forceRefresh && 
+        _cachedLeaderboard != null && 
+        _lastLeaderboardFetch != null && 
+        DateTime.now().difference(_lastLeaderboardFetch!) < _cacheDuration) {
+      return _cachedLeaderboard!;
+    }
+
     try {
       // Query users sorted by XP
       final querySnapshot = await _firestore
@@ -575,6 +671,9 @@ class GamificationService {
         entries.add(LeaderboardEntry.fromMap(data, rank));
         rank++;
       }
+
+      _cachedLeaderboard = entries;
+      _lastLeaderboardFetch = DateTime.now();
 
       return entries;
     } catch (e) {
@@ -609,9 +708,18 @@ class GamificationService {
   // ==================== STATS ====================
 
   /// Get comprehensive gamification stats
-  Future<GamificationStats> getGamificationStats({String? targetUserId}) async {
+  Future<GamificationStats> getGamificationStats({String? targetUserId, bool forceRefresh = false}) async {
     final userId = targetUserId ?? _currentUserId;
     if (userId == null) return GamificationStats.empty();
+
+    // Return cached if valid
+    if (!forceRefresh && 
+        userId == _currentUserId &&
+        _cachedStats != null && 
+        _lastStatsFetch != null && 
+        DateTime.now().difference(_lastStatsFetch!) < _cacheDuration) {
+      return _cachedStats!;
+    }
 
     try {
       // Fetch user document
@@ -625,7 +733,7 @@ class GamificationService {
       final streak = await getStreak(targetUserId: userId);
 
       // Fetch badges
-      final badges = await getUserBadges(targetUserId: userId);
+      final badges = await getUserBadges(targetUserId: userId, forceRefresh: forceRefresh);
 
       // Fetch counts
       final postsSnap = await _firestore
@@ -655,7 +763,7 @@ class GamificationService {
       final pollsVoted = userData['pollsVoted'] as int? ?? 0;
       final repliesCount = userData['repliesCount'] as int? ?? 0;
 
-      return GamificationStats(
+      final stats = GamificationStats(
         totalXp: totalXp,
         level: level,
         streak: streak,
@@ -669,6 +777,13 @@ class GamificationService {
         pollsCreated: pollsCreated,
         pollsVoted: pollsVoted,
       );
+
+      if (userId == _currentUserId) {
+        _cachedStats = stats;
+        _lastStatsFetch = DateTime.now();
+      }
+
+      return stats;
     } catch (e) {
       debugPrint('Error getting gamification stats: $e');
       return GamificationStats.empty();

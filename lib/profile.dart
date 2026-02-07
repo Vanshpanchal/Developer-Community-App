@@ -7,16 +7,23 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'services/firebase_cache_service.dart';
+import 'messagemodel.dart';
 
 import 'chat.dart';
 import 'portfolio.dart';
 import 'api_key_manager.dart';
 import 'screens/gamification_hub_screen.dart';
 import 'screens/leaderboard_screen.dart';
+import 'screens/ai_repo_analyzer_screen.dart';
 import 'utils/app_theme.dart';
+import 'package:palette_generator/palette_generator.dart';
+import 'utils/app_snackbar.dart';
 
 /// Menu item data model
 class _MenuItemData {
@@ -42,7 +49,8 @@ class profile extends StatefulWidget {
   _ProfileState createState() => _ProfileState();
 }
 
-class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
+class _ProfileState extends State<profile>
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final ImagePicker _picker = ImagePicker();
   final user = FirebaseAuth.instance.currentUser;
   String username = '';
@@ -51,6 +59,42 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  Color? _dominantColor;
+
+  Future<void> _updatePalette() async {
+    if (imageUrl == null || imageUrl!.isEmpty) {
+      if (mounted) setState(() => _dominantColor = null);
+      return;
+    }
+    try {
+      final PaletteGenerator generator =
+          await PaletteGenerator.fromImageProvider(
+        NetworkImage(imageUrl!),
+        maximumColorCount: 20,
+      );
+      if (mounted) {
+        setState(() {
+          _dominantColor = generator.dominantColor?.color;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error generating palette: $e');
+    }
+  }
+
+  /// Calculate text color based on background color luminance
+  /// Returns white for dark backgrounds, black for light backgrounds
+  Color _getAdaptiveTextColor(Color backgroundColor) {
+    // Calculate luminance (0.0 - 1.0, where 0 is black and 1 is white)
+    final luminance = backgroundColor.computeLuminance();
+    
+    // If background is dark (luminance < 0.5), use white text
+    // If background is light (luminance >= 0.5), use dark text
+    return luminance < 0.5 ? Colors.white : Colors.black87;
+  }
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -85,7 +129,98 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
   }
 
   signout() async {
+    // Clear all cached data
+    try {
+      // 1. Clear Firestore Cache (GetStorage)
+      final cacheService = FirebaseCacheService();
+      await cacheService.clearAllCache();
+      
+      // 2. Clear API Key (Secure Storage)
+      await ApiKeyManager.instance.clearKey();
+      
+      // 3. Clear Chat History (Hive)
+      if (Hive.isBoxOpen('chat_messages')) {
+        await Hive.box<Message>('chat_messages').clear();
+      } else {
+        await Hive.openBox<Message>('chat_messages').then((box) => box.clear());
+      }
+      
+      debugPrint("🧹 All local data cleared successfully");
+    } catch (e) {
+      debugPrint("⚠️ Error clearing data: $e");
+    }
+
     await FirebaseAuth.instance.signOut();
+  }
+
+  Future<void> _confirmLogout() async {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.logout_rounded,
+                color: AppTheme.errorColor,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Confirm Logout',
+              style: TextStyle(
+                color: isDark ? Colors.white : const Color(0xFF1E293B),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to log out?',
+          style: TextStyle(
+            color: isDark ? const Color(0xFFE2E8F0) : Colors.black87,
+            fontSize: 16,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.errorColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await signout();
+    }
   }
 
   forget() async {
@@ -94,14 +229,13 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
           .sendPasswordResetEmail(email: user!.email.toString());
       if (mounted) {
         AppSnackbar.success(
-          context,
+          'Check your inbox for password reset link',
           title: 'Email Sent',
-          message: 'Check your inbox for password reset link',
         );
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
-        AppSnackbar.error(context, title: 'Error', message: e.code);
+        AppSnackbar.error(e.code, title: 'Error');
       }
     } catch (e) {
       debugPrint("Signupcode  {$e}");
@@ -109,6 +243,19 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
   }
 
   fetchuser() async {
+    final box = GetStorage();
+    final cached = box.read('userData');
+    if (cached != null) {
+      final data = cached as Map<String, dynamic>;
+      setState(() {
+        username = data['username'] ?? 'No name available';
+        imageUrl = data['imageUrl'] ?? '';
+        Xp = data['Xp'] ?? '0';
+        githubUsername = data['githubUsername'];
+      });
+      _updatePalette();
+      // Remove return statement to allow updating from Firestore
+    }
     if (user != null) {
       DocumentSnapshot userData = await FirebaseFirestore.instance
           .collection('User')
@@ -116,15 +263,32 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
           .get();
       if (userData.exists) {
         final data = userData.data() as Map<String, dynamic>?;
+        final uname = data?['Username'] ?? 'No name available';
+        final img = data?['profilePicture'] ?? '';
+        final xp = data?['XP']?.toString() ?? '0';
+        final github = data?['github'];
         setState(() {
-          username = data?['Username'] ?? 'No name available';
-          imageUrl = data?['profilePicture'] ?? '';
-          Xp = data?['XP']?.toString() ?? '0';
-          githubUsername = data?['github'];
+          username = uname;
+          imageUrl = img;
+          Xp = xp;
+          githubUsername = github;
+        });
+        _updatePalette();
+        box.write('userData', {
+          'username': uname,
+          'imageUrl': img,
+          'Xp': xp,
+          'githubUsername': github
         });
       } else {
         setState(() {
           username = 'No name available';
+        });
+        box.write('userData', {
+          'username': 'No name available',
+          'imageUrl': '',
+          'Xp': '0',
+          'githubUsername': null
         });
       }
     }
@@ -166,12 +330,12 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
         setState(() {
           this.imageUrl = imageUrl;
         });
+        _updatePalette();
 
         if (mounted) {
           AppSnackbar.success(
-            context,
+            'Profile picture updated',
             title: 'Success',
-            message: 'Profile picture updated',
           );
         }
       } else {
@@ -181,9 +345,8 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
       print('Error uploading to Cloudinary: $e');
       if (mounted) {
         AppSnackbar.error(
-          context,
+          'Failed to upload image',
           title: 'Error',
-          message: 'Failed to upload image',
         );
       }
     }
@@ -193,6 +356,7 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     var usercredential = FirebaseAuth.instance.currentUser;
@@ -205,7 +369,7 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
           child: SlideTransition(
             position: _slideAnimation,
             child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
+              // physics: const BouncingScrollPhysics(),
               slivers: [
                 // Modern Header
                 SliverToBoxAdapter(
@@ -246,6 +410,13 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
                           color: AppTheme.successColor,
                           onTap: () => Get.to(saved_discussion()),
                         ),
+                        _MenuItemData(
+                          icon: Icons.account_tree_rounded,
+                          title: 'Your Activity',
+                          subtitle: 'View your activity stats',
+                          color: Colors.purple,
+                          onTap: () => Get.to(const DeveloperPortfolioPage()),
+                        ),
                       ]),
                       const SizedBox(height: 16),
                       _buildSectionTitle(theme, 'AI Tools'),
@@ -258,11 +429,11 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
                           onTap: () => Get.to(ChatScreen1()),
                         ),
                         _MenuItemData(
-                          icon: Icons.account_tree_rounded,
-                          title: 'AI Portfolio',
-                          subtitle: 'Generate your portfolio',
-                          color: Colors.purple,
-                          onTap: () => Get.to(const DeveloperPortfolioPage()),
+                          icon: Icons.code_rounded,
+                          title: 'AI Repo Analyzer',
+                          subtitle: 'Analyze GitHub repositories',
+                          color: Colors.deepPurple,
+                          onTap: () => Get.to(const AIRepoAnalyzerScreen()),
                         ),
                         _MenuItemData(
                           icon: Icons.vpn_key_rounded,
@@ -319,111 +490,194 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: AppTheme.primaryGradient,
+        gradient: _dominantColor != null
+            ? LinearGradient(
+                colors: [
+                  _dominantColor!,
+                  _dominantColor!.withValues(alpha: 0.8),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : AppTheme.primaryGradient,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
+        // boxShadow: [
+        //   BoxShadow(
+        //     color: AppTheme.primaryColor.withValues(alpha: 0.3),
+        //     blurRadius: 20,
+        //     // offset: const Offset(0, 10),
+        //   ),
+        // ],
       ),
-      child: Column(
+      child: Stack(
         children: [
-          // Avatar with edit button
-          Stack(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
+          // Decorative background elements
+          Positioned(
+            top: 20,
+            right: 20,
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.1),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 30,
+            left: 30,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.05),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 40,
+            left: 10,
+            child: Transform.rotate(
+              angle: 0.3,
+              child: Container(
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                ),
-                child: CircleAvatar(
-                  radius: 50,
-                  backgroundColor: Colors.white.withValues(alpha: 0.2),
-                  backgroundImage: imageUrl != null && imageUrl!.isNotEmpty
-                      ? NetworkImage(imageUrl!)
-                      : const NetworkImage(
-                          'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                        ),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white.withValues(alpha: 0.08),
                 ),
               ),
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: GestureDetector(
-                  onTap: pickImage,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.2),
-                          blurRadius: 8,
-                        ),
-                      ],
+            ),
+          ),
+          Positioned(
+            bottom: 60,
+            right: 20,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.15),
+              ),
+            ),
+          ),
+          // Main content
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Avatar with edit button - Centered
+              Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        // boxShadow: [
+                        //   BoxShadow(
+                        //     color: Colors.black.withValues(alpha: 0.2),
+                        //     blurRadius: 10,
+                        //     spreadRadius: 2,
+                        //   ),
+                        // ],
+                      ),
+                      child: CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        backgroundImage:
+                            imageUrl != null && imageUrl!.isNotEmpty
+                                ? NetworkImage(imageUrl!)
+                                : const NetworkImage(
+                                    'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                                  ),
+                      ),
                     ),
-                    child: Icon(
-                      Icons.camera_alt_rounded,
-                      size: 18,
-                      color: AppTheme.primaryColor,
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: pickImage,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            // boxShadow: [
+                            //   BoxShadow(
+                            //     color: Colors.black.withValues(alpha: 0.2),
+                            //     blurRadius: 8,
+                            //   ),
+                            // ],
+                          ),
+                          child: Icon(
+                            Icons.camera_alt_rounded,
+                            size: 18,
+                            color: AppTheme.primaryColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Username
+              Text(
+                username.isNotEmpty ? username : 'Unknown User',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+
+              // Email
+              Text(
+                usercredential?.email ?? 'No email',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor).withValues(alpha: 0.9),
+                  letterSpacing: 0.2,
+                ),
+              ),const SizedBox(height: 16),
+
+              // GitHub badge if linked
+              if (githubUsername != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      width: 1,
                     ),
                   ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.code, size: 16, color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '@$githubUsername',
+                        style: TextStyle(
+                          color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
-          const SizedBox(height: 16),
-
-          // Username
-          Text(
-            username.isNotEmpty ? username : 'Unknown User',
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-
-          // Email
-          Text(
-            usercredential?.email ?? 'No email',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.8),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // GitHub badge if linked
-          if (githubUsername != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.code, size: 16, color: Colors.white),
-                  const SizedBox(width: 6),
-                  Text(
-                    '@$githubUsername',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
@@ -669,7 +923,7 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: signout,
+          onTap: _confirmLogout,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -705,21 +959,7 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
           .child('${FirebaseAuth.instance.currentUser?.uid}.png');
 
       await reference.putFile(file).whenComplete(() => {
-            Get.showSnackbar(GetSnackBar(
-              title: "Success",
-              message: "Profile Pic Changed",
-              icon: const Icon(
-                Icons.bookmark,
-                color: Colors.green,
-              ),
-              mainButton: TextButton(
-                  onPressed: () {},
-                  child: const Text(
-                    'Ok',
-                    style: TextStyle(color: Colors.white),
-                  )),
-              duration: const Duration(seconds: 2),
-            ))
+            AppSnackbar.success('Profile Pic Changed')
           });
 
       imageUrl = await reference.getDownloadURL();
@@ -734,76 +974,145 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppTheme.darkCard : Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              child: Icon(Icons.code, color: AppTheme.primaryColor, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Text('GitHub Username'),
-          ],
-        ),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(
-            hintText: 'e.g. torvalds',
-            labelText: 'Username',
-            prefixIcon: const Icon(Icons.alternate_email),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppTheme.primaryColor, width: 2),
-            ),
+              const SizedBox(height: 20),
+              // Title
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.code,
+                        color: AppTheme.primaryColor, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Link GitHub Account',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Description
+              Text(
+                'Enter your GitHub username to link your profile. This will display your GitHub stats and allow others to view your repositories.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Text Field
+              TextField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: 'e.g. torvalds',
+                  labelText: 'GitHub Username',
+                  prefixIcon: const Icon(Icons.alternate_email),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        BorderSide(color: AppTheme.primaryColor, width: 2),
+                  ),
+                ),
+                autofocus: true,
+              ),
+              const SizedBox(height: 24),
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.grey[400]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () async {
+                        final val = controller.text.trim();
+                        Navigator.pop(ctx);
+                        if (val.isEmpty) {
+                          await FirebaseFirestore.instance
+                              .collection('User')
+                              .doc(user!.uid)
+                              .update({'github': FieldValue.delete()});
+                          setState(() => githubUsername = null);
+                        } else {
+                          await FirebaseFirestore.instance
+                              .collection('User')
+                              .doc(user!.uid)
+                              .update({'github': val});
+                          setState(() => githubUsername = val);
+                        }
+                        Get.showSnackbar(const GetSnackBar(
+                          title: 'Saved',
+                          message: 'GitHub updated',
+                          duration: Duration(seconds: 2),
+                        ));
+                      },
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              final val = controller.text.trim();
-              Navigator.pop(ctx);
-              if (val.isEmpty) {
-                await FirebaseFirestore.instance
-                    .collection('User')
-                    .doc(user!.uid)
-                    .update({'github': FieldValue.delete()});
-                setState(() => githubUsername = null);
-              } else {
-                await FirebaseFirestore.instance
-                    .collection('User')
-                    .doc(user!.uid)
-                    .update({'github': val});
-                setState(() => githubUsername = val);
-              }
-              Get.showSnackbar(const GetSnackBar(
-                  title: 'Saved',
-                  message: 'GitHub updated',
-                  duration: Duration(seconds: 2)));
-            },
-            child: const Text('Save'),
-          )
-        ],
       ),
     );
   }
@@ -814,82 +1123,149 @@ class _ProfileState extends State<profile> with SingleTickerProviderStateMixin {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    await showDialog(
+    await showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.teal.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.vpn_key_rounded,
-                  color: Colors.teal, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Text('Gemini API Key'),
-          ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
         ),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: 'Paste your Gemini API Key',
-              prefixIcon: const Icon(Icons.key),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.teal, width: 2),
-              ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppTheme.darkCard : Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
             ),
-            obscureText: true,
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Enter a key';
-              if (!v.startsWith('AI')) return 'Key format looks unusual';
-              if (v.trim().length < 20) return 'Key too short';
-              return null;
-            },
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.vpn_key_rounded,
+                          color: Colors.teal, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Gemini API Key',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Description
+                Text(
+                  'Enter your Gemini API Key to enable AI-powered features. You can get your API key from Google AI Studio.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Text Field
+                TextFormField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    hintText: 'Paste your Gemini API Key',
+                    labelText: 'API Key',
+                    prefixIcon: const Icon(Icons.key),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.teal, width: 2),
+                    ),
+                  ),
+                  obscureText: true,
+                  autofocus: true,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Enter a key';
+                    if (!v.startsWith('AI')) return 'Key format looks unusual';
+                    if (v.trim().length < 20) return 'Key too short';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.grey[400]!),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: () async {
+                          if (!formKey.currentState!.validate()) return;
+                          final key = controller.text.trim();
+                          Navigator.pop(ctx);
+                          try {
+                            await ApiKeyManager.instance.saveUserKey(key);
+                            Get.showSnackbar(const GetSnackBar(
+                                title: 'Saved',
+                                message: 'Gemini key stored securely',
+                                duration: Duration(seconds: 2)));
+                          } catch (e) {
+                            Get.showSnackbar(GetSnackBar(
+                                title: 'Error',
+                                message: e.toString(),
+                                duration: const Duration(seconds: 3)));
+                          }
+                        },
+                        child: const Text('Save'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              final key = controller.text.trim();
-              Navigator.pop(ctx);
-              try {
-                await ApiKeyManager.instance.saveUserKey(key);
-                Get.showSnackbar(const GetSnackBar(
-                    title: 'Saved',
-                    message: 'Gemini key stored securely',
-                    duration: Duration(seconds: 2)));
-              } catch (e) {
-                Get.showSnackbar(GetSnackBar(
-                    title: 'Error',
-                    message: e.toString(),
-                    duration: const Duration(seconds: 3)));
-              }
-            },
-            child: const Text('Save'),
-          )
-        ],
       ),
     );
   }

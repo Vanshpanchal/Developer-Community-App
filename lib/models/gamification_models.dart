@@ -1,19 +1,24 @@
 /// Gamification models for DevSphere
 
+import 'package:flutter/material.dart';
+
 // User Level based on XP
 enum UserLevel {
-  beginner(0, 'Beginner', '🌱'),
-  intermediate(500, 'Intermediate', '🌿'),
-  advanced(1500, 'Advanced', '🌳'),
-  expert(3500, 'Expert', '⭐'),
-  master(7000, 'Master', '🏆'),
-  legend(15000, 'Legend', '👑');
+  beginner(0, 'Beginner', '🌱', 0xFF4CAF50),
+  intermediate(500, 'Intermediate', '🌿', 0xFF2196F3),
+  advanced(1500, 'Advanced', '🌳', 0xFFFF9800),
+  expert(3500, 'Expert', '⭐', 0xFF9C27B0),
+  master(7000, 'Master', '🏆', 0xFFFF5722),
+  legend(15000, 'Legend', '👑', 0xFFE91E63);
 
   final int minXp;
   final String name;
   final String icon;
+  final int colorValue;
 
-  const UserLevel(this.minXp, this.name, this.icon);
+  const UserLevel(this.minXp, this.name, this.icon, this.colorValue);
+
+  Color get color => Color(colorValue);
 
   static UserLevel fromXp(int xp) {
     final levels = UserLevel.values.reversed;

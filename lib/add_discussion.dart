@@ -145,6 +145,29 @@ class _add_discussionState extends State<add_discussion> {
       appBar: AppBar(
         title: const Text('Start Discussion'),
         elevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.secondary
+                    .withValues(alpha: isDark ? 0.3 : 0.1),
+                Colors.transparent,
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        titleTextStyle: TextStyle(
+          color: isDark ? Colors.white : Colors.black87,
+          fontWeight: FontWeight.w600,
+          fontSize: 20,
+        ),
+        iconTheme: IconThemeData(
+          color: isDark ? Colors.white : Colors.black87,
+        ),
       ),
       body: Form(
         child: SingleChildScrollView(
@@ -221,6 +244,20 @@ class _add_discussionState extends State<add_discussion> {
                       Icons.title_rounded,
                       color: theme.colorScheme.primary,
                     ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -245,6 +282,20 @@ class _add_discussionState extends State<add_discussion> {
                       color: theme.colorScheme.primary,
                     ),
                     alignLabelWithHint: true,
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -274,6 +325,20 @@ class _add_discussionState extends State<add_discussion> {
                       ),
                       onPressed: _addTag,
                       tooltip: 'Add tag',
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                   onSubmitted: (_) => _addTag(),

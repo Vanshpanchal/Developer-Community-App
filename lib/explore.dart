@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'repo_analyzer.dart';
@@ -16,7 +17,9 @@ import 'services/gamification_service.dart';
 import 'services/firebase_cache_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
+import 'utils/app_snackbar.dart';
 import 'widgets/modern_widgets.dart';
+import 'dart:async';
 import 'dart:math' as math;
 
 class explore extends StatefulWidget {
@@ -26,7 +29,8 @@ class explore extends StatefulWidget {
   exploreState createState() => exploreState();
 }
 
-class exploreState extends State<explore> with SingleTickerProviderStateMixin {
+class exploreState extends State<explore>
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final user = FirebaseAuth.instance.currentUser;
   final _cacheService = FirebaseCacheService();
   TextEditingController search_controller = TextEditingController();
@@ -38,16 +42,18 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
   DocumentSnapshot? _lastDocument;
   bool _hasMore = true;
   bool _isLoadingMore = false;
-  final List<QueryDocumentSnapshot> _posts = [];
+  bool _isInitialLoading = true;
+  List<Map<String, dynamic>> _posts = [];
+  String? _lastDocumentId;
+  StreamSubscription<List<Map<String, dynamic>>>? _streamSubscription;
 
   String username = '';
   String imageUrl = '';
 
-  var exploreStream = FirebaseFirestore.instance
-      .collection('Explore')
-      .where('Report', isEqualTo: false)
-      .limit(20)
-      .snapshots();
+  late Stream<List<Map<String, dynamic>>> _postsStream;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -62,19 +68,75 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
     );
     _animationController.forward();
 
+    _setupFeed();
+
     // Setup scroll listener for pagination
     _scrollController.addListener(_onScroll);
-
-    // The stream automatically listens to updates from Firebase
-    // Cache service will cache the data when it arrives
   }
 
   @override
   void dispose() {
+    _streamSubscription?.cancel();
     _animationController.dispose();
     search_controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _setupFeed() {
+    _streamSubscription?.cancel();
+    
+    // Attempt to load from cache first
+    try {
+      final cachedPosts = _cacheService.getCachedData(
+        collectionName: 'Explore',
+        where: {'Report': false},
+        orderBy: 'Timestamp',
+        descending: true,
+        limit: 20,
+      );
+      
+      if (cachedPosts != null && cachedPosts.isNotEmpty) {
+        setState(() {
+          _posts = cachedPosts;
+          _isInitialLoading = false;
+          _lastDocumentId = cachedPosts.last['id'];
+        });
+      }
+    } catch (e) {
+      print('Error loading cached posts: $e');
+    }
+
+    _postsStream = _cacheService.listenToCollection(
+      collectionName: 'Explore',
+      where: {'Report': false},
+      orderBy: 'Timestamp',
+      descending: true,
+      limit: 20,
+    );
+
+    _streamSubscription = _postsStream.listen((data) {
+      if (mounted) {
+        setState(() {
+          _isInitialLoading = false;
+          // Only update if we are in a state that expects a fresh feed 
+          // (e.g. initial load or empty list) to avoid conflict with pagination
+          // OR if the data is different/newer. For simplicity, we update if list was empty 
+          // or if we rely on the stream to be the source of truth.
+          // Since we just loaded cache, let's update if we have new data.
+          if (_posts.isEmpty || data.isNotEmpty) {
+             _posts = data;
+             if (data.isNotEmpty) _lastDocumentId = data.last['id'];
+          }
+        });
+      }
+    }, onError: (error) {
+      if (mounted) {
+        setState(() {
+          _isInitialLoading = false;
+        });
+      }
+    });
   }
 
   void _onScroll() {
@@ -85,25 +147,32 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
   }
 
   Future<void> _loadMore() async {
-    if (_isLoadingMore || !_hasMore || _lastDocument == null) return;
+    if (_isLoadingMore || !_hasMore || _lastDocumentId == null) return;
 
     setState(() {
       _isLoadingMore = true;
     });
 
     try {
+      final lastDoc = await FirebaseFirestore.instance
+          .collection('Explore')
+          .doc(_lastDocumentId)
+          .get();
       final nextBatch = await FirebaseFirestore.instance
           .collection('Explore')
           .where('Report', isEqualTo: false)
-          .startAfterDocument(_lastDocument!)
+          .orderBy('Timestamp', descending: true)
+          .startAfterDocument(lastDoc)
           .limit(_limit)
           .get();
 
       if (nextBatch.docs.isNotEmpty) {
+        final newData =
+            nextBatch.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
         setState(() {
-          _posts.addAll(nextBatch.docs);
-          _lastDocument = nextBatch.docs.last;
-          _hasMore = nextBatch.docs.length == _limit;
+          _posts.addAll(newData);
+          _lastDocumentId = newData.last['id'];
+          _hasMore = newData.length == _limit;
         });
       } else {
         setState(() {
@@ -127,8 +196,8 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
   }
 
   String _searchQuery = '';
-  List<QueryDocumentSnapshot> _allPosts = [];
-  List<QueryDocumentSnapshot> _filteredPosts = [];
+  List<Map<String, dynamic>> _allPosts = [];
+  List<Map<String, dynamic>> _filteredPosts = [];
 
   onSearch2(String query) {
     setState(() {
@@ -136,7 +205,7 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
     });
   }
 
-  List<QueryDocumentSnapshot> _performSearch(List<QueryDocumentSnapshot> docs) {
+  List<Map<String, dynamic>> _performSearch(List<Map<String, dynamic>> docs) {
     if (_searchQuery.isEmpty) return docs;
 
     // Store all posts
@@ -145,7 +214,7 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
     // Calculate relevance scores for each document
     final scoredDocs = docs
         .map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+          final data = doc;
           final score = ExploreSearchAlgorithm.calculateRelevance(
             query: _searchQuery,
             title: data['Title']?.toString() ?? '',
@@ -164,41 +233,69 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
 
     // Return sorted documents
     return scoredDocs
-        .map((item) => item['doc']! as QueryDocumentSnapshot)
+        .map((item) => item['doc']! as Map<String, dynamic>)
         .toList();
   }
 
   all() {
     setState(() {
-      exploreStream = FirebaseFirestore.instance
-          .collection('Explore')
-          .where('Report', isEqualTo: false)
-          .snapshots();
+      _posts.clear();
+      _lastDocumentId = null;
+      _hasMore = true;
     });
+    _setupFeed();
     search_controller.clear();
   }
 
   fetchuser() async {
+    final box = GetStorage();
+    final cached = box.read('userData');
+    if (cached != null) {
+      final data = cached as Map<String, dynamic>;
+      setState(() {
+        username = data['username'] ?? 'No name available';
+        imageUrl = data['imageUrl'] ?? '';
+      });
+      return;
+    }
     if (user != null) {
       DocumentSnapshot userData = await FirebaseFirestore.instance
           .collection('User')
           .doc(user?.uid)
           .get();
       if (userData.exists) {
+        final data = userData.data() as Map<String, dynamic>;
+        final uname = data['Username'] ?? 'No name available';
+        final img = data['profilePicture'] ?? '';
         setState(() {
-          username = userData['Username'] ?? 'No name available';
-          imageUrl = userData['profilePicture'] ?? '';
+          username = uname;
+          imageUrl = img;
         });
+        box.write('userData', {'username': uname, 'imageUrl': img});
       } else {
         setState(() {
           username = 'No name available';
         });
+        box.write(
+            'userData', {'username': 'No name available', 'imageUrl': ''});
       }
     }
   }
 
+  Future<void> _refreshPosts() async {
+    setState(() {
+      _posts.clear();
+      _lastDocumentId = null;
+      _hasMore = true;
+      _isLoadingMore = false;
+    });
+
+    _setupFeed();
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -215,36 +312,29 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
 
               // Content
               Expanded(
-                child: StreamBuilder(
-                  stream: exploreStream,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return _buildLoadingState();
-                    }
-                    if (snapshot.hasError) {
-                      return _buildErrorState(snapshot.error.toString());
-                    }
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return _buildEmptyState();
-                    }
+                child: Builder(builder: (context) {
+                  if (_isInitialLoading) {
+                    return _buildLoadingState();
+                  }
 
-                    // Update pagination state on first load only
-                    if (_posts.isEmpty && snapshot.data!.docs.isNotEmpty) {
-                      _posts.addAll(snapshot.data!.docs);
-                      _lastDocument = snapshot.data!.docs.last;
-                    }
+                  // Apply advanced search algorithm
+                  final questions = _performSearch(_posts);
 
-                    // Apply advanced search algorithm
-                    final questions = _performSearch(snapshot.data!.docs);
-
-                    if (questions.isEmpty && _searchQuery.isNotEmpty) {
+                  if (questions.isEmpty) {
+                    if (_searchQuery.isNotEmpty) {
                       return _buildNoResultsState();
                     }
+                    if (_posts.isEmpty) {
+                      return _buildEmptyState();
+                    }
+                  }
 
-                    return ListView.builder(
+                  return RefreshIndicator(
+                    onRefresh: _refreshPosts,
+                    child: ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       itemCount: questions.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == questions.length) {
@@ -254,8 +344,7 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
                           );
                         }
 
-                        final data =
-                            questions[index].data() as Map<String, dynamic>;
+                        final data = questions[index];
                         return TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
                           duration: Duration(milliseconds: 300 + (index * 100)),
@@ -283,9 +372,9 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
                           ),
                         );
                       },
-                    );
-                  },
-                ),
+                    ),
+                  );
+                }),
               ),
             ],
           ),
@@ -542,15 +631,15 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Repo Analyzer FAB
-        FloatingActionButton.small(
-          onPressed: () => Get.to(RepoAnalyzerScreen()),
-          backgroundColor: AppTheme.accentColor,
-          heroTag: "fab_repo",
-          elevation: 4,
-          child: const Icon(Icons.analytics_rounded,
-              color: Colors.white, size: 20),
-        ),
-        const SizedBox(height: 12),
+        // FloatingActionButton.small(
+        //   onPressed: () => Get.to(RepoAnalyzerScreen()),
+        //   backgroundColor: AppTheme.accentColor,
+        //   heroTag: "fab_repo",
+        //   elevation: 4,
+        //   child: const Icon(Icons.analytics_rounded,
+        //       color: Colors.white, size: 20),
+        // ),
+        // const SizedBox(height: 12),
         // AI Chat FAB
         FloatingActionButton.small(
           onPressed: () => Get.to(ChatScreen1()),
@@ -570,16 +659,23 @@ class exploreState extends State<explore> with SingleTickerProviderStateMixin {
               BoxShadow(
                 color: AppTheme.primaryColor.withValues(alpha: 0.4),
                 blurRadius: 12,
-                offset: const Offset(0, 6),
+                // offset: const Offset(0, 6),
               ),
             ],
           ),
-          child: FloatingActionButton(
-            onPressed: () => Get.to(addpost()),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            heroTag: "fab2",
-            child: const Icon(Icons.add_rounded, color: Colors.white),
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              hoverColor: Colors.transparent,
+            ),
+            child: FloatingActionButton(
+              onPressed: () => Get.to(addpost()),
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              heroTag: "fab2",
+              child: const Icon(Icons.add_rounded, color: Colors.white),
+            ),
           ),
         ),
       ],
@@ -633,6 +729,7 @@ class _QuestionCardState extends State<QuestionCard> {
     }
   }
 
+  bool isSaved = false;
   bool isLiked = false;
   bool isFetchingUserName = false;
   late Future<String?> _userNameFuture;
@@ -640,6 +737,7 @@ class _QuestionCardState extends State<QuestionCard> {
   String? _complexityResult;
   bool _complexityLoading = false;
   bool _showFullCode = false;
+  bool _showFullDescription = false; // For expandable description
   final _gamificationService = GamificationService();
 
   @override
@@ -647,6 +745,134 @@ class _QuestionCardState extends State<QuestionCard> {
     super.initState();
     _userNameFuture = _fetchUserName(widget.uid);
     _checkIfLiked();
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    await Future.wait([
+      _checkIfLiked(),
+      _checkIfSaved(),
+    ]);
+  }
+
+  Future<void> _checkIfSaved() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      
+      final userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .get();
+          
+      if (userDoc.exists) {
+        final saved = List<String>.from(userDoc.data()?['Saved'] ?? []);
+        if (mounted) {
+          setState(() {
+            isSaved = saved.contains(widget.docid);
+          });
+        }
+      }
+    } catch (e) {
+      print('Error checking saved status: $e');
+    }
+  }
+
+  Future<void> _handleLike() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    // Optimistic Update
+    final startLiked = isLiked;
+    // We don't have a local vote count state variable in the widget class itself 
+    // separate from widget.votes. To do this properly we need one, but 
+    // for now we'll just toggle the icon state immediately.
+    // If we want to update the count optimistically, we need to move 'votes' to state.
+    
+    setState(() {
+      isLiked = !isLiked;
+    });
+    
+    // Haptic feedback
+    HapticFeedback.lightImpact();
+
+    try {
+      final questionRef = FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
+      
+      if (startLiked) {
+        // Was liked, so remove like
+        await questionRef.update({
+          'likes': FieldValue.arrayRemove([currentUser.uid]),
+          'likescount': FieldValue.increment(-1),
+        });
+      } else {
+        // Was not liked, so add like
+        await questionRef.update({
+          'likes': FieldValue.arrayUnion([currentUser.uid]),
+          'likescount': FieldValue.increment(1),
+        });
+
+        // Gamification rewards (background)
+        _gamificationService.awardXp(XpAction.giveLike);
+        _gamificationService.incrementCounter('likesGiven');
+
+        if (widget.uid != currentUser.uid) {
+           _gamificationService.awardXp(XpAction.receiveLike, targetUserId: widget.uid);
+        }
+      }
+    } catch (e) {
+      print('Error handling like: $e');
+      // Revert on error
+      if (mounted) {
+        setState(() {
+          isLiked = startLiked;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleSave() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Optimistic Update
+    final startSaved = isSaved;
+    setState(() {
+      isSaved = !isSaved;
+    });
+    
+    HapticFeedback.lightImpact();
+
+    try {
+      final userRef = FirebaseFirestore.instance.collection("User").doc(user.uid);
+      
+      if (startSaved) {
+        // Was saved, remove it
+        await userRef.update({
+          'Saved': FieldValue.arrayRemove([widget.docid])
+        });
+      } else {
+        // Was not saved, add it
+        await userRef.update({
+          'Saved': FieldValue.arrayUnion([widget.docid])
+        });
+      }
+    } catch (e) {
+      print("Error toggling save: $e");
+      // Revert
+      if (mounted) {
+        setState(() {
+          isSaved = startSaved;
+        });
+        // Note: Title is required in some versions of AppSnackbar, defaulting to 'Error'
+        try {
+          // Attempt with named title if supported, otherwise just message if overload exists 
+          // or fallback to basic error catch if API mismatch.
+          // Based on error: "Required named parameter 'title' must be provided."
+          AppSnackbar.error('Failed to update bookmark', title: 'Error');
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _checkIfLiked() async {
@@ -672,53 +898,6 @@ class _QuestionCardState extends State<QuestionCard> {
       }
     } catch (e) {
       print('Error checking like status: $e');
-    }
-  }
-
-  Future<void> _handleLike() async {
-    try {
-      DocumentReference questionRef =
-          FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
-      DocumentSnapshot questionDoc = await questionRef.get();
-      if (questionDoc.exists) {
-        final postCreatorId = questionDoc['Uid'] as String?;
-
-        if (isLiked) {
-          await questionRef.update({
-            'likes': FieldValue.arrayRemove(
-                [FirebaseAuth.instance.currentUser?.uid]),
-          });
-        } else {
-          await questionRef.update({
-            'likes':
-                FieldValue.arrayUnion([FirebaseAuth.instance.currentUser?.uid]),
-          });
-
-          await _gamificationService.awardXp(XpAction.giveLike);
-          await _gamificationService.incrementCounter('likesGiven');
-
-          if (postCreatorId != null &&
-              postCreatorId != FirebaseAuth.instance.currentUser?.uid) {
-            await _gamificationService.awardXp(XpAction.receiveLike,
-                targetUserId: postCreatorId);
-          }
-        }
-
-        DocumentSnapshot updatedDoc = await questionRef.get();
-        List<dynamic> updatedLikes = updatedDoc['likes'] ?? [];
-
-        await questionRef.update({
-          'likescount': updatedLikes.length,
-        });
-
-        if (mounted) {
-          setState(() {
-            isLiked = !isLiked;
-          });
-        }
-      }
-    } catch (e) {
-      print('Error handling like/dislike: $e');
     }
   }
 
@@ -754,22 +933,6 @@ class _QuestionCardState extends State<QuestionCard> {
       print('Error fetching user data: $e');
       return 'Error';
     }
-  }
-
-  save(itemId) async {
-    var usercredential = FirebaseAuth.instance.currentUser;
-    await FirebaseFirestore.instance
-        .collection("User")
-        .doc(usercredential?.uid)
-        .update({
-      'Saved': FieldValue.arrayUnion([itemId])
-    });
-
-    AppSnackbar.success(
-      context,
-      title: 'Saved!',
-      message: 'Post added to your collection',
-    );
   }
 
   @override
@@ -814,17 +977,40 @@ class _QuestionCardState extends State<QuestionCard> {
             ),
             const SizedBox(height: 8),
 
-            // Description
-            RichText(
-              text: TextSpan(
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.4,
+            // Description with Read More functionality
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(
+                  text: TextSpan(
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                    children: _buildDescription(widget.description, theme),
+                  ),
+                  maxLines: _showFullDescription ? null : 3,
+                  overflow: _showFullDescription ? TextOverflow.visible : TextOverflow.ellipsis,
                 ),
-                children: _buildDescription(widget.description, theme),
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
+                if (widget.description.length > 150) // Show button if description is long
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _showFullDescription = !_showFullDescription;
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _showFullDescription ? 'Show less' : 'Read more',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
             // Code Block Preview or Full
@@ -876,11 +1062,11 @@ class _QuestionCardState extends State<QuestionCard> {
                 const Spacer(),
                 IconButton(
                   icon: Icon(
-                    Icons.bookmark_outline_rounded,
-                    size: 20,
-                    color: theme.colorScheme.primary,
+                    isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    size: 24,
+                    color: isSaved ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
                   ),
-                  onPressed: () => save(widget.docid),
+                  onPressed: _handleSave,
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -1192,9 +1378,8 @@ class _QuestionCardState extends State<QuestionCard> {
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: widget.code!));
                     AppSnackbar.success(
-                      context,
+                      'Code copied to clipboard',
                       title: 'Copied!',
-                      message: 'Code copied to clipboard',
                     );
                   },
                   padding: EdgeInsets.zero,
@@ -1377,7 +1562,7 @@ class _QuestionCardState extends State<QuestionCard> {
         _buildActionButton(
           icon: Icons.bookmark_outline_rounded,
           label: 'Save',
-          onTap: () => save(widget.docid),
+          onTap: _handleSave,
           theme: theme,
         ),
 

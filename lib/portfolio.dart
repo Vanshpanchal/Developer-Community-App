@@ -18,6 +18,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'gemini_key_dialog.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'ThemeController.dart';
+import 'package:get/get.dart';
+import 'utils/app_snackbar.dart';
 
 class DeveloperPortfolioPage extends StatefulWidget {
   // const DeveloperPortfolioPage({super.key, this.userId});
@@ -41,10 +44,11 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   String? _profilePicUrl;
   String? _username;
   bool _summaryExpanded = false;
-  bool _overviewExpanded = true;
   bool _tagsExpanded = true;
   bool _githubExpanded = true;
   bool _historyExpanded = false;
+  bool _discussionsExpanded = true;
+  bool _postsExpanded = true;
   String? _githubUsername;
   String? _userBio;
   DateTime? _userCreated;
@@ -917,6 +921,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final themeController = Get.find<ThemeController>();
+    final primaryColor = themeController.primaryColor.value;
 
     if (_loading) {
       return Scaffold(
@@ -961,7 +967,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                AppTheme.primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
                 Colors.transparent,
               ],
               begin: Alignment.topCenter,
@@ -974,11 +980,15 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                gradient: AppTheme.primaryGradient,
+                gradient: LinearGradient(
+                  colors: [primaryColor, primaryColor.withValues(alpha: 0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                    color: primaryColor.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -989,13 +999,13 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
             ),
             const SizedBox(width: 12),
             Text(
-              'Developer Portfolio',
+              'Activity Stats',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 20,
                 foreground: Paint()
                   ..shader = LinearGradient(
-                    colors: [AppTheme.primaryColor, AppTheme.accentColor],
+                    colors: [primaryColor, primaryColor.withValues(alpha: 0.7)],
                   ).createShader(const Rect.fromLTWH(0, 0, 200, 40)),
               ),
             ),
@@ -1026,23 +1036,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
                 await Clipboard.setData(ClipboardData(text: _aiSummary!));
                 HapticFeedback.lightImpact();
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Row(
-                        children: [
-                          Icon(Icons.check_circle_rounded,
-                              color: Colors.white, size: 18),
-                          SizedBox(width: 8),
-                          Text('Copied to clipboard'),
-                        ],
-                      ),
-                      behavior: SnackBarBehavior.floating,
-                      backgroundColor: AppTheme.successColor,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      margin: const EdgeInsets.all(16),
-                    ),
-                  );
+                  AppSnackbar.success('Copied to clipboard');
                 }
               },
             ),
@@ -1068,67 +1062,9 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
             _buildModernProfileHeader(theme, stats),
             const SizedBox(height: 20),
 
-            // AI Generate Button (if no summary)
-            if (_aiSummary == null) _buildAIGenerateSection(theme),
+            // AI Generate Button (if no summary and viewing own profile)
+            if (_isSelf && _aiSummary == null) _buildAIGenerateSection(theme),
 
-            const SizedBox(height: 12),
-            _buildModernCollapsibleCard(
-              theme: theme,
-              title: 'Overview',
-              icon: Icons.dashboard_rounded,
-              expanded: _overviewExpanded,
-              onToggle: () =>
-                  setState(() => _overviewExpanded = !_overviewExpanded),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                          child: _buildModernStatCard(
-                              'Discussions',
-                              stats['discussionCount'].toString(),
-                              Icons.forum_rounded,
-                              AppTheme.primaryColor)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: _buildModernStatCard(
-                              'Posts',
-                              stats['explorePostCount'].toString(),
-                              Icons.explore_rounded,
-                              AppTheme.accentColor)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                          child: _buildModernStatCard(
-                              'Replies',
-                              stats['replyCount'].toString(),
-                              Icons.reply_rounded,
-                              AppTheme.successColor)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: _buildModernStatCard(
-                              'Tags',
-                              stats['tags'].length.toString(),
-                              Icons.tag_rounded,
-                              Colors.orange)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Achievements',
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _buildModernBadges(stats)),
-                ],
-              ),
-            ),
             if (stats['tags'] is Map && (stats['tags'] as Map).isNotEmpty)
               _buildModernCollapsibleCard(
                 theme: theme,
@@ -1155,13 +1091,14 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
               ),
             if (_aiSummary != null) _buildAISummaryCard(theme),
 
-            const SizedBox(height: 20),
+            // const SizedBox(height: 20),
             _buildModernCollapsibleCard(
               theme: theme,
               title: 'Recent Discussions',
               icon: Icons.forum_outlined,
-              expanded: true,
-              onToggle: () {},
+              expanded: _discussionsExpanded,
+              onToggle: () =>
+                  setState(() => _discussionsExpanded = !_discussionsExpanded),
               child: Column(
                 children: _discussions.isEmpty
                     ? [
@@ -1183,8 +1120,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
               theme: theme,
               title: 'Recent Posts',
               icon: Icons.article_outlined,
-              expanded: true,
-              onToggle: () {},
+              expanded: _postsExpanded,
+              onToggle: () => setState(() => _postsExpanded = !_postsExpanded),
               child: Column(
                 children: _explorePosts.isEmpty
                     ? [_buildEmptyState('No posts yet', Icons.article_outlined)]
@@ -1231,6 +1168,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   Widget _buildModernProfileHeader(
       ThemeData theme, Map<String, dynamic> stats) {
     final isDark = theme.brightness == Brightness.dark;
+    final themeController = Get.find<ThemeController>();
+    final primaryColor = themeController.primaryColor.value;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1239,8 +1178,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           colors: isDark
               ? [const Color(0xFF1E3A5F), const Color(0xFF0F2644)]
               : [
-                  AppTheme.primaryColor.withValues(alpha: 0.15),
-                  AppTheme.accentColor.withValues(alpha: 0.1)
+                  primaryColor.withValues(alpha: 0.15),
+                  primaryColor.withValues(alpha: 0.1)
                 ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -1248,16 +1187,9 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isDark
-              ? AppTheme.primaryColor.withValues(alpha: 0.3)
-              : AppTheme.primaryColor.withValues(alpha: 0.2),
+              ? primaryColor.withValues(alpha: 0.3)
+              : primaryColor.withValues(alpha: 0.2),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         children: [
@@ -1332,7 +1264,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           const SizedBox(height: 20),
           // Stats row
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: isDark
                   ? Colors.black.withValues(alpha: 0.2)
@@ -1340,7 +1272,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildHeaderStatNew(theme, 'Discussions',
                     stats['discussionCount'].toString(), Icons.forum_rounded),
@@ -1363,19 +1295,19 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
 
   Widget _buildModernAvatar() {
     final url = _profilePicUrl;
+    final themeController = Get.find<ThemeController>();
+    final primaryColor = themeController.primaryColor.value;
+    
     return Container(
       width: 80,
       height: 80,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: AppTheme.primaryGradient,
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primaryColor.withValues(alpha: 0.4),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        gradient: LinearGradient(
+          colors: [primaryColor, primaryColor.withValues(alpha: 0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
       padding: const EdgeInsets.all(3),
       child: ClipRRect(
@@ -1472,24 +1404,30 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   Widget _buildHeaderStatNew(
       ThemeData theme, String label, String value, IconData icon) {
     final isDark = theme.brightness == Brightness.dark;
-    return Column(
-      children: [
-        Icon(icon, size: 20, color: AppTheme.primaryColor),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: isDark ? Colors.white : const Color(0xFF1E293B),
+    return SizedBox(
+      width: 85, // Fixed width based on "Discussions" being the longest label
+      child: Column(
+        children: [
+          Icon(icon, size: 20, color: AppTheme.primaryColor),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF1E293B),
+            ),
           ),
-        ),
-        Text(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: isDark ? Colors.grey[400] : Colors.grey[600],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: isDark ? Colors.grey[400] : Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1597,7 +1535,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: isDark
             ? color.withValues(alpha: 0.15)
@@ -1608,7 +1546,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),

@@ -15,6 +15,8 @@ import 'Authservice.dart';
 import 'messagemodel.dart';
 import 'services/firebase_cache_service.dart';
 import 'utils/app_theme.dart';
+import 'services/analytics_service.dart';
+import 'ThemeController.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,12 +58,21 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Initialize ThemeController for color theming
+    Get.put(ThemeController());
+
+    // Initialize Analytics Service
+    final analyticsService = AnalyticsService();
+
     return GetMaterialApp(
       title: 'DevSphere',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light,
+      themeMode: ThemeMode.system,
+      navigatorObservers: [
+        analyticsService.getAnalyticsObserver(),
+      ],
       home: const SplashScreen(),
     );
   }

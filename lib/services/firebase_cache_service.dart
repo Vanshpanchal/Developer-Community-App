@@ -26,7 +26,8 @@ class FirebaseCacheService {
       final cacheKey = '$CACHE_PREFIX$collectionName';
       final timestampKey = '$TIMESTAMP_PREFIX$collectionName';
 
-      await _storage.write(cacheKey, jsonEncode(data));
+      final processedData = _processDataForCache(data);
+      await _storage.write(cacheKey, jsonEncode(processedData));
       await _storage.write(timestampKey, DateTime.now().toIso8601String());
 
       print('✅ Cached $collectionName with ${data.length} items');
@@ -59,11 +60,63 @@ class FirebaseCacheService {
       }
 
       final List<dynamic> decodedData = jsonDecode(cachedData);
-      return decodedData.map((e) => Map<String, dynamic>.from(e)).toList();
+      final processedData = _processDataFromCache(decodedData) as List;
+      return processedData.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (e) {
       print('❌ Error reading cache for $collectionName: $e');
       return null;
     }
+  }
+
+  /// Recursively process data to make it JSON encodable (handle Timestamps)
+  dynamic _processDataForCache(dynamic data) {
+    if (data is Timestamp) {
+      return {
+        '__type__': 'Timestamp',
+        'seconds': data.seconds,
+        'nanoseconds': data.nanoseconds,
+      };
+    } else if (data is List) {
+      return data.map((e) => _processDataForCache(e)).toList();
+    } else if (data is Map) {
+      final Map<String, dynamic> newMap = {};
+      data.forEach((key, value) {
+        newMap[key] = _processDataForCache(value);
+      });
+      return newMap;
+    } else {
+      return data;
+    }
+  }
+
+  /// Recursively process data from cache to restore objects (handle Timestamps)
+  dynamic _processDataFromCache(dynamic data) {
+    if (data is List) {
+      return data.map((e) => _processDataFromCache(e)).toList();
+    } else if (data is Map) {
+      if (data['__type__'] == 'Timestamp') {
+        return Timestamp(data['seconds'], data['nanoseconds']);
+      }
+      final Map<String, dynamic> newMap = {};
+      data.forEach((key, value) {
+        newMap[key] = _processDataFromCache(value);
+      });
+      return newMap;
+    } else {
+      return data;
+    }
+  }
+
+  /// Get cached data using query parameters
+  List<Map<String, dynamic>>? getCachedData({
+    required String collectionName,
+    Map<String, dynamic>? where,
+    String? orderBy,
+    bool descending = false,
+    int? limit,
+  }) {
+    final cacheKey = _buildCacheKey(collectionName, where, orderBy, limit);
+    return getCachedCollection(cacheKey);
   }
 
   /// Get or fetch collection with caching

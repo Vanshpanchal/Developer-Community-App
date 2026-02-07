@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide Badge;
 import '../models/gamification_models.dart';
 import '../services/gamification_service.dart';
+import '../widgets/gamification_widgets.dart';
 
 class BadgesScreen extends StatefulWidget {
   final String? userId;
@@ -22,15 +23,33 @@ class _BadgesScreenState extends State<BadgesScreen> {
     _loadBadges();
   }
 
-  Future<void> _loadBadges() async {
-    setState(() => _loading = true);
+  Future<void> _loadBadges({bool forceRefresh = false}) async {
+    // Check cache first
+    final cached = _gamificationService.cachedBadges;
+    if (cached != null && !forceRefresh && widget.userId == null) {
+      if (mounted) {
+        setState(() {
+          _earnedBadges = cached;
+          _loading = false;
+        });
+      }
+    } else {
+      setState(() => _loading = true);
+    }
+
     try {
       final badges = await _gamificationService.getUserBadges(
         targetUserId: widget.userId,
+        forceRefresh: forceRefresh,
       );
-      setState(() => _earnedBadges = badges);
-    } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _earnedBadges = badges;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -41,7 +60,7 @@ class _BadgesScreenState extends State<BadgesScreen> {
         title: const Text('🏅 Badges'),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const BadgesGridShimmer()
           : DefaultTabController(
               length: BadgeCategory.values.length + 1,
               child: Column(

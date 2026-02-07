@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:developer_community_app/wrapper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:developer_community_app/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -115,6 +116,8 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
           .collection("User")
           .doc(userCredential.user?.uid)
           .set(userData);
+
+      await AnalyticsService().logSignUp(method: 'email');
 
       _showSnackbar('Welcome! 🎉', 'Account created successfully',
           Icons.celebration, Colors.green);

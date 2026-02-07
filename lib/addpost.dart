@@ -187,6 +187,28 @@ class addpostState extends State<addpost> {
       appBar: AppBar(
         title: const Text('Create Post'),
         elevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primary.withValues(alpha: isDark ? 0.3 : 0.1),
+                Colors.transparent,
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        titleTextStyle: TextStyle(
+          color: isDark ? Colors.white : Colors.black87,
+          fontWeight: FontWeight.w600,
+          fontSize: 20,
+        ),
+        iconTheme: IconThemeData(
+          color: isDark ? Colors.white : Colors.black87,
+        ),
       ),
       body: Form(
         child: SingleChildScrollView(
@@ -263,6 +285,20 @@ class addpostState extends State<addpost> {
                       Icons.title_rounded,
                       color: theme.colorScheme.primary,
                     ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -286,7 +322,20 @@ class addpostState extends State<addpost> {
                       Icons.description_outlined,
                       color: theme.colorScheme.primary,
                     ),
-                    alignLabelWithHint: true,
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -316,6 +365,20 @@ class addpostState extends State<addpost> {
                       ),
                       onPressed: _addTag,
                       tooltip: 'Add tag',
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
                   onSubmitted: (_) => _addTag(),
@@ -419,9 +482,7 @@ class addpostState extends State<addpost> {
                               // Code Tab
                               Container(
                                 decoration: BoxDecoration(
-                                  color: isDark
-                                      ? Colors.grey[900]
-                                      : Colors.grey[50],
+                                  color: theme.colorScheme.surfaceVariant,
                                   borderRadius: const BorderRadius.vertical(
                                     bottom: Radius.circular(12),
                                   ),
@@ -478,9 +539,8 @@ class addpostState extends State<addpost> {
                                                   Colors.transparent,
                                             ),
                                             codeblockDecoration: BoxDecoration(
-                                              color: isDark
-                                                  ? Colors.grey[900]
-                                                  : Colors.grey[100],
+                                              color: theme.colorScheme
+                                                  .surfaceContainerHighest,
                                               borderRadius:
                                                   BorderRadius.circular(8),
                                             ),

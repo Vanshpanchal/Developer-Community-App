@@ -6,8 +6,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/firebase_cache_service.dart';
+import 'models/poll_model.dart';
+import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'dart:math' as math;
@@ -20,7 +23,7 @@ class ongoing_discussion extends StatefulWidget {
 }
 
 class _ongoing_discussionState extends State<ongoing_discussion>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final user = FirebaseAuth.instance.currentUser;
   final _cacheService = FirebaseCacheService();
   String username = '';
@@ -55,20 +58,36 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   }
 
   fetchuser() async {
+    final box = GetStorage();
+    final cached = box.read('userData');
+    if (cached != null) {
+      final data = cached as Map<String, dynamic>;
+      setState(() {
+        username = data['username'] ?? 'No name available';
+        imageUrl = data['imageUrl'] ?? '';
+      });
+      return;
+    }
     if (user != null) {
       DocumentSnapshot userData = await FirebaseFirestore.instance
           .collection('User')
           .doc(user?.uid)
           .get();
       if (userData.exists) {
+        final data = userData.data() as Map<String, dynamic>;
+        final uname = data['Username'] ?? 'No name available';
+        final img = data['profilePicture'] ?? '';
         setState(() {
-          username = userData['Username'] ?? 'No name available';
-          imageUrl = userData['profilePicture'] ?? '';
+          username = uname;
+          imageUrl = img;
         });
+        box.write('userData', {'username': uname, 'imageUrl': img});
       } else {
         setState(() {
           username = 'No name available';
         });
+        box.write(
+            'userData', {'username': 'No name available', 'imageUrl': ''});
       }
     }
   }
@@ -113,6 +132,9 @@ class _ongoing_discussionState extends State<ongoing_discussion>
         .map((item) => item['doc']! as QueryDocumentSnapshot)
         .toList();
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -183,6 +205,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -260,6 +283,8 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                             uid: data['Uid'] ?? '',
                             docid: data['docId'] ?? '',
                             replies: [],
+                            hasPoll: data['hasPoll'] == true,
+                            pollData: data['poll'] as Map<String, dynamic>?,
                           ),
                         );
                       },
@@ -342,22 +367,30 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   }
 
   Widget _buildSearchBar(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Container(
         decoration: BoxDecoration(
-          color:
-              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: theme.colorScheme.outline.withValues(alpha: 0.1),
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+            width: 1.5,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: TextField(
           controller: search_controller,
           onChanged: (val) => onSearch2(val),
           decoration: InputDecoration(
-            hintText: 'Search discussions...',
+            hintText: 'Search discussions, tags, topics...',
             hintStyle: TextStyle(
               color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
             ),
@@ -507,6 +540,8 @@ class displayCard extends StatefulWidget {
   final String docid;
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
+  final Map<String, dynamic>? pollData; // Poll data
+  final bool hasPoll; // Whether discussion has a poll
 
   displayCard({
     super.key,
@@ -517,6 +552,8 @@ class displayCard extends StatefulWidget {
     required this.uid,
     required this.docid,
     required this.replies, // Initialize the replies list
+    this.pollData,
+    this.hasPoll = false,
   });
 
   @override
@@ -771,6 +808,22 @@ class displayCardState extends State<displayCard> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                
+                // Poll Display (if exists)
+                if (widget.hasPoll && widget.pollData != null) ...[
+                  const SizedBox(height: 12),
+                  PollDisplayWidget(
+                    poll: Poll.fromMap(widget.pollData!),
+                    parentId: widget.docid,
+                    parentCollection: 'Discussions',
+                    onVoted: () {
+                      // Refresh card to update results
+                      setState(() {});
+                    },
+                    canDelete: false, // Don't allow deletion from card
+                  ),
+                ],
+                
                 if (widget.tags.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   // Tags

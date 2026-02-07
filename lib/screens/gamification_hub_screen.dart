@@ -27,13 +27,32 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
     _gamificationService.recordActivity();
   }
 
-  Future<void> _loadStats() async {
-    setState(() => _loading = true);
+  Future<void> _loadStats({bool forceRefresh = false}) async {
+    // Check cache first
+    final cached = _gamificationService.cachedStats;
+    if (cached != null && !forceRefresh) {
+      if (mounted) {
+        setState(() {
+          _stats = cached;
+          _loading = false;
+        });
+      }
+    } else {
+      setState(() => _loading = true);
+    }
+
     try {
-      final stats = await _gamificationService.getGamificationStats();
-      setState(() => _stats = stats);
-    } finally {
-      setState(() => _loading = false);
+      final stats = await _gamificationService.getGamificationStats(
+        forceRefresh: forceRefresh,
+      );
+      if (mounted) {
+        setState(() {
+          _stats = stats;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -52,7 +71,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const GamificationHubShimmer()
           : _stats == null
               ? const Center(child: Text('Failed to load stats'))
               : RefreshIndicator(
@@ -128,6 +147,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
     String subtitle,
     VoidCallback onTap,
   ) {
+    final theme = Theme.of(context);
     return Card(
       child: InkWell(
         onTap: onTap,
@@ -149,7 +169,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
                 subtitle,
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.grey[600],
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
                 ),
               ),
             ],
@@ -160,88 +180,100 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
   }
 
   Widget _buildChallengesPreview() {
-    final dailyChallenges = _gamificationService.generateDailyChallenges();
+    final theme = Theme.of(context);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return FutureBuilder<List<Challenge>>(
+      future: _gamificationService.getDailyChallenges(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink(); // Or loading shimmer
+        }
+
+        final dailyChallenges = snapshot.data!;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '🎯 Today\'s Challenges',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => Get.to(() => const ChallengesScreen()),
-                  child: const Text('View All'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ...dailyChallenges.take(2).map((challenge) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(challenge.type.icon),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      '🎯 Today\'s Challenges',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              challenge.title,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    TextButton(
+                      onPressed: () => Get.to(() => const ChallengesScreen()),
+                      child: const Text('View All'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...dailyChallenges.take(2).map((challenge) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                            Text(
-                              challenge.description,
-                              style: TextStyle(
+                            child: Text(challenge.type.icon),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  challenge.title,
+                                  style:
+                                      const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  challenge.description,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.colorScheme.onSurface
+                                        .withOpacity(0.6),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '+${challenge.xpReward}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber,
                                 fontSize: 12,
-                                color: Colors.grey[600],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '+${challenge.xpReward}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.amber,
-                            fontSize: 12,
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                )),
-          ],
-        ),
-      ),
+                    )),
+              ],
+            ),
+          ),
+        );
+      }
     );
   }
 
@@ -300,6 +332,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
   }
 
   Widget _buildLevelGuide() {
+    final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Padding(
@@ -323,7 +356,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
                 decoration: BoxDecoration(
                   color: isCurrent
                       ? Theme.of(context).colorScheme.primaryContainer
-                      : Colors.grey[100],
+                      : theme.colorScheme.surfaceVariant,
                   borderRadius: BorderRadius.circular(8),
                   border: isCurrent
                       ? Border.all(
@@ -353,7 +386,8 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
                             '${level.minXp}+ XP required',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey[600],
+                              color:
+                                  theme.colorScheme.onSurface.withOpacity(0.6),
                             ),
                           ),
                         ],
@@ -389,6 +423,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
   }
 
   void _showLevelInfo() {
+    final theme = Theme.of(context);
     showModalBottomSheet(
       context: context,
       builder: (context) => Container(
@@ -413,7 +448,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
               '${_stats!.totalXp} XP',
               style: TextStyle(
                 fontSize: 20,
-                color: Colors.grey[600],
+                color: theme.colorScheme.onSurface.withOpacity(0.6),
               ),
             ),
             const SizedBox(height: 24),
@@ -437,7 +472,8 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
               const SizedBox(height: 8),
               Text(
                 '${_stats!.xpToNextLevel} XP to go',
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(
+                    color: theme.colorScheme.onSurface.withOpacity(0.6)),
               ),
             ] else ...[
               const Text(

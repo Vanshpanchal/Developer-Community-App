@@ -110,10 +110,36 @@ class _saved_discussionState extends State<saved_discussion> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
         appBar: AppBar(
-          title: Text('Developer Community'),
-          automaticallyImplyLeading: false,
+          title: Text('Saved Discussions'),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primary
+                      .withValues(alpha: isDark ? 0.3 : 0.1),
+                  Colors.transparent,
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+          ),
+          titleTextStyle: TextStyle(
+            color: isDark ? Colors.white : Colors.black87,
+            fontWeight: FontWeight.w600,
+            fontSize: 20,
+          ),
+          iconTheme: IconThemeData(
+            color: isDark ? Colors.white : Colors.black87,
+          ),
         ),
         body: StreamBuilder(
           stream: savedIdsStream,

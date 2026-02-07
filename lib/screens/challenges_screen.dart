@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/gamification_models.dart';
 import '../services/gamification_service.dart';
+import '../widgets/modern_widgets.dart';
 
 class ChallengesScreen extends StatefulWidget {
   const ChallengesScreen({super.key});
@@ -34,10 +35,18 @@ class _ChallengesScreenState extends State<ChallengesScreen>
   Future<void> _loadChallenges() async {
     setState(() => _loading = true);
     try {
-      _dailyChallenges = _gamificationService.generateDailyChallenges();
-      _weeklyChallenges = _gamificationService.generateWeeklyChallenges();
-    } finally {
-      setState(() => _loading = false);
+      final daily = await _gamificationService.getDailyChallenges();
+      final weekly = await _gamificationService.getWeeklyChallenges();
+      
+      if (mounted) {
+        setState(() {
+          _dailyChallenges = daily;
+          _weeklyChallenges = weekly;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -57,7 +66,10 @@ class _ChallengesScreenState extends State<ChallengesScreen>
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: ListShimmer(itemCount: 6, showAvatar: false, lineCount: 3),
+            )
           : TabBarView(
               controller: _tabController,
               children: [
@@ -155,7 +167,10 @@ class _ChallengesScreenState extends State<ChallengesScreen>
                           challenge.description,
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey[600],
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.6),
                           ),
                         ),
                       ],
@@ -245,7 +260,8 @@ class _ChallengesScreenState extends State<ChallengesScreen>
                 'Progress: 0%', // TODO: Implement actual progress
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.grey[600],
+                  color:
+                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
                 ),
               ),
             ],

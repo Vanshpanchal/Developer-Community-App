@@ -19,7 +19,8 @@ class saved extends StatefulWidget {
   savedState createState() => savedState();
 }
 
-class savedState extends State<saved> with SingleTickerProviderStateMixin {
+class savedState extends State<saved>
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final user = FirebaseAuth.instance.currentUser;
   String username = '';
   String imageUrl = '';
@@ -63,6 +64,9 @@ class savedState extends State<saved> with SingleTickerProviderStateMixin {
   }
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
     fetchuser();
@@ -84,6 +88,7 @@ class savedState extends State<saved> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
 
     return Scaffold(

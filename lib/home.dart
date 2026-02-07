@@ -38,12 +38,21 @@ class _homepageState extends State<home> {
     determineUserRole();
   }
 
+  final PageController _pageController = PageController();
+
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(navigatorcontroller(userRole: userRole));
 
     return Scaffold(
-      body: Obx(() => controller.screen[controller.selectedindex.value]),
+      body: PageView(
+        controller: _pageController,
+        physics: const NeverScrollableScrollPhysics(),
+        children: controller.screens,
+        onPageChanged: (index) {
+          controller.selectedindex.value = index;
+        },
+      ),
       bottomNavigationBar: Obx(() => Container(
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
@@ -57,8 +66,10 @@ class _homepageState extends State<home> {
             ),
             child: NavigationBar(
               selectedIndex: controller.selectedindex.value,
-              onDestinationSelected: (index) =>
-                  controller.selectedindex.value = index,
+              onDestinationSelected: (index) {
+                controller.selectedindex.value = index;
+                _pageController.jumpToPage(index);
+              },
               destinations: controller.navigationDestinations,
               height: 70,
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
@@ -74,7 +85,7 @@ class navigatorcontroller extends GetxController {
 
   navigatorcontroller({required this.userRole});
 
-  List<Widget> get screen {
+  List<Widget> get screens {
     if (userRole == 'admin') {
       return [
         explore(),

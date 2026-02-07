@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../utils/app_theme.dart';
+import 'package:shimmer/shimmer.dart';
 
 /// Modern Code Block Widget with consistent styling across all screens
 class ModernCodeBlock extends StatefulWidget {
@@ -826,8 +827,10 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
+
+
 /// Loading Shimmer Widget with Animation
-class ShimmerLoading extends StatefulWidget {
+class ShimmerLoading extends StatelessWidget {
   final double width;
   final double height;
   final double borderRadius;
@@ -840,61 +843,21 @@ class ShimmerLoading extends StatefulWidget {
   });
 
   @override
-  State<ShimmerLoading> createState() => _ShimmerLoadingState();
-}
-
-class _ShimmerLoadingState extends State<ShimmerLoading>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    )..repeat();
-    _animation = Tween<double>(begin: -2, end: 2).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOutSine),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, child) {
-        return Container(
-          width: widget.width,
-          height: widget.height,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            gradient: LinearGradient(
-              begin: Alignment(_animation.value, 0),
-              end: Alignment(_animation.value + 2, 0),
-              colors: isDark
-                  ? [
-                      const Color(0xFF2D3748),
-                      const Color(0xFF4A5568),
-                      const Color(0xFF2D3748),
-                    ]
-                  : [
-                      const Color(0xFFE2E8F0),
-                      const Color(0xFFF1F5F9),
-                      const Color(0xFFE2E8F0),
-                    ],
-            ),
-          ),
-        );
-      },
+    
+    return Shimmer.fromColors(
+      baseColor: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+      highlightColor: isDark ? const Color(0xFF4A5568) : const Color(0xFFF1F5F9),
+      period: const Duration(milliseconds: 1500),
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
+      ),
     );
   }
 }

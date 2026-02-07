@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import '../ThemeController.dart';
 
 /// DevSphere Modern Theme System
 /// A comprehensive design system for a professional developer community app
@@ -47,13 +48,14 @@ class AppTheme {
 
   // Light Theme
   static ThemeData get lightTheme {
+    final themeController = Get.find<ThemeController>();
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: primaryColor,
+        seedColor: themeController.primaryColor.value,
         brightness: Brightness.light,
-        primary: primaryColor,
+        primary: themeController.primaryColor.value,
         secondary: secondaryColor,
         tertiary: accentColor,
         error: errorColor,
@@ -153,16 +155,15 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        elevation: 0,
         backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: primaryColor.withValues(alpha: 0.15),
+        indicatorColor: const Color(0xFF2196F3).withValues(alpha: 0.1),
+        elevation: 0,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: primaryColor,
+              color: Color(0xFF2196F3),
             );
           }
           return const TextStyle(
@@ -173,7 +174,7 @@ class AppTheme {
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(color: primaryColor, size: 24);
+            return const IconThemeData(color: Color(0xFF2196F3), size: 24);
           }
           return const IconThemeData(color: Color(0xFF64748B), size: 24);
         }),
@@ -218,13 +219,14 @@ class AppTheme {
 
   // Dark Theme
   static ThemeData get darkTheme {
+    final themeController = Get.find<ThemeController>();
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: primaryColor,
+        seedColor: themeController.primaryColor.value,
         brightness: Brightness.dark,
-        primary: primaryColor,
+        primary: themeController.primaryColor.value,
         secondary: secondaryColor,
         tertiary: accentColor,
         error: errorColor,
@@ -257,16 +259,15 @@ class AppTheme {
         color: darkCard,
       ),
       navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: darkBg, // Assuming isDark is true in darkTheme context, so darkCard is used. Original was darkBg.
+        indicatorColor: const Color(0xFF2196F3).withValues(alpha: 0.1),
         elevation: 0,
-        backgroundColor: darkBg,
-        surfaceTintColor: Colors.transparent,
-        indicatorColor: primaryColor.withValues(alpha: 0.2),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: primaryColor,
+              color: Color(0xFF2196F3),
             );
           }
           return const TextStyle(
@@ -277,7 +278,7 @@ class AppTheme {
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const IconThemeData(color: primaryColor, size: 24);
+            return const IconThemeData(color: Color(0xFF2196F3), size: 24);
           }
           return const IconThemeData(color: Color(0xFF94A3B8), size: 24);
         }),
@@ -285,117 +286,6 @@ class AppTheme {
     );
   }
 }
-
-/// Modern Snackbar Utility
-class AppSnackbar {
-  static void show({
-    required String title,
-    required String message,
-    SnackbarType type = SnackbarType.info,
-    Duration duration = const Duration(seconds: 3),
-    VoidCallback? onAction,
-    String? actionLabel,
-  }) {
-    Color backgroundColor;
-    Color iconColor;
-    IconData icon;
-
-    switch (type) {
-      case SnackbarType.success:
-        backgroundColor = const Color(0xFF065F46);
-        iconColor = AppTheme.successColor;
-        icon = Icons.check_circle_rounded;
-        break;
-      case SnackbarType.error:
-        backgroundColor = const Color(0xFF991B1B);
-        iconColor = const Color(0xFFFCA5A5);
-        icon = Icons.error_rounded;
-        break;
-      case SnackbarType.warning:
-        backgroundColor = const Color(0xFF92400E);
-        iconColor = AppTheme.warningColor;
-        icon = Icons.warning_rounded;
-        break;
-      case SnackbarType.info:
-      default:
-        backgroundColor = const Color(0xFF1E293B);
-        iconColor = AppTheme.infoColor;
-        icon = Icons.info_rounded;
-    }
-
-    Get.showSnackbar(GetSnackBar(
-      titleText: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          fontSize: 15,
-        ),
-      ),
-      messageText: Text(
-        message,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.9),
-          fontSize: 14,
-        ),
-      ),
-      icon: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: iconColor, size: 24),
-      ),
-      backgroundColor: backgroundColor,
-      duration: duration,
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      borderRadius: 16,
-      snackPosition: SnackPosition.TOP,
-      mainButton: onAction != null
-          ? TextButton(
-              onPressed: () {
-                Get.back();
-                onAction();
-              },
-              child: Text(
-                actionLabel ?? 'Action',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            )
-          : null,
-      animationDuration: const Duration(milliseconds: 400),
-      forwardAnimationCurve: Curves.easeOutCubic,
-      reverseAnimationCurve: Curves.easeInCubic,
-    ));
-  }
-
-  static void success(BuildContext context,
-      {required String title, required String message}) {
-    show(title: title, message: message, type: SnackbarType.success);
-  }
-
-  static void error(BuildContext context,
-      {required String title, required String message}) {
-    show(title: title, message: message, type: SnackbarType.error);
-  }
-
-  static void warning(BuildContext context,
-      {required String title, required String message}) {
-    show(title: title, message: message, type: SnackbarType.warning);
-  }
-
-  static void info(BuildContext context,
-      {required String title, required String message}) {
-    show(title: title, message: message, type: SnackbarType.info);
-  }
-}
-
-enum SnackbarType { success, error, warning, info }
 
 /// Text Styles
 class AppTextStyles {

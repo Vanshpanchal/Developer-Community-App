@@ -1,3 +1,4 @@
+import 'package:developer_community_app/services/analytics_service.dart';
 import 'package:developer_community_app/signup.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -58,6 +59,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
         email: emailController.text.trim(),
         password: passwordController.text,
       );
+      await AnalyticsService().logLogin(method: 'email');
     } on FirebaseAuthException catch (e) {
       _showSnackbar('Error', e.code, Icons.error, Colors.red);
     } catch (e) {
