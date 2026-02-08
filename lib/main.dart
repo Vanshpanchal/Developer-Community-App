@@ -17,6 +17,8 @@ import 'services/firebase_cache_service.dart';
 import 'utils/app_theme.dart';
 import 'services/analytics_service.dart';
 import 'ThemeController.dart';
+import 'utils/app_logger.dart';
+import 'utils/secure_hive_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,19 +39,22 @@ void main() async {
   final cacheService = FirebaseCacheService();
   // Prefetch important collections in the background
   cacheService.prefetchCollections(['Explore', 'Discussions']).then((_) {
-    debugPrint('📦 Initial data cached successfully');
+    AppLogger.debug('📦 Initial data cached successfully');
   }).catchError((e) {
-    debugPrint('⚠️ Cache prefetch error: $e');
+    AppLogger.warning('⚠️ Cache prefetch error: $e');
   });
 
   // Load environment variables (e.g., GEMINI_API_KEY)
   try {
     await dotenv.load(fileName: '.env');
   } catch (e) {
-    debugPrint('dotenv load failed: $e');
+    AppLogger.debug('dotenv load skipped: $e');
   }
+  
   Hive.registerAdapter(MessageAdapter());
-  await Hive.openBox<Message>('chat_messages');
+  // Use encrypted storage for sensitive chat messages
+  await SecureHiveHelper.instance.openEncryptedBox<Message>('chat_messages');
+  
   runApp(const MyApp());
 }
 

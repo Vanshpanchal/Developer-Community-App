@@ -52,3 +52,19 @@ app.*.map.json
 # Firebase configuration files
 firebase.json
 **/google-services.json
+
+# Keystore and signing credentials (NEVER commit these!)
+*.jks
+*.keystore
+keystore.properties
+android/keystore/
+
+# Release builds and debug info
+build/debug-info/
+*.aab
+*.apk
+
+# Crash symbolication
+app.*.symbols
+app.*.map.json
+

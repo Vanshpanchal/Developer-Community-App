@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'services/firebase_cache_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'messagemodel.dart';
 
 import 'chat.dart';
@@ -66,16 +67,32 @@ class _ProfileState extends State<profile>
       if (mounted) setState(() => _dominantColor = null);
       return;
     }
+    // Check if color is already cached
+    final box = GetStorage();
+    final cachedColor = box.read('profileColor');
+    if (cachedColor != null) {
+      if (mounted) {
+        setState(() {
+          _dominantColor = Color(cachedColor);
+        });
+      }
+      return;
+    }
+
     try {
       final PaletteGenerator generator =
           await PaletteGenerator.fromImageProvider(
-        NetworkImage(imageUrl!),
+        CachedNetworkImageProvider(imageUrl!),
         maximumColorCount: 20,
       );
       if (mounted) {
         setState(() {
           _dominantColor = generator.dominantColor?.color;
         });
+        // Cache the color
+        if (_dominantColor != null) {
+          box.write('profileColor', _dominantColor!.value);
+        }
       }
     } catch (e) {
       debugPrint('Error generating palette: $e');
@@ -125,7 +142,7 @@ class _ProfileState extends State<profile>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    fetchuser();
+    // fetchuser(); // Removed to prevent redundant fetching
   }
 
   signout() async {
@@ -253,8 +270,18 @@ class _ProfileState extends State<profile>
         Xp = data['Xp'] ?? '0';
         githubUsername = data['githubUsername'];
       });
-      _updatePalette();
-      // Remove return statement to allow updating from Firestore
+      final colorVal = data['profileColor'];
+      if(colorVal != null) {
+         if(mounted) {
+             setState(() {
+                 _dominantColor = Color(colorVal);
+             });
+         }
+      }
+      
+      if(_dominantColor == null) {
+          _updatePalette(); 
+      }
     }
     if (user != null) {
       DocumentSnapshot userData = await FirebaseFirestore.instance
@@ -324,11 +351,16 @@ class _ProfileState extends State<profile>
 
         await FirebaseFirestore.instance
             .collection('User')
-            .doc(FirebaseAuth.instance.currentUser?.uid)
+            .doc(FirebaseAuth.instance.currentUser!.uid)
             .update({'profilePicture': imageUrl});
+
+        // Invalidate cached color when image changes
+        final box = GetStorage();
+        box.remove('profileColor');
 
         setState(() {
           this.imageUrl = imageUrl;
+          _dominantColor = null; // Reset current color
         });
         _updatePalette();
 
@@ -590,10 +622,10 @@ class _ProfileState extends State<profile>
                         backgroundColor: Colors.white.withValues(alpha: 0.2),
                         backgroundImage:
                             imageUrl != null && imageUrl!.isNotEmpty
-                                ? NetworkImage(imageUrl!)
+                                ? CachedNetworkImageProvider(imageUrl!)
                                 : const NetworkImage(
                                     'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                  ),
+                                  ) as ImageProvider,
                       ),
                     ),
                     Positioned(

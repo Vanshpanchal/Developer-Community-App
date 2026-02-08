@@ -339,113 +339,115 @@ class _detail_discussionState extends State<detail_discussion> {
         child: Column(
           children: [
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-              // StreamBuilder for Discussion Data
-              Expanded(
-                child: StreamBuilder<DocumentSnapshot>(
-                  stream: FirebaseFirestore.instance
+              child: StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('Discussions')
+                    .doc(widget.docId)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(
+                      child: CircularProgressIndicator(
+                        color: AppTheme.primaryColor,
+                      ),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'Error: ${snapshot.error}',
+                        style: TextStyle(
+                          color: isDark
+                              ? Colors.grey.shade300
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData || !snapshot.data!.exists) {
+                    return Center(
+                      child: Text(
+                        'Discussion not found.',
+                        style: TextStyle(
+                          color: isDark
+                              ? Colors.grey.shade300
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                    );
+                  }
+
+                  var discussionData = snapshot.data!;
+                  var repliesRef = FirebaseFirestore.instance
                       .collection('Discussions')
                       .doc(widget.docId)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(
-                        child: CircularProgressIndicator(
-                          color: AppTheme.primaryColor,
-                        ),
-                      );
-                    }
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          'Error: ${snapshot.error}',
-                          style: TextStyle(
-                            color: isDark
-                                ? Colors.grey.shade300
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      );
-                    }
-                    if (!snapshot.hasData || !snapshot.data!.exists) {
-                      return Center(
-                        child: Text(
-                          'Discussion not found.',
-                          style: TextStyle(
-                            color: isDark
-                                ? Colors.grey.shade300
-                                : Colors.grey.shade600,
-                          ),
-                        ),
-                      );
-                    }
+                      .collection('Replies');
 
-                    var discussionData = snapshot.data!;
-                    var repliesRef = FirebaseFirestore.instance
-                        .collection('Discussions')
-                        .doc(widget.docId)
-                        .collection('Replies'); // The subcollection for replies
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Display the discussion details in a modern card
-                        display_discussion(
-                          title: discussionData['Title'] ?? '',
-                          description: discussionData['Description'] ?? '',
-                          tags: List<String>.from(discussionData['Tags'] ?? []),
-                          timestamp: (discussionData['Timestamp'] as Timestamp?)
-                                  ?.toDate() ??
-                              DateTime.now(),
-                          uid: discussionData['Uid'] ?? '',
-                          docid: widget.docId,
-                          replies: [], // You can add replies here later
-                        ),
-                        const SizedBox(height: 16),
-                        // Modern section header for replies
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text(
-                            'Replies',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: isDark ? Colors.white : Colors.black87,
+                  return CustomScrollView(
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            display_discussion(
+                              title: discussionData['Title'] ?? '',
+                              description: discussionData['Description'] ?? '',
+                              tags: List<String>.from(discussionData['Tags'] ?? []),
+                              timestamp: (discussionData['Timestamp'] as Timestamp?)
+                                      ?.toDate() ??
+                                  DateTime.now(),
+                              uid: discussionData['Uid'] ?? '',
+                              docid: widget.docId,
+                              replies: [],
                             ),
-                          ),
+                            const SizedBox(height: 16),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(
+                                'Replies',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ]),
                         ),
-                        const SizedBox(height: 8),
-                        // Fetch and display replies in a modern ListView
-                        Expanded(
-                          child: StreamBuilder<QuerySnapshot>(
-                            stream: repliesRef.orderBy('timestamp').snapshots(),
-                            builder: (context, repliesSnapshot) {
-                              if (repliesSnapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppTheme.primaryColor,
+                      ),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: repliesRef.orderBy('timestamp').snapshots(),
+                        builder: (context, repliesSnapshot) {
+                          if (repliesSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return SliverToBoxAdapter(
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            );
+                          }
+                          if (repliesSnapshot.hasError) {
+                            return SliverToBoxAdapter(
+                              child: Center(
+                                child: Text(
+                                  'Error: ${repliesSnapshot.error}',
+                                  style: TextStyle(
+                                    color: isDark
+                                        ? Colors.grey.shade300
+                                        : Colors.grey.shade600,
                                   ),
-                                );
-                              }
-                              if (repliesSnapshot.hasError) {
-                                return Center(
-                                  child: Text(
-                                    'Error: ${repliesSnapshot.error}',
-                                    style: TextStyle(
-                                      color: isDark
-                                          ? Colors.grey.shade300
-                                          : Colors.grey.shade600,
-                                    ),
-                                  ),
-                                );
-                              }
-                              if (repliesSnapshot.data?.docs.isEmpty ?? true) {
-                                return Center(
+                                ),
+                              ),
+                            );
+                          }
+                          if (repliesSnapshot.data?.docs.isEmpty ?? true) {
+                            return SliverToBoxAdapter(
+                              child: SizedBox(
+                                height: 200,
+                                child: Center(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
@@ -468,15 +470,18 @@ class _detail_discussionState extends State<detail_discussion> {
                                       ),
                                     ],
                                   ),
-                                );
-                              }
+                                ),
+                              ),
+                            );
+                          }
 
-                              final replies = repliesSnapshot.data!.docs;
+                          final replies = repliesSnapshot.data!.docs;
 
-                              return ListView.builder(
-                                padding: EdgeInsets.zero,
-                                itemCount: replies.length,
-                                itemBuilder: (context, index) {
+                          return SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
                                   var replyData = replies[index].data()
                                       as Map<String, dynamic>;
 
@@ -1153,17 +1158,16 @@ class _detail_discussionState extends State<detail_discussion> {
                                     ),
                                   );
                                 },
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-                  ],
-                ),
+                                childCount: replies.length,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      SliverToBoxAdapter(child: SizedBox(height: 20)),
+                    ],
+                  );
+                },
               ),
             ),
             // Modern reply input section

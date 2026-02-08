@@ -32,28 +32,37 @@ class _homepageState extends State<home> {
     }
   }
 
+  int _selectedIndex = 0;
+  final PageController _pageController = PageController();
+  late List<Widget> _screens;
+
   @override
   void initState() {
     super.initState();
     determineUserRole();
+    final controller = Get.put(navigatorcontroller(userRole: userRole));
+    _selectedIndex = controller.selectedindex.value;
+    _screens = controller.screens;
   }
-
-  final PageController _pageController = PageController();
 
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(navigatorcontroller(userRole: userRole));
 
     return Scaffold(
+
       body: PageView(
         controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        children: controller.screens,
+        physics: const NeverScrollableScrollPhysics(), // Disabled swipe
+        children: _screens,
         onPageChanged: (index) {
-          controller.selectedindex.value = index;
+          setState(() {
+            _selectedIndex = index;
+            controller.selectedindex.value = index;
+          });
         },
       ),
-      bottomNavigationBar: Obx(() => Container(
+      bottomNavigationBar: Container(
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
               boxShadow: [
@@ -65,16 +74,19 @@ class _homepageState extends State<home> {
               ],
             ),
             child: NavigationBar(
-              selectedIndex: controller.selectedindex.value,
+              selectedIndex: _selectedIndex,
               onDestinationSelected: (index) {
-                controller.selectedindex.value = index;
+                setState(() {
+                  _selectedIndex = index;
+                  controller.selectedindex.value = index;
+                });
                 _pageController.jumpToPage(index);
               },
               destinations: controller.navigationDestinations,
               height: 70,
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
             ),
-          )),
+          ),
     );
   }
 }
