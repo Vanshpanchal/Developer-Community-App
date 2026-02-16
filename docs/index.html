@@ -121,57 +121,106 @@
     <div class="container">
         <header>
             <h1>Privacy Policy</h1>
-            <p>Developer Community App</p>
+            <p>DevSphere</p>
         </header>
 
         <div class="content">
             <p class="last-updated">Last Updated: February 16, 2026</p>
 
-            <p>Welcome to Developer Community App. We respect your privacy and are committed to protecting your personal
-                data. This privacy policy explains how we collect, use, and safeguard your information when you use our
-                mobile application.</p>
+            <p>Welcome to <strong>Developer Community App</strong> (DevSphere) - a Flutter-based mobile platform for
+                developers to share knowledge, discuss technical topics, showcase code, and engage with a gamified
+                learning community.</p>
+
+            <p>We respect your privacy and are committed to transparency about data collection. This privacy policy
+                explains exactly what data we collect, how it's stored, who can see it, and your rights to control it.
+            </p>
+
+            <div class="highlight">
+                <strong>Key Privacy Principles:</strong>
+                <ul style="margin: 10px 0 0 20px;">
+                    <li>Your email address is <strong>never</strong> shown to other users</li>
+                    <li>AI chatbot conversations are stored <strong>only on your device</strong>, never uploaded to our
+                        servers</li>
+                    <li>Your Gemini API key stays on your device - we only store a verification hash</li>
+                    <li>All data in transit is encrypted with TLS 1.2+</li>
+                    <li>All data at rest is encrypted with AES-256</li>
+                    <li>We <strong>never</strong> sell your data to third parties</li>
+                </ul>
+            </div>
 
             <h2>1. Information We Collect</h2>
 
             <h3>1.1 Personal Information</h3>
-            <p>When you create an account or use our services, we may collect:</p>
+            <p>When you create an account, we collect:</p>
             <ul>
-                <li>Email address</li>
-                <li>Display name and profile information</li>
-                <li>Profile picture (if you choose to upload one)</li>
-                <li>Authentication credentials</li>
+                <li><strong>Email address</strong> - Used for authentication and account management</li>
+                <li><strong>Username</strong> - Your display name visible to other users</li>
+                <li><strong>Profile picture</strong> - Optional image uploaded by you</li>
+                <li><strong>Bio</strong> - Optional short description about yourself</li>
+                <li><strong>GitHub username</strong> - Optional, used for GitHub integration and portfolio features</li>
+                <li><strong>Account creation date</strong> - Timestamp of when you joined</li>
             </ul>
 
             <h3>1.2 User-Generated Content</h3>
+            <p>The following content you create is stored in our cloud database:</p>
             <ul>
-                <li>Posts and discussions you create</li>
-                <li>Comments and replies</li>
-                <li>Code snippets and attachments</li>
-                <li>Chat messages</li>
-                <li>Saved discussions and bookmarks</li>
+                <li><strong>Discussion threads</strong> - Title, description, tags, timestamps, and optional polls</li>
+                <li><strong>Posts</strong> - Title, description, code snippets, images, tags, and timestamps</li>
+                <li><strong>Replies and comments</strong> - Your responses to discussions and posts</li>
+                <li><strong>Likes</strong> - Record of posts you've liked</li>
+                <li><strong>Bookmarks</strong> - Lists of saved posts and discussions for quick access</li>
             </ul>
 
-            <h3>1.3 Usage Data</h3>
+            <h3>1.3 Gamification Data</h3>
             <ul>
-                <li>App usage statistics and analytics</li>
-                <li>Device information (model, operating system)</li>
-                <li>IP address and general location data</li>
-                <li>Session duration and interaction patterns</li>
+                <li><strong>Experience Points (XP)</strong> - Points earned through app engagement (starting at 100)
+                </li>
+                <li><strong>Badges and achievements</strong> - Milestones unlocked through activities</li>
+                <li><strong>Challenge progress</strong> - Your progress in community challenges</li>
+                <li><strong>Leaderboard rankings</strong> - Your position based on XP and engagement</li>
+            </ul>
+
+            <h3>1.4 AI Chatbot Data (Local Only)</h3>
+            <p><strong>Important:</strong> Conversations with our AI chatbot assistant are stored <u>only on your
+                    device</u> in an encrypted local database. These conversations are never uploaded to our servers or
+                shared with other users.</p>
+
+            <h3>1.5 Usage Analytics</h3>
+            <ul>
+                <li><strong>App usage statistics</strong> - Collected via Firebase Analytics</li>
+                <li><strong>Device information</strong> - Model, operating system version</li>
+                <li><strong>IP address</strong> - Used for analytics and security purposes only</li>
+                <li><strong>Session duration</strong> - Time spent in the app</li>
             </ul>
 
             <h2>2. How We Use Your Information</h2>
 
-            <p>We use the collected information for the following purposes:</p>
+            <p>We use your data exclusively for the following purposes:</p>
             <ul>
-                <li><strong>Account Management:</strong> To create and manage your user account</li>
-                <li><strong>Service Delivery:</strong> To provide core app functionality including discussions, posts,
-                    and community features</li>
-                <li><strong>Communication:</strong> To send notifications about activities, responses to your posts, and
-                    important updates</li>
-                <li><strong>Gamification:</strong> To track your achievements, streaks, and community engagement</li>
-                <li><strong>AI Features:</strong> To provide chatbot assistance and AI-powered features</li>
-                <li><strong>Analytics:</strong> To understand app usage and improve our services</li>
-                <li><strong>Security:</strong> To detect and prevent fraud, abuse, and security incidents</li>
+                <li><strong>Account Management:</strong> Create and manage your user account with Firebase
+                    Authentication</li>
+                <li><strong>Community Features:</strong> Enable you to create discussions, posts with code snippets,
+                    reply to threads, and interact with other developers</li>
+                <li><strong>Gamification System:</strong> Track your XP points, badges, achievements, and leaderboard
+                    rankings to reward engagement</li>
+                <li><strong>Bookmarking:</strong> Store your saved posts and discussions for quick access</li>
+                <li><strong>AI Assistance:</strong> Provide local AI chatbot features using Google Gemini (API key
+                    stored securely on your device)</li>
+                <li><strong>GitHub Integration:</strong> Analyze public GitHub repositories and generate developer
+                    portfolios (optional)</li>
+                <li><strong>Analytics:</strong> Understand app usage patterns via Firebase Analytics to improve features
+                    and user experience</li>
+                <li><strong>Security:</strong> Detect abuse, spam, and unauthorized access through Firebase Security
+                    Rules</li>
+            </ul>
+
+            <p><strong>What we DON'T do:</strong></p>
+            <ul>
+                <li>We do <u>not</u> send push notifications</li>
+                <li>We do <u>not</u> provide direct user-to-user messaging (only public discussions and AI chatbot)</li>
+                <li>We do <u>not</u> sell or share your personal data with third parties for marketing</li>
+                <li>We do <u>not</u> store your raw Gemini API key on our servers (only SHA-256 hash for verification)
+                </li>
             </ul>
 
             <h2>3. Third-Party Services</h2>
@@ -188,82 +237,291 @@
             <p>Firebase services are governed by <a href="https://policies.google.com/privacy" target="_blank">Google's
                     Privacy Policy</a>.</p>
 
-            <h3>3.2 AI Services</h3>
-            <p>We use AI services (ChatGPT and Google Gemini) to power our chatbot features. Conversations with the
-                chatbot may be processed by these services according to their respective privacy policies:</p>
+            <h3>3.2 AI Services (Google Gemini)</h3>
+            <p>We integrate with <strong>Google Gemini API</strong> for AI chatbot assistance. When you provide your own
+                Gemini API key:</p>
             <ul>
-                <li><a href="https://openai.com/privacy/" target="_blank">OpenAI Privacy Policy</a></li>
-                <li><a href="https://policies.google.com/privacy" target="_blank">Google Privacy Policy</a></li>
+                <li><strong>Your API key is stored only on your device</strong> in platform-specific secure storage (iOS
+                    Keychain / Android EncryptedSharedPreferences)</li>
+                <li>Only a <strong>SHA-256 hash</strong> of your API key is stored in our database for verification</li>
+                <li>Chatbot conversations are processed through Google's Gemini API according to <a
+                        href="https://policies.google.com/privacy" target="_blank">Google's Privacy Policy</a></li>
+                <li>Chat history is <strong>stored locally on your device</strong> in an encrypted Hive database and is
+                    never uploaded to our servers</li>
             </ul>
+
+            <h3>3.3 GitHub API (Optional)</h3>
+            <p>If you choose to link your GitHub username, we use the <strong>public GitHub API</strong> to:</p>
+            <ul>
+                <li>Fetch your public repository information</li>
+                <li>Analyze repository statistics for portfolio generation</li>
+                <li>Display public contribution data</li>
+            </ul>
+            <p><strong>Note:</strong> We only access publicly available GitHub data. No authentication tokens or private
+                repository access is requested.</p>
+
+            <h3>3.4 Cloudinary</h3>
+            <p>Profile pictures and uploaded images are stored using <strong>Cloudinary</strong> cloud storage service,
+                governed by their <a href="https://cloudinary.com/privacy" target="_blank">Privacy Policy</a>.</p>
 
             <h2>4. Data Storage and Security</h2>
 
-            <p>We implement appropriate technical and organizational measures to protect your personal data:</p>
+            <p>We implement multiple layers of enterprise-grade encryption and security measures to protect your
+                personal data:</p>
+
+            <h3>4.1 Encryption at Rest</h3>
             <ul>
-                <li>Data is encrypted in transit using HTTPS/TLS</li>
-                <li>Firebase provides secure cloud storage with access controls</li>
-                <li>Authentication credentials are securely managed by Firebase Auth</li>
-                <li>We regularly review our security practices</li>
+                <li><strong>Firebase Firestore:</strong> All data stored in our cloud database is encrypted using
+                    AES-256 encryption</li>
+                <li><strong>Firebase Storage:</strong> Uploaded files and images are encrypted at rest with AES-256</li>
+                <li><strong>Local Database:</strong> Chat history stored on your device is encrypted using AES-256 with
+                    device-specific keys</li>
+                <li><strong>Encryption Keys:</strong> Managed by Google Cloud Key Management Service (KMS) with
+                    automatic rotation</li>
+            </ul>
+
+            <h3>4.2 Encryption in Transit</h3>
+            <ul>
+                <li><strong>HTTPS/TLS 1.2+:</strong> All data transmitted between your device and our servers is
+                    encrypted</li>
+                <li><strong>Certificate Pinning:</strong> Firebase uses certificate pinning to prevent man-in-the-middle
+                    attacks</li>
+                <li><strong>End-to-End Security:</strong> Data is encrypted from your device to our servers and never
+                    transmitted in plaintext</li>
+            </ul>
+
+            <h3>4.3 Authentication Security</h3>
+            <ul>
+                <li><strong>Firebase Authentication:</strong> Industry-standard authentication with email/password</li>
+                <li><strong>Password Security:</strong> Passwords are never stored in plaintext; Firebase uses secure
+                    hashing algorithms</li>
+                <li><strong>Secure Sessions:</strong> Authentication tokens are encrypted and automatically expire</li>
+                <li><strong>Account Protection:</strong> Firebase Security Rules prevent unauthorized access to user
+                    data</li>
+            </ul>
+
+            <h3>4.4 API Key Protection</h3>
+            <ul>
+                <li><strong>Secure Storage:</strong> API keys are stored in platform-specific secure storage (iOS
+                    Keychain / Android EncryptedSharedPreferences)</li>
+                <li><strong>Hashing:</strong> Only SHA-256 hashes of API keys are stored in our database for
+                    verification</li>
+                <li><strong>No Cloud Storage:</strong> Raw API keys never leave your device unencrypted</li>
+            </ul>
+
+            <h3>4.5 Additional Security Measures</h3>
+            <ul>
+                <li>Regular security audits and updates</li>
+                <li>Firebase Security Rules to restrict unauthorized access</li>
+                <li>Rate limiting to prevent abuse</li>
+                <li>Automated threat detection and monitoring</li>
+                <li>Secure code practices and regular dependency updates</li>
             </ul>
 
             <div class="highlight">
-                <strong>Important:</strong> While we strive to protect your data, no method of transmission over the
-                internet is 100% secure. Please use strong passwords and keep your account credentials confidential.
+                <strong>Important:</strong> While we implement industry-standard security measures including AES-256
+                encryption, no method of transmission over the internet is 100% secure. Please use strong passwords (8+
+                characters, mixed case, numbers, symbols) and keep your account credentials confidential. Enable device
+                lock features for additional protection.
             </div>
 
-            <h2>5. Data Sharing and Disclosure</h2>
+            <h2>5. Data Sharing and Transparency</h2>
 
-            <p>We do not sell your personal information. We may share your data in the following circumstances:</p>
+            <p><strong>We do not sell your personal information.</strong> Here's exactly what data is visible to whom:
+            </p>
+
+            <h3>5.1 Publicly Visible Information</h3>
+            <p>The following information is visible to all app users:</p>
             <ul>
-                <li><strong>Public Content:</strong> Posts, discussions, and profile information you choose to make
-                    public are visible to other users</li>
-                <li><strong>Service Providers:</strong> With Firebase and AI service providers as described above</li>
-                <li><strong>Legal Requirements:</strong> When required by law or to protect our rights and safety</li>
-                <li><strong>Business Transfers:</strong> In the event of a merger, acquisition, or sale of assets</li>
+                <li>Username, profile picture, bio, GitHub username (if set)</li>
+                <li>Discussion threads, posts, replies, and code snippets you create</li>
+                <li>Tags you use and timestamps on your content</li>
+                <li>Your XP points and leaderboard position</li>
+                <li>Number of posts, discussions, and replies you've made</li>
+            </ul>
+
+            <h3>5.2 Private Information (Not Shared)</h3>
+            <p>The following data is private and never shown to other users:</p>
+            <ul>
+                <li>Your email address</li>
+                <li>Your saved posts and discussion bookmarks</li>
+                <li>Which posts you've liked</li>
+                <li>Your AI chatbot conversations (stored only on your device)</li>
+                <li>Your Gemini API key</li>
+            </ul>
+
+            <h3>5.3 Third-Party Service Providers</h3>
+            <ul>
+                <li><strong>Firebase (Google):</strong> Stores user data, authenticates users, and provides analytics
+                </li>
+                <li><strong>Google Gemini:</strong> Processes AI chatbot requests when you use your own API key</li>
+                <li><strong>Cloudinary:</strong> Stores uploaded profile pictures and images</li>
+                <li><strong>GitHub:</strong> Provides public repository data when you link your GitHub username</li>
+            </ul>
+
+            <h3>5.4 Legal Disclosure</h3>
+            <p>We may disclose your information when required by law or to:</p>
+            <ul>
+                <li>Comply with legal obligations or court orders</li>
+                <li>Protect our rights, property, or safety</li>
+                <li>Prevent fraud, spam, or abuse</li>
             </ul>
 
             <h2>6. Your Rights and Choices</h2>
 
             <p>You have the following rights regarding your personal data:</p>
             <ul>
-                <li><strong>Access:</strong> Request a copy of your personal data</li>
-                <li><strong>Correction:</strong> Update or correct your information through your profile settings</li>
-                <li><strong>Deletion:</strong> Request deletion of your account and associated data</li>
-                <li><strong>Portability:</strong> Request your data in a portable format</li>
-                <li><strong>Opt-out:</strong> Opt-out of non-essential notifications and analytics</li>
+                <li><strong>Access:</strong> Request a copy of your personal data stored in our database</li>
+                <li><strong>Correction:</strong> Update your username, profile picture, bio, and GitHub username through
+                    profile settings</li>
+                <li><strong>Deletion:</strong> Request deletion of your account and associated data (see Data Retention
+                    below)</li>
+                <li><strong>Portability:</strong> Request an export of your posts, discussions, and profile data in JSON
+                    format</li>
+                <li><strong>API Key Control:</strong> Your Gemini API key can be changed or deleted at any time from
+                    profile settings</li>
             </ul>
 
-            <h2>7. Children's Privacy</h2>
+            <p>To exercise these rights, contact us at vansh.panchal7@proton.me with your request.</p>
+
+            <h2>7. Data Structure Transparency</h2>
+
+            <p>For complete transparency, here's exactly what data fields we store in our Firebase Firestore database:
+            </p>
+
+            <h3>7.1 User Profile Collection</h3>
+            <p>Each user account contains:</p>
+            <ul>
+                <li><code>Username</code> - Your display name (string)</li>
+                <li><code>Email</code> - Your email address (string, private)</li>
+                <li><code>Uid</code> - Unique user identifier (string)</li>
+                <li><code>profilePicture</code> - URL to your profile image (string)</li>
+                <li><code>XP</code> - Experience points (number, starts at 100)</li>
+                <li><code>Saved</code> - Array of saved post IDs (array, private)</li>
+                <li><code>SavedDiscussion</code> - Array of saved discussion IDs (array, private)</li>
+                <li><code>createdAt</code> - Account creation timestamp (timestamp)</li>
+                <li><code>bio</code> - Profile bio (string, optional)</li>
+                <li><code>github</code> - GitHub username (string, optional)</li>
+                <li><code>profileDominantColor</code> - Color value for UI theming (number, optional)</li>
+                <li><code>geminiKeyHash</code> - SHA-256 hash of Gemini API key (string, optional)</li>
+                <li><code>geminiKeySetAt</code> - When API key was last updated (timestamp, optional)</li>
+            </ul>
+
+            <h3>7.2 Discussions Collection</h3>
+            <p>Each discussion thread contains:</p>
+            <ul>
+                <li><code>Title</code> - Discussion title (string)</li>
+                <li><code>Description</code> - Discussion content (string)</li>
+                <li><code>Uid</code> - Creator's user ID (string)</li>
+                <li><code>Tags</code> - Topic tags (array of strings)</li>
+                <li><code>docId</code> - Unique document ID (string)</li>
+                <li><code>Timestamp</code> - Creation time (timestamp)</li>
+                <li><code>Report</code> - Moderation flag (boolean)</li>
+                <li><code>hasPoll</code> - Whether discussion includes a poll (boolean)</li>
+                <li><code>poll</code> - Poll object with options and votes (object, if hasPoll is true)</li>
+                <li><code>Replies</code> - Subcollection of replies (see below)</li>
+            </ul>
+
+            <h3>7.3 Explore Posts Collection</h3>
+            <p>Each post contains:</p>
+            <ul>
+                <li><code>Title</code> - Post title (string)</li>
+                <li><code>Description</code> - Post content (string)</li>
+                <li><code>code</code> - Code snippet (string, optional)</li>
+                <li><code>Uid</code> - Creator's user ID (string)</li>
+                <li><code>Tags</code> - Topic tags (array of strings)</li>
+                <li><code>docId</code> - Unique document ID (string)</li>
+                <li><code>likes</code> - Array of user IDs who liked (array, private)</li>
+                <li><code>likescount</code> - Total like count (number)</li>
+                <li><code>Timestamp</code> - Creation time (timestamp)</li>
+                <li><code>Report</code> - Moderation flag (boolean)</li>
+            </ul>
+
+            <h3>7.4 Replies Subcollection</h3>
+            <p>Each reply contains:</p>
+            <ul>
+                <li><code>username</code> - Replier's username (string)</li>
+                <li><code>profilePicture</code> - Replier's profile image URL (string)</li>
+                <li><code>reply</code> - Reply text (string)</li>
+                <li><code>timestamp</code> - Reply time (timestamp)</li>
+                <li><code>uid</code> - Replier's user ID (string)</li>
+            </ul>
+
+            <h3>7.5 Local Storage (Your Device Only)</h3>
+            <ul>
+                <li><strong>Hive Database (Encrypted):</strong> AI chatbot conversation history</li>
+                <li><strong>Secure Storage (Encrypted):</strong> Your Gemini API key, encryption keys</li>
+                <li><strong>GetStorage Cache:</strong> Temporary cache of user data and Firestore collections for faster
+                    loading</li>
+            </ul>
+
+            <h2>8. Children's Privacy</h2>
 
             <p>Our app is not intended for children under 13 years of age. We do not knowingly collect personal
                 information from children under 13. If you believe we have collected information from a child under 13,
-                please contact us immediately.</p>
+                please contact us immediately at vansh.panchal7@proton.me and we will delete the account.</p>
 
-            <h2>8. Data Retention</h2>
+            <h2>9. Data Retention</h2>
 
-            <p>We retain your personal data for as long as your account is active or as needed to provide services. When
-                you delete your account, we will delete or anonymize your personal data, except where we are required to
-                retain it for legal purposes.</p>
+            <p><strong>Active Accounts:</strong> We retain your data for as long as your account is active.</p>
 
-            <h2>9. International Data Transfers</h2>
+            <p><strong>Account Deletion:</strong> When you request account deletion, we will:</p>
+            <ul>
+                <li>Delete your User profile document (username, email, profile picture, XP, saved lists, bio, GitHub
+                    username)</li>
+                <li>Delete your Gemini API key hash</li>
+                <li><strong>Preserve public content:</strong> Posts, discussions, and replies you created will remain
+                    visible but will show "[Deleted User]" as the author to maintain community continuity</li>
+                <li>Remove your email and private data from these public posts</li>
+                <li>Clear all analytics data associated with your account within 60 days</li>
+            </ul>
 
-            <p>Your data may be stored and processed in any country where we or our service providers maintain
-                facilities. By using our app, you consent to the transfer of your data to countries outside your country
-                of residence, which may have different data protection rules.</p>
+            <p><strong>Local Data:</strong> AI chatbot conversations stored on your device can be deleted by:</p>
+            <ul>
+                <li>Uninstalling the app (automatically deletes local data)</li>
+                <li>Clearing app data in device settings</li>
+            </ul>
 
-            <h2>10. Changes to This Privacy Policy</h2>
+            <p><strong>Legal Retention:</strong> We may retain certain data if required by law, to resolve disputes, or
+                enforce our terms.</p>
 
-            <p>We may update this privacy policy from time to time. We will notify you of any significant changes by
-                posting the new policy in the app and updating the "Last Updated" date. Your continued use of the app
-                after changes constitutes acceptance of the updated policy.</p>
+            <h2>10. International Data Transfers</h2>
 
-            <h2>11. Cookie Policy</h2>
+            <p>Your data is stored in Google Firebase cloud servers, which may be located in different countries:</p>
+            <ul>
+                <li><strong>Firebase Firestore:</strong> Data is stored in Google Cloud data centers (region configured
+                    by us)</li>
+                <li><strong>Firebase Storage:</strong> Profile pictures and images stored in Google Cloud Storage</li>
+                <li><strong>Cloudinary:</strong> Additional image hosting with international CDN</li>
+            </ul>
+            <p>By using our app, you consent to the transfer of your data to these locations. Google complies with GDPR
+                and international data protection standards.</p>
 
-            <p>Our mobile app does not use browser cookies. However, our third-party services (Firebase, Analytics) may
-                use similar technologies to collect usage data and improve services.</p>
+            <h2>11. Changes to This Privacy Policy</h2>
+
+            <p>We may update this privacy policy to reflect changes in our practices or legal requirements. When we make
+                significant changes:</p>
+            <ul>
+                <li>We will update the "Last Updated" date at the top of this page</li>
+                <li>We may display an in-app notification highlighting the changes</li>
+                <li>Continued use of the app after changes constitutes acceptance</li>
+            </ul>
+            <p>We recommend reviewing this policy periodically to stay informed about how we protect your data.</p>
+
+            <h2>12. Cookie and Analytics Policy</h2>
+
+            <p>Our mobile app does not use browser cookies. However:</p>
+            <ul>
+                <li><strong>Firebase Analytics:</strong> Collects anonymous usage data (app opens, screen views,
+                    crashes) to improve the app. This uses device identifiers but does not personally identify you.</li>
+                <li><strong>Local Cache:</strong> GetStorage library caches data locally for faster app performance.
+                    This data never leaves your device unless explicitly synced to Firebase.</li>
+            </ul>
+            <p>You cannot opt out of Firebase Analytics as it's essential for app stability monitoring and bug fixes.
+                However, no personally identifiable information is tracked beyond your User UID.</p>
 
             <div class="contact">
-                <h2>12. Contact Us</h2>
+                <h2>13. Contact Us</h2>
                 <p>If you have any questions, concerns, or requests regarding this privacy policy or your personal data,
                     please contact us:</p>
                 <ul>
@@ -271,7 +529,10 @@
                     <li><strong>GitHub:</strong> <a href="https://github.com/GitCrafter/Developer-Community-App"
                             target="_blank">Developer Community App Repository</a></li>
                 </ul>
-                <p style="margin-top: 15px;">We will respond to your inquiry within 30 days.</p>
+                <p style="margin-top: 15px;"><strong>Response Time:</strong> We aim to respond to all privacy inquiries
+                    within 30 days.</p>
+                <p><strong>Data Requests:</strong> For data access, correction, or deletion requests, include your
+                    registered email address and specify your request type.</p>
             </div>
 
             <div class="highlight" style="margin-top: 30px;">

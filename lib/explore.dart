@@ -83,7 +83,7 @@ class exploreState extends State<explore>
 
   void _setupFeed() {
     _streamSubscription?.cancel();
-    
+
     // Attempt to load from cache first
     try {
       final cachedPosts = _cacheService.getCachedData(
@@ -93,7 +93,7 @@ class exploreState extends State<explore>
         descending: true,
         limit: 20,
       );
-      
+
       if (cachedPosts != null && cachedPosts.isNotEmpty) {
         setState(() {
           _posts = cachedPosts;
@@ -117,14 +117,14 @@ class exploreState extends State<explore>
       if (mounted) {
         setState(() {
           _isInitialLoading = false;
-          // Only update if we are in a state that expects a fresh feed 
+          // Only update if we are in a state that expects a fresh feed
           // (e.g. initial load or empty list) to avoid conflict with pagination
-          // OR if the data is different/newer. For simplicity, we update if list was empty 
+          // OR if the data is different/newer. For simplicity, we update if list was empty
           // or if we rely on the stream to be the source of truth.
           // Since we just loaded cache, let's update if we have new data.
           if (_posts.isEmpty || data.isNotEmpty) {
-             _posts = data;
-             if (data.isNotEmpty) _lastDocumentId = data.last['id'];
+            _posts = data;
+            if (data.isNotEmpty) _lastDocumentId = data.last['id'];
           }
         });
       }
@@ -278,6 +278,10 @@ class exploreState extends State<explore>
   }
 
   Future<void> _refreshPosts() async {
+    // Clear cache to force fetch from server
+    await _cacheService
+        .clearCache('Explore_Report_false_order_Timestamp_limit_20');
+
     setState(() {
       _posts.clear();
       _lastDocumentId = null;
@@ -328,8 +332,8 @@ class exploreState extends State<explore>
                     onRefresh: _refreshPosts,
                     child: ListView.builder(
                       controller: _scrollController,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       itemCount: questions.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == questions.length) {
@@ -754,12 +758,12 @@ class _QuestionCardState extends State<QuestionCard> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
-      
+
       final userDoc = await FirebaseFirestore.instance
           .collection('User')
           .doc(user.uid)
           .get();
-          
+
       if (userDoc.exists) {
         final saved = List<String>.from(userDoc.data()?['Saved'] ?? []);
         if (mounted) {
@@ -777,28 +781,35 @@ class _QuestionCardState extends State<QuestionCard> {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
 
-    // Optimistic Update
-    final startLiked = isLiked;
-    // We don't have a local vote count state variable in the widget class itself 
-    // separate from widget.votes. To do this properly we need one, but 
-    // for now we'll just toggle the icon state immediately.
-    // If we want to update the count optimistically, we need to move 'votes' to state.
-    
-    setState(() {
-      isLiked = !isLiked;
-    });
-    
-    // Haptic feedback
-    HapticFeedback.lightImpact();
-
+    // Fetch current state from Firestore to verify before toggling
     try {
-      final questionRef = FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
-      
+      final questionRef =
+          FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
+      final questionDoc = await questionRef.get();
+
+      if (!questionDoc.exists) return;
+
+      final data = questionDoc.data() as Map<String, dynamic>;
+      final likes = data['likes'] as List<dynamic>? ?? [];
+      final currentLikesCount = data['likescount'] as int? ?? 0;
+      final actuallyLiked = likes.contains(currentUser.uid);
+
+      // Optimistic Update based on actual state
+      final startLiked = actuallyLiked;
+
+      setState(() {
+        isLiked = !actuallyLiked;
+      });
+
+      // Haptic feedback
+      HapticFeedback.lightImpact();
+
       if (startLiked) {
         // Was liked, so remove like
+        // Only decrement if count is greater than 0
         await questionRef.update({
           'likes': FieldValue.arrayRemove([currentUser.uid]),
-          'likescount': FieldValue.increment(-1),
+          'likescount': currentLikesCount > 0 ? FieldValue.increment(-1) : 0,
         });
       } else {
         // Was not liked, so add like
@@ -812,17 +823,14 @@ class _QuestionCardState extends State<QuestionCard> {
         _gamificationService.incrementCounter('likesGiven');
 
         if (widget.uid != currentUser.uid) {
-           _gamificationService.awardXp(XpAction.receiveLike, targetUserId: widget.uid);
+          _gamificationService.awardXp(XpAction.receiveLike,
+              targetUserId: widget.uid);
         }
       }
     } catch (e) {
       print('Error handling like: $e');
-      // Revert on error
-      if (mounted) {
-        setState(() {
-          isLiked = startLiked;
-        });
-      }
+      // Revert on error - re-check the actual state
+      await _checkIfLiked();
     }
   }
 
@@ -835,12 +843,13 @@ class _QuestionCardState extends State<QuestionCard> {
     setState(() {
       isSaved = !isSaved;
     });
-    
+
     HapticFeedback.lightImpact();
 
     try {
-      final userRef = FirebaseFirestore.instance.collection("User").doc(user.uid);
-      
+      final userRef =
+          FirebaseFirestore.instance.collection("User").doc(user.uid);
+
       if (startSaved) {
         // Was saved, remove it
         await userRef.update({
@@ -861,7 +870,7 @@ class _QuestionCardState extends State<QuestionCard> {
         });
         // Note: Title is required in some versions of AppSnackbar, defaulting to 'Error'
         try {
-          // Attempt with named title if supported, otherwise just message if overload exists 
+          // Attempt with named title if supported, otherwise just message if overload exists
           // or fallback to basic error catch if API mismatch.
           // Based on error: "Required named parameter 'title' must be provided."
           AppSnackbar.error('Failed to update bookmark', title: 'Error');
@@ -985,9 +994,12 @@ class _QuestionCardState extends State<QuestionCard> {
                     children: _buildDescription(widget.description, theme),
                   ),
                   maxLines: _showFullDescription ? null : 3,
-                  overflow: _showFullDescription ? TextOverflow.visible : TextOverflow.ellipsis,
+                  overflow: _showFullDescription
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
                 ),
-                if (widget.description.length > 150) // Show button if description is long
+                if (widget.description.length >
+                    150) // Show button if description is long
                   GestureDetector(
                     onTap: () {
                       setState(() {
@@ -1057,9 +1069,13 @@ class _QuestionCardState extends State<QuestionCard> {
                 const Spacer(),
                 IconButton(
                   icon: Icon(
-                    isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    isSaved
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
                     size: 24,
-                    color: isSaved ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                    color: isSaved
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
                   ),
                   onPressed: _handleSave,
                   visualDensity: VisualDensity.compact,

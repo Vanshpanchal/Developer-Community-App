@@ -14,6 +14,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'Authservice.dart';
 import 'messagemodel.dart';
 import 'services/firebase_cache_service.dart';
+import 'services/encryption_service.dart';
 import 'utils/app_theme.dart';
 import 'services/analytics_service.dart';
 import 'ThemeController.dart';
@@ -34,6 +35,14 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await GetStorage.init();
   await Hive.initFlutter();
+
+  // Initialize encryption service for secure data handling
+  try {
+    await EncryptionService().initialize();
+    AppLogger.debug('🔐 Encryption service initialized');
+  } catch (e) {
+    AppLogger.error('⚠️ Encryption init error', e);
+  }
 
   // Initialize cache service (optional: prefetch critical data)
   final cacheService = FirebaseCacheService();

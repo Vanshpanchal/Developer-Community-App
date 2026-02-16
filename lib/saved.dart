@@ -399,8 +399,14 @@ class _QuestionCardState extends State<QuestionCard> {
       DocumentReference questionRef =
           FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
       DocumentSnapshot questionDoc = await questionRef.get();
+
       if (questionDoc.exists) {
-        if (isLiked) {
+        // Verify current state from Firestore
+        var likes = questionDoc['likes'] as List<dynamic>? ?? [];
+        bool actuallyLiked =
+            likes.contains(FirebaseAuth.instance.currentUser?.uid);
+
+        if (actuallyLiked) {
           // Dislike: Remove the current user's UID from the likes array
           await questionRef.update({
             'likes': FieldValue.arrayRemove(
@@ -418,17 +424,19 @@ class _QuestionCardState extends State<QuestionCard> {
         DocumentSnapshot updatedDoc = await questionRef.get();
         List<dynamic> updatedLikes = updatedDoc['likes'] ?? [];
 
-        // Update the likes count based on the array size
+        // Update the likes count based on the array size (ensures count never goes negative)
         await questionRef.update({
           'likescount': updatedLikes.length,
         });
 
         setState(() {
-          isLiked = !isLiked; // Toggle the like status
+          isLiked = !actuallyLiked; // Toggle based on actual state
         });
       }
     } catch (e) {
       print('Error handling like/dislike: $e');
+      // Re-fetch actual state on error
+      await _checkIfLiked();
     }
   }
 

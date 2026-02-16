@@ -19,6 +19,7 @@ import 'widgets/modern_widgets.dart';
 import 'ThemeController.dart';
 import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
+import 'portfolio_summary_page.dart';
 
 class DeveloperPortfolioPage extends StatefulWidget {
   // const DeveloperPortfolioPage({super.key, this.userId});
@@ -185,6 +186,23 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           _aiLoading = false;
         });
     }
+  }
+
+  void _navigateToSummaryPage() async {
+    final stats = _buildStats();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PortfolioSummaryPage(
+          userId: widget.userId,
+          stats: stats,
+          discussions: _discussions,
+          explorePosts: _explorePosts,
+          replies: _replies,
+          githubUsername: _githubUsername,
+        ),
+      ),
+    );
   }
 
   void _showMissingKeyDialog() {
@@ -1226,7 +1244,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _profileEmail ?? _auth.currentUser?.email ?? '',
+                      'user@gmail.com',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
                       ),
@@ -1500,7 +1518,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _aiLoading ? null : _generateAISummary,
+              onPressed: () => _navigateToSummaryPage(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryColor,
                 foregroundColor: Colors.white,
@@ -1509,22 +1527,15 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
                     borderRadius: BorderRadius.circular(12)),
                 elevation: 4,
               ),
-              child: _aiLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.auto_fix_high_rounded),
-                        SizedBox(width: 8),
-                        Text('Generate Summary',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.auto_fix_high_rounded),
+                  SizedBox(width: 8),
+                  Text('Generate Summary',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
           ),
         ],
