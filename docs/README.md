@@ -24,9 +24,9 @@ To update the privacy policy:
 
 ## Contact Information
 
-The privacy policy includes placeholder contact information. Please update:
+The privacy policy includes the following contact information:
 
-- Email: `privacy@developercommapp.com` (replace with your actual contact email)
+- Email: `vansh.panchal7@proton.me`
 - GitHub repository link
 
 ## Privacy Policy Coverage
