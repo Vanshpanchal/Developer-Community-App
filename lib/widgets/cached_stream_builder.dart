@@ -33,7 +33,9 @@ class CachedStreamBuilder<T> extends StatefulWidget {
 
 class _CachedStreamBuilderState<T> extends State<CachedStreamBuilder<T>> {
   final _cacheService = FirebaseCacheService();
+  // ignore: unused_field
   List<Map<String, dynamic>>? _cachedData;
+  // ignore: unused_field
   bool _hasShownCache = false;
 
   @override

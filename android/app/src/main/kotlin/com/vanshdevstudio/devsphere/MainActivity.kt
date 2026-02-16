@@ -1,4 +1,4 @@
-package com.example.developer_community_app
+package com.vanshdevstudio.devsphere
 
 import io.flutter.embedding.android.FlutterActivity
 

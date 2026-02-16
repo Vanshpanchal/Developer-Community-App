@@ -18,7 +18,6 @@ class addpostState extends State<addpost> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _markdownController =
       TextEditingController(); // Controller for the code field
-  final _formKey = GlobalKey<FormState>();
   String markdownContent = ''; // Markdown content for Preview
   String code = ''; // Code content to show in the 'Code' tab
   final _gamificationService = GamificationService();

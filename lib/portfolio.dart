@@ -8,14 +8,12 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
-import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'ai_service.dart';
 import 'dart:ui' as ui;
 import 'package:url_launcher/url_launcher.dart';
-import 'gemini_key_dialog.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'ThemeController.dart';
@@ -34,19 +32,20 @@ class DeveloperPortfolioPage extends StatefulWidget {
 class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   final _auth = FirebaseAuth.instance;
   bool _loading = true;
+  // ignore: unused_field
+  String? _error;
   bool _aiLoading = false;
   String? _aiSummary;
-  String? _error;
   bool _editing = false;
   final _editController = TextEditingController();
-  Map<String, dynamic>? _githubStats;
+  // ignore: unused_field
   List<Map<String, dynamic>> _history = [];
+  Map<String, dynamic>? _githubStats;
   String? _profilePicUrl;
   String? _username;
   bool _summaryExpanded = false;
   bool _tagsExpanded = true;
   bool _githubExpanded = true;
-  bool _historyExpanded = false;
   bool _discussionsExpanded = true;
   bool _postsExpanded = true;
   String? _githubUsername;
@@ -204,6 +203,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   String _portfolioPrompt(String userId, Map<String, dynamic> stats) {
     return 'Generate a concise markdown portfolio summary. Include sections: Profile Highlights, Tech Focus, Community Impact (discussions ${stats['discussionCount']} / answers ${stats['replyCount']}), Suggested Growth Areas, Notable Topics (list tag frequency), Contribution Level Estimate (1 line). Stats JSON: ${stats.toString()}';
   }
@@ -363,8 +363,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
                   height: 72,
                   decoration: pw.BoxDecoration(
                     shape: pw.BoxShape.circle,
-                    image: pw.DecorationImage(
-                        image: avatar!, fit: pw.BoxFit.cover),
+                    image:
+                        pw.DecorationImage(image: avatar, fit: pw.BoxFit.cover),
                   ),
                 ),
               if (avatar != null) pw.SizedBox(width: 16),
@@ -613,6 +613,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   //     ),
   //   );
   // }
+  // ignore: unused_element
   Widget _buildProfileHeader(ThemeData theme) {
     final stats = _buildStats();
 
@@ -890,6 +891,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   Widget _headerStat(ThemeData theme, String label, String value) {
     return Expanded(
       child: Column(
@@ -906,6 +908,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   Widget _headerDivider() => Container(
       width: 1,
       height: 32,
@@ -1297,7 +1300,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     final url = _profilePicUrl;
     final themeController = Get.find<ThemeController>();
     final primaryColor = themeController.primaryColor.value;
-    
+
     return Container(
       width: 80,
       height: 80,
@@ -1529,6 +1532,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildModernStatCard(
       String label, String value, IconData icon, Color color) {
     final theme = Theme.of(context);
@@ -1579,6 +1583,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   List<Widget> _buildModernBadges(Map<String, dynamic> stats) {
     final badges = <Map<String, dynamic>>[];
 
@@ -2267,6 +2272,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   Widget _statChip(String label, String value) {
     return Chip(
       label: Text('$label: $value'),
@@ -2274,6 +2280,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   List<Widget> _buildTopTagChips(Map<String, int> tagMap) {
     final entries = tagMap.entries.toList();
     entries.sort((a, b) => b.value.compareTo(a.value));
@@ -2283,6 +2290,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
         .toList();
   }
 
+  // ignore: unused_element
   List<Widget> _buildLanguageChips(Map<String, int> langCounts) {
     final entries = langCounts.entries.toList();
     entries.sort((a, b) => b.value.compareTo(a.value));
@@ -2294,6 +2302,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     }).toList();
   }
 
+  // ignore: unused_element
   Widget _buildSummaryContent(ThemeData theme, {required bool expanded}) {
     if (_editing) {
       return TextField(
@@ -2326,6 +2335,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   Widget _collapsibleCard(
       {required ThemeData theme,
       required String title,
@@ -2512,6 +2522,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     );
   }
 
+  // ignore: unused_element
   Widget _detailedGithubSection(ThemeData theme) {
     if (_githubStats == null) return const SizedBox.shrink();
     final langs = (_githubStats?['languages']) is Map

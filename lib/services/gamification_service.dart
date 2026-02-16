@@ -234,29 +234,475 @@ class GamificationService {
 
   // ==================== CHALLENGES ====================
 
-  static final List<Challenge> _dailyTemplates = [
-    const Challenge(id: 'd_post', title: 'Daily Share', description: 'Create 1 post', type: ChallengeType.daily, xpReward: 30, requirements: {'postsToday': 1}),
-    const Challenge(id: 'd_like', title: 'Spread Love', description: 'Like 3 posts', type: ChallengeType.daily, xpReward: 20, requirements: {'likesToday': 3}),
-    const Challenge(id: 'd_reply', title: 'Conversation', description: 'Reply to 1 post', type: ChallengeType.daily, xpReward: 25, requirements: {'repliesToday': 1}),
-    const Challenge(id: 'd_view', title: 'Explorer', description: 'View 5 posts', type: ChallengeType.daily, xpReward: 15, requirements: {'viewsToday': 5}),
-    const Challenge(id: 'd_poll', title: 'Curious Mind', description: 'Vote in a poll', type: ChallengeType.daily, xpReward: 20, requirements: {'pollsVotedToday': 1}),
-  ];
+  /// Helper method to get user level from current user
+  Future<UserLevel> _getCurrentUserLevel() async {
+    if (_currentUserId == null) return UserLevel.beginner;
 
-  static final List<Challenge> _weeklyTemplates = [
-    const Challenge(id: 'w_posts', title: 'Weekly Writer', description: 'Create 5 posts', type: ChallengeType.weekly, xpReward: 150, requirements: {'postsThisWeek': 5}),
-    const Challenge(id: 'w_replies', title: 'Helpful Hand', description: 'Reply to 10 discussions', type: ChallengeType.weekly, xpReward: 200, requirements: {'repliesThisWeek': 10}),
-    const Challenge(id: 'w_streak', title: 'Consistent', description: '5 day streak', type: ChallengeType.weekly, xpReward: 175, requirements: {'streakDays': 5}),
-    const Challenge(id: 'w_likes', title: 'Popularity', description: 'Get 20 likes', type: ChallengeType.weekly, xpReward: 100, requirements: {'likesReceivedThisWeek': 20}),
-  ];
+    try {
+      final userDoc =
+          await _firestore.collection('User').doc(_currentUserId).get();
+      final totalXp =
+          int.tryParse(userDoc.data()?['XP']?.toString() ?? '0') ?? 0;
+      return UserLevel.fromXp(totalXp);
+    } catch (e) {
+      debugPrint('Error getting user level: $e');
+      return UserLevel.beginner;
+    }
+  }
 
-  /// Get or Generate daily challenges
+  /// Generate level-appropriate daily challenges
+  static List<Challenge> _generateDailyChallengesForLevel(UserLevel level) {
+    switch (level) {
+      case UserLevel.beginner:
+        return [
+          const Challenge(
+              id: 'd_post',
+              title: 'First Steps',
+              description: 'Create 1 post',
+              type: ChallengeType.daily,
+              xpReward: 30,
+              requirements: {'postsToday': 1}),
+          const Challenge(
+              id: 'd_like',
+              title: 'Spread Love',
+              description: 'Like 2 posts',
+              type: ChallengeType.daily,
+              xpReward: 20,
+              requirements: {'likesToday': 2}),
+          const Challenge(
+              id: 'd_reply',
+              title: 'Join Conversation',
+              description: 'Reply to 1 post',
+              type: ChallengeType.daily,
+              xpReward: 25,
+              requirements: {'repliesToday': 1}),
+          const Challenge(
+              id: 'd_view',
+              title: 'Explorer',
+              description: 'View 5 posts',
+              type: ChallengeType.daily,
+              xpReward: 15,
+              requirements: {'viewsToday': 5}),
+          const Challenge(
+              id: 'd_poll',
+              title: 'Curious Mind',
+              description: 'Vote in a poll',
+              type: ChallengeType.daily,
+              xpReward: 20,
+              requirements: {'pollsVotedToday': 1}),
+        ];
+
+      case UserLevel.intermediate:
+        return [
+          const Challenge(
+              id: 'd_post',
+              title: 'Daily Share',
+              description: 'Create 2 posts',
+              type: ChallengeType.daily,
+              xpReward: 50,
+              requirements: {'postsToday': 2}),
+          const Challenge(
+              id: 'd_like',
+              title: 'Community Support',
+              description: 'Like 5 posts',
+              type: ChallengeType.daily,
+              xpReward: 35,
+              requirements: {'likesToday': 5}),
+          const Challenge(
+              id: 'd_reply',
+              title: 'Active Helper',
+              description: 'Reply to 2 posts',
+              type: ChallengeType.daily,
+              xpReward: 45,
+              requirements: {'repliesToday': 2}),
+          const Challenge(
+              id: 'd_view',
+              title: 'Knowledge Seeker',
+              description: 'View 10 posts',
+              type: ChallengeType.daily,
+              xpReward: 25,
+              requirements: {'viewsToday': 10}),
+          const Challenge(
+              id: 'd_poll',
+              title: 'Opinion Matters',
+              description: 'Vote in 2 polls',
+              type: ChallengeType.daily,
+              xpReward: 35,
+              requirements: {'pollsVotedToday': 2}),
+        ];
+
+      case UserLevel.advanced:
+        return [
+          const Challenge(
+              id: 'd_post',
+              title: 'Content Creator',
+              description: 'Create 3 quality posts',
+              type: ChallengeType.daily,
+              xpReward: 70,
+              requirements: {'postsToday': 3}),
+          const Challenge(
+              id: 'd_like',
+              title: 'Influencer',
+              description: 'Like 8 posts',
+              type: ChallengeType.daily,
+              xpReward: 50,
+              requirements: {'likesToday': 8}),
+          const Challenge(
+              id: 'd_reply',
+              title: 'Mentor',
+              description: 'Reply to 3 discussions',
+              type: ChallengeType.daily,
+              xpReward: 60,
+              requirements: {'repliesToday': 3}),
+          const Challenge(
+              id: 'd_view',
+              title: 'Researcher',
+              description: 'View 15 posts',
+              type: ChallengeType.daily,
+              xpReward: 40,
+              requirements: {'viewsToday': 15}),
+          const Challenge(
+              id: 'd_discussion',
+              title: 'Discussion Leader',
+              description: 'Start 1 discussion',
+              type: ChallengeType.daily,
+              xpReward: 55,
+              requirements: {'discussionsToday': 1}),
+        ];
+
+      case UserLevel.expert:
+        return [
+          const Challenge(
+              id: 'd_post',
+              title: 'Expert Writer',
+              description: 'Create 4 insightful posts',
+              type: ChallengeType.daily,
+              xpReward: 90,
+              requirements: {'postsToday': 4}),
+          const Challenge(
+              id: 'd_like',
+              title: 'Community Builder',
+              description: 'Like 12 posts',
+              type: ChallengeType.daily,
+              xpReward: 65,
+              requirements: {'likesToday': 12}),
+          const Challenge(
+              id: 'd_reply',
+              title: 'Expert Advisor',
+              description: 'Reply to 5 discussions',
+              type: ChallengeType.daily,
+              xpReward: 80,
+              requirements: {'repliesToday': 5}),
+          const Challenge(
+              id: 'd_discussion',
+              title: 'Topic Starter',
+              description: 'Start 2 discussions',
+              type: ChallengeType.daily,
+              xpReward: 75,
+              requirements: {'discussionsToday': 2}),
+          const Challenge(
+              id: 'd_poll',
+              title: 'Poll Master',
+              description: 'Vote in 3 polls',
+              type: ChallengeType.daily,
+              xpReward: 50,
+              requirements: {'pollsVotedToday': 3}),
+        ];
+
+      case UserLevel.master:
+        return [
+          const Challenge(
+              id: 'd_post',
+              title: 'Master Creator',
+              description: 'Create 5 exceptional posts',
+              type: ChallengeType.daily,
+              xpReward: 110,
+              requirements: {'postsToday': 5}),
+          const Challenge(
+              id: 'd_like',
+              title: 'Engagement Master',
+              description: 'Like 15 posts',
+              type: ChallengeType.daily,
+              xpReward: 80,
+              requirements: {'likesToday': 15}),
+          const Challenge(
+              id: 'd_reply',
+              title: 'Master Mentor',
+              description: 'Reply to 7 discussions',
+              type: ChallengeType.daily,
+              xpReward: 100,
+              requirements: {'repliesToday': 7}),
+          const Challenge(
+              id: 'd_discussion',
+              title: 'Thought Leader',
+              description: 'Start 3 discussions',
+              type: ChallengeType.daily,
+              xpReward: 95,
+              requirements: {'discussionsToday': 3}),
+          const Challenge(
+              id: 'd_view',
+              title: 'Master Researcher',
+              description: 'View 25 posts',
+              type: ChallengeType.daily,
+              xpReward: 60,
+              requirements: {'viewsToday': 25}),
+        ];
+
+      case UserLevel.legend:
+        return [
+          const Challenge(
+              id: 'd_post',
+              title: 'Legendary Content',
+              description: 'Create 6 masterpiece posts',
+              type: ChallengeType.daily,
+              xpReward: 150,
+              requirements: {'postsToday': 6}),
+          const Challenge(
+              id: 'd_like',
+              title: 'Legend Support',
+              description: 'Like 20 posts',
+              type: ChallengeType.daily,
+              xpReward: 100,
+              requirements: {'likesToday': 20}),
+          const Challenge(
+              id: 'd_reply',
+              title: 'Legendary Guide',
+              description: 'Reply to 10 discussions',
+              type: ChallengeType.daily,
+              xpReward: 130,
+              requirements: {'repliesToday': 10}),
+          const Challenge(
+              id: 'd_discussion',
+              title: 'Visionary',
+              description: 'Start 4 discussions',
+              type: ChallengeType.daily,
+              xpReward: 120,
+              requirements: {'discussionsToday': 4}),
+          const Challenge(
+              id: 'd_poll',
+              title: 'Poll Champion',
+              description: 'Vote in 5 polls',
+              type: ChallengeType.daily,
+              xpReward: 80,
+              requirements: {'pollsVotedToday': 5}),
+        ];
+    }
+  }
+
+  /// Generate level-appropriate weekly challenges
+  static List<Challenge> _generateWeeklyChallengesForLevel(UserLevel level) {
+    switch (level) {
+      case UserLevel.beginner:
+        return [
+          const Challenge(
+              id: 'w_posts',
+              title: 'First Week',
+              description: 'Create 3 posts this week',
+              type: ChallengeType.weekly,
+              xpReward: 100,
+              requirements: {'postsThisWeek': 3}),
+          const Challenge(
+              id: 'w_replies',
+              title: 'Helpful Beginner',
+              description: 'Reply to 5 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 120,
+              requirements: {'repliesThisWeek': 5}),
+          const Challenge(
+              id: 'w_streak',
+              title: 'Starting Streak',
+              description: 'Maintain a 3 day streak',
+              type: ChallengeType.weekly,
+              xpReward: 90,
+              requirements: {'streakDays': 3}),
+          const Challenge(
+              id: 'w_likes',
+              title: 'Popular Start',
+              description: 'Get 10 likes on your posts',
+              type: ChallengeType.weekly,
+              xpReward: 80,
+              requirements: {'likesReceivedThisWeek': 10}),
+        ];
+
+      case UserLevel.intermediate:
+        return [
+          const Challenge(
+              id: 'w_posts',
+              title: 'Weekly Writer',
+              description: 'Create 7 posts this week',
+              type: ChallengeType.weekly,
+              xpReward: 180,
+              requirements: {'postsThisWeek': 7}),
+          const Challenge(
+              id: 'w_replies',
+              title: 'Helpful Hand',
+              description: 'Reply to 12 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 200,
+              requirements: {'repliesThisWeek': 12}),
+          const Challenge(
+              id: 'w_streak',
+              title: 'Consistent',
+              description: 'Maintain a 5 day streak',
+              type: ChallengeType.weekly,
+              xpReward: 150,
+              requirements: {'streakDays': 5}),
+          const Challenge(
+              id: 'w_likes',
+              title: 'Growing Popularity',
+              description: 'Get 25 likes on your posts',
+              type: ChallengeType.weekly,
+              xpReward: 140,
+              requirements: {'likesReceivedThisWeek': 25}),
+        ];
+
+      case UserLevel.advanced:
+        return [
+          const Challenge(
+              id: 'w_posts',
+              title: 'Prolific Writer',
+              description: 'Create 10 posts this week',
+              type: ChallengeType.weekly,
+              xpReward: 250,
+              requirements: {'postsThisWeek': 10}),
+          const Challenge(
+              id: 'w_replies',
+              title: 'Community Pillar',
+              description: 'Reply to 20 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 280,
+              requirements: {'repliesThisWeek': 20}),
+          const Challenge(
+              id: 'w_streak',
+              title: 'Dedicated',
+              description: 'Maintain a 7 day streak',
+              type: ChallengeType.weekly,
+              xpReward: 220,
+              requirements: {'streakDays': 7}),
+          const Challenge(
+              id: 'w_likes',
+              title: 'Influencer',
+              description: 'Get 40 likes on your posts',
+              type: ChallengeType.weekly,
+              xpReward: 200,
+              requirements: {'likesReceivedThisWeek': 40}),
+        ];
+
+      case UserLevel.expert:
+        return [
+          const Challenge(
+              id: 'w_posts',
+              title: 'Expert Publisher',
+              description: 'Create 15 posts this week',
+              type: ChallengeType.weekly,
+              xpReward: 350,
+              requirements: {'postsThisWeek': 15}),
+          const Challenge(
+              id: 'w_replies',
+              title: 'Expert Guide',
+              description: 'Reply to 30 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 380,
+              requirements: {'repliesThisWeek': 30}),
+          const Challenge(
+              id: 'w_streak',
+              title: 'Devoted',
+              description: 'Maintain a 7 day streak',
+              type: ChallengeType.weekly,
+              xpReward: 300,
+              requirements: {'streakDays': 7}),
+          const Challenge(
+              id: 'w_discussions',
+              title: 'Discussion Expert',
+              description: 'Start 10 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 320,
+              requirements: {'discussionsThisWeek': 10}),
+        ];
+
+      case UserLevel.master:
+        return [
+          const Challenge(
+              id: 'w_posts',
+              title: 'Master Publisher',
+              description: 'Create 20 posts this week',
+              type: ChallengeType.weekly,
+              xpReward: 450,
+              requirements: {'postsThisWeek': 20}),
+          const Challenge(
+              id: 'w_replies',
+              title: 'Master Advisor',
+              description: 'Reply to 40 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 500,
+              requirements: {'repliesThisWeek': 40}),
+          const Challenge(
+              id: 'w_streak',
+              title: 'Master Consistency',
+              description: 'Maintain a 7 day streak',
+              type: ChallengeType.weekly,
+              xpReward: 400,
+              requirements: {'streakDays': 7}),
+          const Challenge(
+              id: 'w_likes',
+              title: 'Master Influence',
+              description: 'Get 75 likes on your posts',
+              type: ChallengeType.weekly,
+              xpReward: 380,
+              requirements: {'likesReceivedThisWeek': 75}),
+        ];
+
+      case UserLevel.legend:
+        return [
+          const Challenge(
+              id: 'w_posts',
+              title: 'Legendary Output',
+              description: 'Create 30 posts this week',
+              type: ChallengeType.weekly,
+              xpReward: 600,
+              requirements: {'postsThisWeek': 30}),
+          const Challenge(
+              id: 'w_replies',
+              title: 'Legendary Mentor',
+              description: 'Reply to 50 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 650,
+              requirements: {'repliesThisWeek': 50}),
+          const Challenge(
+              id: 'w_streak',
+              title: 'Unstoppable',
+              description: 'Maintain a 7 day streak',
+              type: ChallengeType.weekly,
+              xpReward: 500,
+              requirements: {'streakDays': 7}),
+          const Challenge(
+              id: 'w_discussions',
+              title: 'Legendary Leader',
+              description: 'Start 20 discussions',
+              type: ChallengeType.weekly,
+              xpReward: 550,
+              requirements: {'discussionsThisWeek': 20}),
+        ];
+    }
+  }
+
+  /// Get or Generate daily challenges based on user level
   Future<List<Challenge>> getDailyChallenges() async {
     final today = DateTime.now();
     final dateId = "${today.year}-${today.month}-${today.day}";
     final expiry = DateTime(today.year, today.month, today.day, 23, 59, 59);
 
+    // Get user level to generate appropriate challenges
+    final userLevel = await _getCurrentUserLevel();
+
     try {
-      final docRef = _firestore.collection('DailyChallenges').doc(dateId);
+      // Use user-specific document to store their level-based challenges
+      final userId = _currentUserId ?? 'anonymous';
+      final docRef = _firestore
+          .collection('DailyChallenges')
+          .doc(dateId)
+          .collection('UserChallenges')
+          .doc(userId);
       final docSnapshot = await docRef.get();
 
       if (docSnapshot.exists) {
@@ -267,8 +713,9 @@ class GamificationService {
         if (list != null && list.isNotEmpty) return list;
       }
 
-      // Generate if not exists
-      final challenges = (_dailyTemplates..shuffle()).take(3).map((t) {
+      // Generate level-appropriate challenges if not exists
+      final templates = _generateDailyChallengesForLevel(userLevel);
+      final challenges = (templates..shuffle()).take(3).map((t) {
         return Challenge(
             id: "${t.id}_$dateId",
             title: t.title,
@@ -281,46 +728,65 @@ class GamificationService {
 
       await docRef.set({
         'date': dateId,
+        'userId': userId,
+        'userLevel': userLevel.name,
         'challenges': challenges.map((c) => c.toMap()).toList(),
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       return challenges;
     } catch (e) {
-        debugPrint("Error fetching daily challenges: $e");
-        // Fallback
-        return [
-             Challenge(id: 'fallback_daily', title: 'Daily Share', description: 'Create 1 post', type: ChallengeType.daily, xpReward: 30, requirements: {'postsToday': 1}, expiresAt: expiry),
-        ];
-
+      debugPrint("Error fetching daily challenges: $e");
+      // Fallback with beginner level challenge
+      return [
+        Challenge(
+            id: 'fallback_daily',
+            title: 'First Steps',
+            description: 'Create 1 post',
+            type: ChallengeType.daily,
+            xpReward: 30,
+            requirements: {'postsToday': 1},
+            expiresAt: expiry),
+      ];
     }
   }
 
-  /// Get or Generate weekly challenges
+  /// Get or Generate weekly challenges based on user level
   Future<List<Challenge>> getWeeklyChallenges() async {
     final now = DateTime.now();
     // Calculate week number (ISO 8601-ish)
     final days = now.difference(DateTime(now.year, 1, 1)).inDays;
     final weekNum = ((days + DateTime(now.year, 1, 1).weekday) / 7).ceil();
     final weekId = "${now.year}-W$weekNum";
-    
-    final endOfWeek = now.add(Duration(days: 7 - now.weekday));
-    final expiry = DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day, 23, 59, 59);
 
-     try {
-      final docRef = _firestore.collection('WeeklyChallenges').doc(weekId);
+    final endOfWeek = now.add(Duration(days: 7 - now.weekday));
+    final expiry =
+        DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day, 23, 59, 59);
+
+    // Get user level to generate appropriate challenges
+    final userLevel = await _getCurrentUserLevel();
+
+    try {
+      // Use user-specific document to store their level-based challenges
+      final userId = _currentUserId ?? 'anonymous';
+      final docRef = _firestore
+          .collection('WeeklyChallenges')
+          .doc(weekId)
+          .collection('UserChallenges')
+          .doc(userId);
       final docSnapshot = await docRef.get();
 
       if (docSnapshot.exists) {
-         final data = docSnapshot.data();
+        final data = docSnapshot.data();
         final list = (data?['challenges'] as List<dynamic>?)
             ?.map((e) => Challenge.fromMap(e))
             .toList();
         if (list != null && list.isNotEmpty) return list;
       }
 
-       // Generate if not exists
-      final challenges = (_weeklyTemplates..shuffle()).take(3).map((t) {
+      // Generate level-appropriate challenges if not exists
+      final templates = _generateWeeklyChallengesForLevel(userLevel);
+      final challenges = (templates..shuffle()).take(3).map((t) {
         return Challenge(
             id: "${t.id}_$weekId",
             title: t.title,
@@ -333,18 +799,27 @@ class GamificationService {
 
       await docRef.set({
         'weekId': weekId,
+        'userId': userId,
+        'userLevel': userLevel.name,
         'challenges': challenges.map((c) => c.toMap()).toList(),
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       return challenges;
-
-     } catch (e) {
-        debugPrint("Error fetching weekly challenges: $e");
-         return [
-             Challenge(id: 'fallback_weekly', title: 'Weekly Writer', description: 'Create 5 posts', type: ChallengeType.weekly, xpReward: 150, requirements: {'postsThisWeek': 5}, expiresAt: expiry),
-        ];
-     }
+    } catch (e) {
+      debugPrint("Error fetching weekly challenges: $e");
+      // Fallback with beginner level challenge
+      return [
+        Challenge(
+            id: 'fallback_weekly',
+            title: 'First Week',
+            description: 'Create 3 posts this week',
+            type: ChallengeType.weekly,
+            xpReward: 100,
+            requirements: {'postsThisWeek': 3},
+            expiresAt: expiry),
+      ];
+    }
   }
 
   // ==================== XP MANAGEMENT ====================
@@ -493,16 +968,16 @@ class GamificationService {
   }
 
   // ==================== CACHE MANAGEMENT ====================
-  
+
   GamificationStats? _cachedStats;
   DateTime? _lastStatsFetch;
-  
+
   List<LeaderboardEntry>? _cachedLeaderboard;
   DateTime? _lastLeaderboardFetch;
-  
+
   List<EarnedBadge>? _cachedBadges;
   DateTime? _lastBadgesFetch;
-  
+
   static const Duration _cacheDuration = Duration(minutes: 5);
 
   GamificationStats? get cachedStats => _cachedStats;
@@ -521,15 +996,16 @@ class GamificationService {
   // ==================== BADGES MANAGEMENT ====================
 
   /// Get user's earned badges
-  Future<List<EarnedBadge>> getUserBadges({String? targetUserId, bool forceRefresh = false}) async {
+  Future<List<EarnedBadge>> getUserBadges(
+      {String? targetUserId, bool forceRefresh = false}) async {
     final userId = targetUserId ?? _currentUserId;
     if (userId == null) return [];
 
     // Return cached if valid
-    if (!forceRefresh && 
-        userId == _currentUserId && 
-        _cachedBadges != null && 
-        _lastBadgesFetch != null && 
+    if (!forceRefresh &&
+        userId == _currentUserId &&
+        _cachedBadges != null &&
+        _lastBadgesFetch != null &&
         DateTime.now().difference(_lastBadgesFetch!) < _cacheDuration) {
       return _cachedBadges!;
     }
@@ -537,17 +1013,17 @@ class GamificationService {
     try {
       final userDoc = await _firestore.collection('User').doc(userId).get();
       final badgesData = userDoc.data()?['badges'] as List<dynamic>?;
-      final badges = badgesData == null 
-          ? <EarnedBadge>[] 
+      final badges = badgesData == null
+          ? <EarnedBadge>[]
           : badgesData
               .map((b) => EarnedBadge.fromMap(Map<String, dynamic>.from(b)))
               .toList();
-      
+
       if (userId == _currentUserId) {
         _cachedBadges = badges;
         _lastBadgesFetch = DateTime.now();
       }
-      
+
       return badges;
     } catch (e) {
       debugPrint('Error getting badges: $e');
@@ -591,7 +1067,7 @@ class GamificationService {
         // Invalidate cache
         if (userId == _currentUserId) {
           _cachedBadges = null;
-          _cachedStats = null; 
+          _cachedStats = null;
         }
 
         return true;
@@ -645,11 +1121,12 @@ class GamificationService {
   // ==================== LEADERBOARD ====================
 
   /// Get leaderboard entries
-  Future<List<LeaderboardEntry>> getLeaderboard({int limit = 50, bool forceRefresh = false}) async {
+  Future<List<LeaderboardEntry>> getLeaderboard(
+      {int limit = 50, bool forceRefresh = false}) async {
     // Return cached if valid
-    if (!forceRefresh && 
-        _cachedLeaderboard != null && 
-        _lastLeaderboardFetch != null && 
+    if (!forceRefresh &&
+        _cachedLeaderboard != null &&
+        _lastLeaderboardFetch != null &&
         DateTime.now().difference(_lastLeaderboardFetch!) < _cacheDuration) {
       return _cachedLeaderboard!;
     }
@@ -708,15 +1185,16 @@ class GamificationService {
   // ==================== STATS ====================
 
   /// Get comprehensive gamification stats
-  Future<GamificationStats> getGamificationStats({String? targetUserId, bool forceRefresh = false}) async {
+  Future<GamificationStats> getGamificationStats(
+      {String? targetUserId, bool forceRefresh = false}) async {
     final userId = targetUserId ?? _currentUserId;
     if (userId == null) return GamificationStats.empty();
 
     // Return cached if valid
-    if (!forceRefresh && 
+    if (!forceRefresh &&
         userId == _currentUserId &&
-        _cachedStats != null && 
-        _lastStatsFetch != null && 
+        _cachedStats != null &&
+        _lastStatsFetch != null &&
         DateTime.now().difference(_lastStatsFetch!) < _cacheDuration) {
       return _cachedStats!;
     }
@@ -733,7 +1211,8 @@ class GamificationService {
       final streak = await getStreak(targetUserId: userId);
 
       // Fetch badges
-      final badges = await getUserBadges(targetUserId: userId, forceRefresh: forceRefresh);
+      final badges =
+          await getUserBadges(targetUserId: userId, forceRefresh: forceRefresh);
 
       // Fetch counts
       final postsSnap = await _firestore

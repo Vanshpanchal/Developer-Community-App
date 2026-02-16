@@ -11,8 +11,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
-import 'models/poll_model.dart';
-import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 
@@ -30,8 +28,9 @@ class _detail_discussionState extends State<detail_discussion> {
   final _replyController = TextEditingController();
 
   final user = FirebaseAuth.instance.currentUser;
-  String? _threadSummary;
   bool _summaryLoading = false;
+  // ignore: unused_field
+  String? _threadSummary;
   final _gamificationService = GamificationService();
 
   Future<void> updateXP2(String uid, int points) async {
@@ -386,23 +385,27 @@ class _detail_discussionState extends State<detail_discussion> {
                   return CustomScrollView(
                     slivers: [
                       SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         sliver: SliverList(
                           delegate: SliverChildListDelegate([
                             display_discussion(
                               title: discussionData['Title'] ?? '',
                               description: discussionData['Description'] ?? '',
-                              tags: List<String>.from(discussionData['Tags'] ?? []),
-                              timestamp: (discussionData['Timestamp'] as Timestamp?)
-                                      ?.toDate() ??
-                                  DateTime.now(),
+                              tags: List<String>.from(
+                                  discussionData['Tags'] ?? []),
+                              timestamp:
+                                  (discussionData['Timestamp'] as Timestamp?)
+                                          ?.toDate() ??
+                                      DateTime.now(),
                               uid: discussionData['Uid'] ?? '',
                               docid: widget.docId,
                               replies: [],
                             ),
                             const SizedBox(height: 16),
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 4),
                               child: Text(
                                 'Replies',
                                 style: TextStyle(
@@ -1173,88 +1176,88 @@ class _detail_discussionState extends State<detail_discussion> {
             // Modern reply input section
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 15),
-            child:
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-              decoration: BoxDecoration(
-                color: isDark ? AppTheme.darkCard : Colors.white,
-                border: Border(
-                  top: BorderSide(
-                    color:
-                        isDark ? Colors.grey.shade700 : Colors.grey.shade200,
-                    width: 1,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                decoration: BoxDecoration(
+                  color: isDark ? AppTheme.darkCard : Colors.white,
+                  border: Border(
+                    top: BorderSide(
+                      color:
+                          isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+                      width: 1,
+                    ),
                   ),
                 ),
-              ),
-              child: Row(
-                children: [
-                  // Modern text field
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? AppTheme.darkSurface
-                            : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
+                child: Row(
+                  children: [
+                    // Modern text field
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
                           color: isDark
-                              ? Colors.grey.shade600
-                              : Colors.grey.shade300,
-                          width: 1,
-                        ),
-                      ),
-                      child: TextField(
-                        controller: _replyController,
-                        maxLines: 1,
-                        style: TextStyle(
-                          color: isDark ? Colors.white : Colors.black87,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Write a reply...',
-                          hintStyle: TextStyle(
+                              ? AppTheme.darkSurface
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
                             color: isDark
-                                ? Colors.grey.shade400
-                                : Colors.grey.shade500,
+                                ? Colors.grey.shade600
+                                : Colors.grey.shade300,
+                            width: 1,
                           ),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 14,
+                        ),
+                        child: TextField(
+                          controller: _replyController,
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Write a reply...',
+                            hintStyle: TextStyle(
+                              color: isDark
+                                  ? Colors.grey.shade400
+                                  : Colors.grey.shade500,
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Modern send button
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: AppTheme.primaryGradient,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.send,
-                        color: Colors.white,
-                        size: 20,
+                    const SizedBox(width: 12),
+                    // Modern send button
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.primaryGradient,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      onPressed: () async {
-                        if (_replyController.text.trim().isNotEmpty) {
-                          addReply();
-                        }
-                      },
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.send,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        onPressed: () async {
+                          if (_replyController.text.trim().isNotEmpty) {
+                            addReply();
+                          }
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             ),
           ],
         ),
@@ -1377,7 +1380,6 @@ class display_discussionCardState extends State<display_discussion> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    String? code;
     return Card(
         child: InkWell(
             onTap: () {
@@ -1576,13 +1578,17 @@ class display_discussionCardState extends State<display_discussion> {
                       RichText(
                         text: TextSpan(
                           style: theme.textTheme.bodyMedium,
-                          children: _buildDescription(widget.description, theme),
+                          children:
+                              _buildDescription(widget.description, theme),
                         ),
                         maxLines: _showFullDescription ? null : 1,
                         textAlign: TextAlign.justify,
-                        overflow: _showFullDescription ? TextOverflow.visible : TextOverflow.ellipsis,
+                        overflow: _showFullDescription
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
                       ),
-                      if (widget.description.length > 100) // Show button if description is long
+                      if (widget.description.length >
+                          100) // Show button if description is long
                         GestureDetector(
                           onTap: () {
                             setState(() {
@@ -1622,6 +1628,7 @@ class display_discussionCardState extends State<display_discussion> {
             )));
   }
 
+  // ignore: unused_element
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);

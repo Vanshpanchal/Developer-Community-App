@@ -33,7 +33,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
           _loading = false;
         });
       }
-      
+
       // Still fetch user rank in background if needed, or if rank is also cached?
       // User rank is not cached in the same list. But let's assume we want to show leaderboard fast.
       // We can fetch user rank separately or if we have it.
@@ -44,11 +44,11 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
     try {
       final entries = await _gamificationService.getLeaderboard(
-        limit: 100, 
+        limit: 100,
         forceRefresh: forceRefresh,
       );
       final userRank = await _gamificationService.getUserRank();
-      
+
       if (mounted) {
         setState(() {
           _entries = entries;
@@ -64,7 +64,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(

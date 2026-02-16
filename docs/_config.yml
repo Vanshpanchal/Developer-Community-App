@@ -1,0 +1,6 @@
+# GitHub Pages Configuration for Developer Community App
+
+theme: jekyll-theme-cayman
+title: Developer Community App
+description: A collaborative platform for developers to share, learn, and grow together
+show_downloads: false

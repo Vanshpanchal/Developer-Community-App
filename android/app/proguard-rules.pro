@@ -14,6 +14,17 @@
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.android.gms.**
 
+# Google Play Core (for deferred components)
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
+-keep class com.google.android.play.core.splitcompat.** { *; }
+-keep class com.google.android.play.core.splitinstall.** { *; }
+-keep class com.google.android.play.core.tasks.** { *; }
+
+# Home Widget
+-keep class es.antonborri.home_widget.** { *; }
+-dontwarn es.antonborri.home_widget.**
+
 # Hive
 -keep class hive.** { *; }
 -keep class * extends hive.TypeAdapter { *; }

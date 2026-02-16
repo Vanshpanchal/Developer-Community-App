@@ -20,9 +20,6 @@ class add_discussion extends StatefulWidget {
 class _add_discussionState extends State<add_discussion> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _markdownController =
-      TextEditingController(); // Controller for the code field
-  final _formKey = GlobalKey<FormState>();
   String markdownContent = ''; // Markdown content for Preview
   String code = ''; // Code content to show in the 'Code' tab
 

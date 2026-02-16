@@ -358,7 +358,6 @@ class displayCardState extends State<displayCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    String? code;
     return Card(
         child: InkWell(
             onTap: () {

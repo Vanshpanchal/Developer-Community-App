@@ -11,7 +11,6 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
-import 'repo_analyzer.dart';
 import 'portfolio.dart';
 import 'services/gamification_service.dart';
 import 'services/firebase_cache_service.dart';
@@ -39,7 +38,6 @@ class exploreState extends State<explore>
 
   final ScrollController _scrollController = ScrollController();
   final int _limit = 20;
-  DocumentSnapshot? _lastDocument;
   bool _hasMore = true;
   bool _isLoadingMore = false;
   bool _isInitialLoading = true;
@@ -196,8 +194,6 @@ class exploreState extends State<explore>
   }
 
   String _searchQuery = '';
-  List<Map<String, dynamic>> _allPosts = [];
-  List<Map<String, dynamic>> _filteredPosts = [];
 
   onSearch2(String query) {
     setState(() {
@@ -208,8 +204,7 @@ class exploreState extends State<explore>
   List<Map<String, dynamic>> _performSearch(List<Map<String, dynamic>> docs) {
     if (_searchQuery.isEmpty) return docs;
 
-    // Store all posts
-    _allPosts = docs;
+    // Perform search on the current docs
 
     // Calculate relevance scores for each document
     final scoredDocs = docs
@@ -462,7 +457,6 @@ class exploreState extends State<explore>
   }
 
   Widget _buildSearchBar(ThemeData theme) {
-    final isDark = theme.brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Container(
@@ -518,6 +512,7 @@ class exploreState extends State<explore>
     );
   }
 
+  // ignore: unused_element
   Widget _buildErrorState(String error) {
     return Center(
       child: Column(
@@ -1283,34 +1278,23 @@ class _QuestionCardState extends State<QuestionCard> {
         FutureBuilder<String?>(
           future: _fetchUserXP(widget.uid),
           builder: (context, snapshot) {
-            final xp = snapshot.data ?? '0';
+            if (!snapshot.hasData) return const SizedBox.shrink();
             return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 4,
+              ),
               decoration: BoxDecoration(
                 gradient: AppTheme.primaryGradient,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$xp XP',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              child: Text(
+                '${snapshot.data} XP',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
               ),
             );
           },
@@ -1518,6 +1502,7 @@ class _QuestionCardState extends State<QuestionCard> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildTags(ThemeData theme) {
     return Wrap(
       spacing: 8,
@@ -1545,6 +1530,7 @@ class _QuestionCardState extends State<QuestionCard> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildActionsRow(ThemeData theme) {
     return Row(
       children: [

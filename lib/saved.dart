@@ -10,7 +10,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
-import 'dart:math' as math;
 
 class saved extends StatefulWidget {
   const saved({super.key});
@@ -401,8 +400,6 @@ class _QuestionCardState extends State<QuestionCard> {
           FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
       DocumentSnapshot questionDoc = await questionRef.get();
       if (questionDoc.exists) {
-        var likes = questionDoc['likes'];
-
         if (isLiked) {
           // Dislike: Remove the current user's UID from the likes array
           await questionRef.update({

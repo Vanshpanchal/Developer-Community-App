@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
-import '../utils/app_theme.dart';
 
 class ShimmerSkeleton extends StatelessWidget {
   final double width;
@@ -78,7 +77,8 @@ class PostSkeleton extends StatelessWidget {
           const SizedBox(height: 8),
           const ShimmerSkeleton.rectangular(width: 200, height: 16),
           const SizedBox(height: 16),
-          const ShimmerSkeleton.rectangular(width: double.infinity, height: 200),
+          const ShimmerSkeleton.rectangular(
+              width: double.infinity, height: 200),
         ],
       ),
     );

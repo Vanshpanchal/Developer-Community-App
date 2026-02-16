@@ -11,7 +11,9 @@ class FirebaseCacheService {
   FirebaseCacheService._internal();
 
   final _storage = GetStorage();
+  // ignore: unused_field
   final Map<String, Stream<QuerySnapshot>> _activeStreams = {};
+  // ignore: unused_field
   final Map<String, DateTime> _lastFetchTimes = {};
 
   // Cache duration in minutes
@@ -214,7 +216,7 @@ class FirebaseCacheService {
     bool descending = false,
     int? limit,
   }) async {
-    final data = await _fetchFromFirestore(
+    await _fetchFromFirestore(
       collectionName: collectionName,
       cacheKey: cacheKey,
       where: where,

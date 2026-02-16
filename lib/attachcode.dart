@@ -20,7 +20,6 @@ class _attachcodeState extends State<attachcode> {
   final TextEditingController _markdownController =
       TextEditingController(); // Controller for the code field
   late var reply = "";
-  final _formKey = GlobalKey<FormState>();
   String markdownContent = ''; // Markdown content for Preview
   String code = ''; // Code content to show in the 'Code' tab
   String? _aiReview; // AI generated code review
@@ -159,9 +158,10 @@ class _attachcodeState extends State<attachcode> {
   final TextEditingController _tagController = TextEditingController();
   final List<String> _tags = [];
 
+  // ignore: unused_element
   void _addTag() {
     final tag = _tagController.text.toUpperCase().trim();
-    if (tag!.isNotEmpty && !_tags.contains(tag)) {
+    if (tag.isNotEmpty && !_tags.contains(tag)) {
       setState(() {
         _tags.add(tag);
       });
@@ -170,6 +170,7 @@ class _attachcodeState extends State<attachcode> {
     }
   }
 
+  // ignore: unused_element
   void _removeTag(String tag) {
     setState(() {
       _tags.remove(tag);

@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'services/firebase_cache_service.dart';
 import 'models/poll_model.dart';
 import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
@@ -25,7 +24,6 @@ class ongoing_discussion extends StatefulWidget {
 class _ongoing_discussionState extends State<ongoing_discussion>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final user = FirebaseAuth.instance.currentUser;
-  final _cacheService = FirebaseCacheService();
   String username = '';
   String imageUrl = '';
   TextEditingController search_controller = TextEditingController();
@@ -38,6 +36,10 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   bool _hasMore = true;
   bool _isLoadingMore = false;
   final List<QueryDocumentSnapshot> _discussions = [];
+  // ignore: unused_field
+  List<QueryDocumentSnapshot> _allDiscussions = [];
+  // ignore: unused_field
+  List<QueryDocumentSnapshot> _filteredDiscussions = [];
 
   var discussionStream = FirebaseFirestore.instance
       .collection('Discussions')
@@ -93,8 +95,6 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   }
 
   String _searchQuery = '';
-  List<QueryDocumentSnapshot> _allDiscussions = [];
-  List<QueryDocumentSnapshot> _filteredDiscussions = [];
 
   onSearch2(String query) {
     setState(() {
@@ -367,7 +367,6 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   }
 
   Widget _buildSearchBar(ThemeData theme) {
-    final isDark = theme.brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Container(
@@ -808,7 +807,7 @@ class displayCardState extends State<displayCard> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                
+
                 // Poll Display (if exists)
                 if (widget.hasPoll && widget.pollData != null) ...[
                   const SizedBox(height: 12),
@@ -823,7 +822,7 @@ class displayCardState extends State<displayCard> {
                     canDelete: false, // Don't allow deletion from card
                   ),
                 ],
-                
+
                 if (widget.tags.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   // Tags

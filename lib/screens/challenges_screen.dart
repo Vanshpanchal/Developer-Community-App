@@ -37,7 +37,7 @@ class _ChallengesScreenState extends State<ChallengesScreen>
     try {
       final daily = await _gamificationService.getDailyChallenges();
       final weekly = await _gamificationService.getWeeklyChallenges();
-      
+
       if (mounted) {
         setState(() {
           _dailyChallenges = daily;
@@ -52,8 +52,6 @@ class _ChallengesScreenState extends State<ChallengesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('🎯 Challenges'),

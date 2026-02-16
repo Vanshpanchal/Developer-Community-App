@@ -731,7 +731,7 @@ class _PollDisplayWidgetState extends State<PollDisplayWidget> {
     super.initState();
     // Pre-select user's existing votes
     if (_currentUserId != null) {
-      _selectedOptions = widget.poll.getUserVotes(_currentUserId!).toSet();
+      _selectedOptions = widget.poll.getUserVotes(_currentUserId).toSet();
     }
   }
 
@@ -824,7 +824,9 @@ class _PollDisplayWidgetState extends State<PollDisplayWidget> {
                     ),
                     child: Text(
                       'Ended',
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ),
                 if (widget.poll.allowMultipleVotes)
@@ -832,24 +834,28 @@ class _PollDisplayWidgetState extends State<PollDisplayWidget> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+                      color: theme.colorScheme.primaryContainer
+                          .withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       'Multiple choice',
-                      style: TextStyle(fontSize: 12, color: theme.colorScheme.primary),
+                      style: TextStyle(
+                          fontSize: 12, color: theme.colorScheme.primary),
                     ),
                   ),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+                    color: theme.colorScheme.secondaryContainer
+                        .withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${widget.poll.totalVotes} votes',
-                    style: TextStyle(fontSize: 12, color: theme.colorScheme.secondary),
+                    style: TextStyle(
+                        fontSize: 12, color: theme.colorScheme.secondary),
                   ),
                 ),
               ],
@@ -957,7 +963,8 @@ class _PollDisplayWidgetState extends State<PollDisplayWidget> {
                 padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   children: [
-                    Icon(Icons.schedule, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                    Icon(Icons.schedule,
+                        size: 16, color: theme.colorScheme.onSurfaceVariant),
                     const SizedBox(width: 4),
                     Text(
                       'Ends ${_formatDate(widget.poll.endsAt!)}',

@@ -50,11 +50,11 @@ void main() async {
   } catch (e) {
     AppLogger.debug('dotenv load skipped: $e');
   }
-  
+
   Hive.registerAdapter(MessageAdapter());
   // Use encrypted storage for sensitive chat messages
   await SecureHiveHelper.instance.openEncryptedBox<Message>('chat_messages');
-  
+
   runApp(const MyApp());
 }
 

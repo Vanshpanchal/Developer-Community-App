@@ -139,10 +139,13 @@ class _ChatScreenState extends State<ChatScreen1> {
       if (response.statusCode == 401 || response.statusCode == 403) {
         return 'Authentication error (${response.statusCode}). Check your API key.';
       }
-      if (response.statusCode == 429) print(response.body);
-      return 'Rate limit reached. Please retry later.';
-      if (response.statusCode >= 500)
+      if (response.statusCode == 429) {
+        print(response.body);
+        return 'Rate limit reached. Please retry later.';
+      }
+      if (response.statusCode >= 500) {
         return 'Service temporarily unavailable (${response.statusCode}).';
+      }
       return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
     } catch (e) {
       return 'Error: $e';

@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:developer_community_app/chatbot.dart';
 import 'package:developer_community_app/saved_discussion.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -52,7 +52,6 @@ class profile extends StatefulWidget {
 
 class _ProfileState extends State<profile>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  final ImagePicker _picker = ImagePicker();
   final user = FirebaseAuth.instance.currentUser;
   String username = '';
   String Xp = '';
@@ -62,10 +61,10 @@ class _ProfileState extends State<profile>
   late Animation<Offset> _slideAnimation;
   Color? _dominantColor;
 
-  Future<void> _updatePalette() async {
+  Future<Color?> _updatePalette() async {
     if (imageUrl == null || imageUrl!.isEmpty) {
       if (mounted) setState(() => _dominantColor = null);
-      return;
+      return null;
     }
     // Check if color is already cached
     final box = GetStorage();
@@ -76,7 +75,7 @@ class _ProfileState extends State<profile>
           _dominantColor = Color(cachedColor);
         });
       }
-      return;
+      return Color(cachedColor);
     }
 
     try {
@@ -94,8 +93,10 @@ class _ProfileState extends State<profile>
           box.write('profileColor', _dominantColor!.value);
         }
       }
+      return _dominantColor;
     } catch (e) {
       debugPrint('Error generating palette: $e');
+      return null;
     }
   }
 
@@ -104,7 +105,7 @@ class _ProfileState extends State<profile>
   Color _getAdaptiveTextColor(Color backgroundColor) {
     // Calculate luminance (0.0 - 1.0, where 0 is black and 1 is white)
     final luminance = backgroundColor.computeLuminance();
-    
+
     // If background is dark (luminance < 0.5), use white text
     // If background is light (luminance >= 0.5), use dark text
     return luminance < 0.5 ? Colors.white : Colors.black87;
@@ -151,17 +152,17 @@ class _ProfileState extends State<profile>
       // 1. Clear Firestore Cache (GetStorage)
       final cacheService = FirebaseCacheService();
       await cacheService.clearAllCache();
-      
+
       // 2. Clear API Key (Secure Storage)
       await ApiKeyManager.instance.clearKey();
-      
+
       // 3. Clear Chat History (Hive)
       if (Hive.isBoxOpen('chat_messages')) {
         await Hive.box<Message>('chat_messages').clear();
       } else {
         await Hive.openBox<Message>('chat_messages').then((box) => box.clear());
       }
-      
+
       debugPrint("🧹 All local data cleared successfully");
     } catch (e) {
       debugPrint("⚠️ Error clearing data: $e");
@@ -271,16 +272,16 @@ class _ProfileState extends State<profile>
         githubUsername = data['githubUsername'];
       });
       final colorVal = data['profileColor'];
-      if(colorVal != null) {
-         if(mounted) {
-             setState(() {
-                 _dominantColor = Color(colorVal);
-             });
-         }
+      if (colorVal != null) {
+        if (mounted) {
+          setState(() {
+            _dominantColor = Color(colorVal);
+          });
+        }
       }
-      
-      if(_dominantColor == null) {
-          _updatePalette(); 
+
+      if (_dominantColor == null) {
+        _updatePalette();
       }
     }
     if (user != null) {
@@ -294,18 +295,35 @@ class _ProfileState extends State<profile>
         final img = data?['profilePicture'] ?? '';
         final xp = data?['XP']?.toString() ?? '0';
         final github = data?['github'];
+        final dominantColorValue = data?['profileDominantColor'];
+
         setState(() {
           username = uname;
           imageUrl = img;
           Xp = xp;
           githubUsername = github;
+          if (dominantColorValue != null) {
+            _dominantColor = Color(dominantColorValue);
+          }
         });
-        _updatePalette();
+
+        // Cache the dominant color if available
+        final box = GetStorage();
+        if (dominantColorValue != null) {
+          box.write('profileColor', dominantColorValue);
+        }
+
+        // Update palette if not already cached
+        if (_dominantColor == null) {
+          _updatePalette();
+        }
+
         box.write('userData', {
           'username': uname,
           'imageUrl': img,
           'Xp': xp,
-          'githubUsername': github
+          'githubUsername': github,
+          'profileColor': dominantColorValue
         });
       } else {
         setState(() {
@@ -349,11 +367,6 @@ class _ProfileState extends State<profile>
         var jsonData = json.decode(responseData.body);
         String imageUrl = jsonData['secure_url'];
 
-        await FirebaseFirestore.instance
-            .collection('User')
-            .doc(FirebaseAuth.instance.currentUser!.uid)
-            .update({'profilePicture': imageUrl});
-
         // Invalidate cached color when image changes
         final box = GetStorage();
         box.remove('profileColor');
@@ -362,7 +375,20 @@ class _ProfileState extends State<profile>
           this.imageUrl = imageUrl;
           _dominantColor = null; // Reset current color
         });
-        _updatePalette();
+
+        // Wait for palette update and get dominant color
+        Color? dominantColor = await _updatePalette();
+
+        // Update Firestore with both image URL and dominant color
+        Map<String, dynamic> updateData = {'profilePicture': imageUrl};
+        if (dominantColor != null) {
+          updateData['profileDominantColor'] = dominantColor.value;
+        }
+
+        await FirebaseFirestore.instance
+            .collection('User')
+            .doc(FirebaseAuth.instance.currentUser!.uid)
+            .update(updateData);
 
         if (mounted) {
           AppSnackbar.success(
@@ -664,7 +690,8 @@ class _ProfileState extends State<profile>
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor),
+                  color: _getAdaptiveTextColor(
+                      _dominantColor ?? AppTheme.primaryColor),
                   letterSpacing: -0.5,
                 ),
               ),
@@ -675,10 +702,13 @@ class _ProfileState extends State<profile>
                 usercredential?.email ?? 'No email',
                 style: TextStyle(
                   fontSize: 14,
-                  color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor).withValues(alpha: 0.9),
+                  color: _getAdaptiveTextColor(
+                          _dominantColor ?? AppTheme.primaryColor)
+                      .withValues(alpha: 0.9),
                   letterSpacing: 0.2,
                 ),
-              ),const SizedBox(height: 16),
+              ),
+              const SizedBox(height: 16),
 
               // GitHub badge if linked
               if (githubUsername != null)
@@ -696,12 +726,16 @@ class _ProfileState extends State<profile>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.code, size: 16, color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor)),
+                      Icon(Icons.code,
+                          size: 16,
+                          color: _getAdaptiveTextColor(
+                              _dominantColor ?? AppTheme.primaryColor)),
                       const SizedBox(width: 6),
                       Text(
                         '@$githubUsername',
                         style: TextStyle(
-                          color: _getAdaptiveTextColor(_dominantColor ?? AppTheme.primaryColor),
+                          color: _getAdaptiveTextColor(
+                              _dominantColor ?? AppTheme.primaryColor),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -990,9 +1024,9 @@ class _ProfileState extends State<profile>
           .ref('/Profile')
           .child('${FirebaseAuth.instance.currentUser?.uid}.png');
 
-      await reference.putFile(file).whenComplete(() => {
-            AppSnackbar.success('Profile Pic Changed')
-          });
+      await reference
+          .putFile(file)
+          .whenComplete(() => {AppSnackbar.success('Profile Pic Changed')});
 
       imageUrl = await reference.getDownloadURL();
       setState(() {});
@@ -1216,6 +1250,35 @@ class _ProfileState extends State<profile>
                     color: isDark ? Colors.grey[400] : Colors.grey[600],
                   ),
                 ),
+                const SizedBox(height: 16),
+                // Get API Key Link
+                GestureDetector(
+                  onTap: () => launchUrl(
+                      Uri.parse('https://aistudio.google.com/app/apikey')),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue, width: 1),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.open_in_new, color: Colors.blue, size: 18),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Get API Key from Google AI Studio',
+                            style: TextStyle(
+                                color: Colors.blue,
+                                fontWeight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 20),
                 // Text Field
                 TextFormField(
@@ -1229,7 +1292,8 @@ class _ProfileState extends State<profile>
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.teal, width: 2),
+                      borderSide:
+                          const BorderSide(color: Colors.teal, width: 2),
                     ),
                   ),
                   obscureText: true,

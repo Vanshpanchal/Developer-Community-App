@@ -213,8 +213,6 @@ class StreakWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Padding(
@@ -637,9 +635,13 @@ class GamificationHubShimmer extends StatelessWidget {
           // Quick Actions Shimmer
           Row(
             children: [
-              Expanded(child: CardShimmer(height: 120, showAvatar: false, lineCount: 2)),
+              Expanded(
+                  child: CardShimmer(
+                      height: 120, showAvatar: false, lineCount: 2)),
               SizedBox(width: 12),
-              Expanded(child: CardShimmer(height: 120, showAvatar: false, lineCount: 2)),
+              Expanded(
+                  child: CardShimmer(
+                      height: 120, showAvatar: false, lineCount: 2)),
             ],
           ),
           SizedBox(height: 16),
