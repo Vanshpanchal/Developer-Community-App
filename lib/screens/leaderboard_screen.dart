@@ -447,11 +447,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               ),
             ),
             const SizedBox(width: 4),
-            Text(
-              entry.level.name,
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? Colors.grey.shade300 : Colors.grey.shade600,
+            Flexible(
+              child: Text(
+                entry.level.name,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.grey.shade300 : Colors.grey.shade600,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (entry.badgeCount > 0) ...[

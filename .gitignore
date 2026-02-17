@@ -68,3 +68,6 @@ build/debug-info/
 app.*.symbols
 app.*.map.json
 
+# Documentation files (ignore all .md except README.md)
+*.md
+!README.md

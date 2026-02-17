@@ -1132,21 +1132,44 @@ class GamificationService {
     }
 
     try {
-      // Query users sorted by XP
+      // Query all users (XP is stored as string, so we can't orderBy on it directly)
+      // We need to fetch and sort manually to ensure correct numeric ordering
       final querySnapshot = await _firestore
           .collection('User')
-          .orderBy('XP', descending: true)
-          .limit(limit)
+          .limit(500) // Fetch more than needed to ensure we get top users
           .get();
 
-      final entries = <LeaderboardEntry>[];
-      int rank = 1;
-
-      for (final doc in querySnapshot.docs) {
+      // Parse and sort by XP as integers
+      final userDataList = querySnapshot.docs.map((doc) {
         final data = doc.data();
         data['uid'] = doc.id;
-        entries.add(LeaderboardEntry.fromMap(data, rank));
-        rank++;
+        data['xpInt'] = int.tryParse(data['XP']?.toString() ?? '0') ?? 0;
+        return data;
+      }).toList();
+
+      // Sort by XP descending (numeric sort)
+      userDataList
+          .sort((a, b) => (b['xpInt'] as int).compareTo(a['xpInt'] as int));
+
+      // Take only the top 'limit' entries
+      final topUsers = userDataList.take(limit).toList();
+
+      // Assign ranks, handling ties (users with same XP get same rank)
+      final entries = <LeaderboardEntry>[];
+      int currentRank = 1;
+      int? previousXp;
+
+      for (int i = 0; i < topUsers.length; i++) {
+        final data = topUsers[i];
+        final xp = data['xpInt'] as int;
+
+        // If XP is different from previous, update rank to current position
+        if (previousXp != null && xp != previousXp) {
+          currentRank = i + 1;
+        }
+
+        entries.add(LeaderboardEntry.fromMap(data, currentRank));
+        previousXp = xp;
       }
 
       _cachedLeaderboard = entries;
@@ -1166,16 +1189,25 @@ class GamificationService {
 
     try {
       final userDoc = await _firestore.collection('User').doc(userId).get();
+      if (!userDoc.exists) return -1;
+
       final userXp =
           int.tryParse(userDoc.data()?['XP']?.toString() ?? '0') ?? 0;
 
-      final higherRanked = await _firestore
-          .collection('User')
-          .where('XP', isGreaterThan: userXp)
-          .count()
-          .get();
+      // Since XP is stored as string, we need to fetch all users and compare numerically
+      // For better performance, we could cache this from the leaderboard call
+      final allUsers = await _firestore.collection('User').get();
 
-      return (higherRanked.count ?? 0) + 1;
+      // Count how many users have higher XP (numeric comparison)
+      int higherRankedCount = 0;
+      for (final doc in allUsers.docs) {
+        final otherXp = int.tryParse(doc.data()['XP']?.toString() ?? '0') ?? 0;
+        if (otherXp > userXp) {
+          higherRankedCount++;
+        }
+      }
+
+      return higherRankedCount + 1;
     } catch (e) {
       debugPrint('Error getting user rank: $e');
       return -1;

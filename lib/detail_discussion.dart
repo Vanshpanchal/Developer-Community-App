@@ -40,8 +40,9 @@ class _detail_discussionState extends State<detail_discussion> {
           await FirebaseFirestore.instance.collection('User').doc(uid).get();
 
       if (userDoc.exists) {
-        // Get the current XP as a String
-        String currentXPString = userDoc.data()?['XP'] ?? '0'; // Default to '0'
+        // Get the current XP value (could be int or String)
+        String currentXPString =
+            userDoc.data()?['XP']?.toString() ?? '0'; // Convert to String
         int currentXP = int.tryParse(currentXPString) ?? 0; // Parse to int
 
         // Update XP (add or subtract points)
@@ -50,6 +51,19 @@ class _detail_discussionState extends State<detail_discussion> {
         // Save the updated XP back to Firestore as a String
         await FirebaseFirestore.instance.collection('User').doc(uid).update({
           'XP': updatedXP.toString(),
+          'lastXpUpdate': FieldValue.serverTimestamp(),
+        });
+
+        // Log XP history for sync
+        await FirebaseFirestore.instance
+            .collection('User')
+            .doc(uid)
+            .collection('xp_history')
+            .add({
+          'action': 'helpfulAnswerRemoved',
+          'xp': -points,
+          'timestamp': FieldValue.serverTimestamp(),
+          'description': 'Accepted answer deleted',
         });
 
         print('XP updated successfully to $updatedXP!');
@@ -185,9 +199,9 @@ class _detail_discussionState extends State<detail_discussion> {
           await FirebaseFirestore.instance.collection('User').doc(uid).get();
 
       if (userDoc.exists) {
-        // Get the current XP as a String
+        // Get the current XP value (could be int or String)
         String currentXPString =
-            userDoc.data()?['XP'] ?? '0'; // Default to '0' if XP is null
+            userDoc.data()?['XP']?.toString() ?? '0'; // Convert to String
         int currentXP = int.tryParse(currentXPString) ??
             0; // Convert to int, default to 0 if parsing fails
 
@@ -197,6 +211,19 @@ class _detail_discussionState extends State<detail_discussion> {
         // Save the updated XP back to Firestore as a String
         await FirebaseFirestore.instance.collection('User').doc(uid).update({
           'XP': updatedXP.toString(),
+          'lastXpUpdate': FieldValue.serverTimestamp(),
+        });
+
+        // Log XP history for sync
+        await FirebaseFirestore.instance
+            .collection('User')
+            .doc(uid)
+            .collection('xp_history')
+            .add({
+          'action': 'helpfulAnswer',
+          'xp': 50,
+          'timestamp': FieldValue.serverTimestamp(),
+          'description': 'Answer marked as helpful',
         });
 
         print('XP updated successfully to $updatedXP!');
