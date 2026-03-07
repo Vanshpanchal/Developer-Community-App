@@ -9,6 +9,8 @@ import 'models/poll_model.dart';
 import 'widgets/poll_widgets.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
+import 'utils/app_snackbar.dart';
+import 'utils/app_validators.dart';
 
 class add_discussion extends StatefulWidget {
   add_discussion({super.key});
@@ -28,29 +30,25 @@ class _add_discussionState extends State<add_discussion> {
   PollCreationData? _pollData;
   final _gamificationService = GamificationService();
 
+  bool _isLoading = false;
+  final _formKey = GlobalKey<FormState>();
+
   String? selectedSubject;
-  shareDiscussion() async {
-    try {
-      // Get the current user
-      var user = FirebaseAuth.instance.currentUser;
-
-      // Trim and validate inputs
-      String title = _titleController.text.trim();
-      String description = _descriptionController.text.trim();
-
-      if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
-        // Show error if any field is empty
-        Get.showSnackbar(GetSnackBar(
-          title: "Error",
-          message: "All fields must be filled!",
-          icon: Icon(
-            Icons.error,
-            color: Colors.redAccent,
-          ),
-          duration: Duration(seconds: 3),
-        ));
+  Future<void> shareDiscussion() async {
+      if (!_formKey.currentState!.validate()) {
+        AppSnackbar.error("Please fix the errors in the form.");
         return;
       }
+      if (_tags.isEmpty) {
+        AppSnackbar.error("Please add at least one tag.");
+        return;
+      }
+
+      setState(() => _isLoading = true);
+      
+      try {
+      // Get the current user
+      var user = FirebaseAuth.instance.currentUser;
 
       // Generate document ID for the discussion
       String docId =
@@ -58,8 +56,8 @@ class _add_discussionState extends State<add_discussion> {
 
       // Prepare data to be stored
       Map<String, dynamic> data = {
-        'Title': title.capitalizeFirst,
-        'Description': description.capitalizeFirst,
+        'Title': _titleController.text.trim().capitalizeFirst,
+        'Description': _descriptionController.text.trim().capitalizeFirst,
         'Uid': user?.uid,
         'Report': false,
         'Tags': _tags,
@@ -79,37 +77,34 @@ class _add_discussionState extends State<add_discussion> {
       await FirebaseFirestore.instance
           .collection("Discussions")
           .doc(docId)
-          .set(data)
-          .then((_) async {
-        debugPrint("Discussion Created");
+          .set(data);
 
-        // Award XP for creating discussion
-        await _gamificationService.awardXp(XpAction.createDiscussion);
-        await _gamificationService.recordActivity();
+      debugPrint("Discussion Created");
 
-        // Award XP for poll if created
-        if (_pollData != null && _pollData!.isValid) {
-          await _gamificationService.awardXp(XpAction.pollCreated);
-          await _gamificationService.incrementCounter('pollsCreated');
-        }
+      // Award XP for creating discussion
+      await _gamificationService.awardXp(XpAction.createDiscussion);
+      await _gamificationService.recordActivity();
 
-        Get.showSnackbar(GetSnackBar(
-          title: "Discussion Created",
-          message: "Success! +${XpAction.createDiscussion.defaultXp} XP",
-          icon: Icon(
-            Icons.cloud_done_sharp,
-            color: Colors.white,
-          ),
-          duration: Duration(seconds: 3),
-        ));
-      }).catchError((e) {
-        debugPrint("ShareDiscussion Error: {$e}");
-      });
+      // Award XP for poll if created
+      if (_pollData != null && _pollData!.isValid) {
+        await _gamificationService.awardXp(XpAction.pollCreated);
+        await _gamificationService.incrementCounter('pollsCreated');
+      }
+
+      AppSnackbar.success("Success! +${XpAction.createDiscussion.defaultXp} XP", title: "Discussion Created");
+
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.code)));
+      AppSnackbar.error(e.message ?? 'An error occurred', title: 'Authentication Error');
     } catch (e) {
       debugPrint("ShareDiscussion Error: {$e}");
+      AppSnackbar.error(e.toString(), title: "Error");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -386,6 +381,7 @@ class _add_discussionState extends State<add_discussion> {
         ),
       ),
       body: Form(
+        key: _formKey,
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(20.0),
@@ -450,8 +446,10 @@ class _add_discussionState extends State<add_discussion> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                TextFormField(
                   controller: _titleController,
+                  validator: AppValidators.validateTitle,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   maxLines: 3,
                   minLines: 1,
                   decoration: InputDecoration(
@@ -474,6 +472,20 @@ class _add_discussionState extends State<add_discussion> {
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
+                    errorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -487,8 +499,10 @@ class _add_discussionState extends State<add_discussion> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                TextFormField(
                   controller: _descriptionController,
+                  validator: AppValidators.validateDescription,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   maxLines: 8,
                   minLines: 4,
                   decoration: InputDecoration(
@@ -512,6 +526,20 @@ class _add_discussionState extends State<add_discussion> {
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
+                    errorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -525,85 +553,125 @@ class _add_discussionState extends State<add_discussion> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
-                  textCapitalization: TextCapitalization.characters,
-                  controller: _tagController,
-                  decoration: InputDecoration(
-                    hintText: 'Add relevant tags (e.g., FLUTTER, DART)',
-                    prefixIcon: Icon(
-                      Icons.tag_rounded,
-                      color: theme.colorScheme.primary,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        Icons.add_circle,
-                        color: theme.colorScheme.primary,
-                      ),
-                      onPressed: _addTag,
-                      tooltip: 'Add tag',
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onSubmitted: (_) => _addTag(),
-                ),
-
-                // Tags Display
-                if (_tags.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8.0,
-                    runSpacing: 8.0,
-                    children: _tags.map((tag) {
-                      return Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              theme.colorScheme.primary.withValues(alpha: 0.15),
-                              theme.colorScheme.secondary
-                                  .withValues(alpha: 0.1),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: theme.colorScheme.primary
-                                .withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Chip(
-                          label: Text(
-                            tag,
-                            style: TextStyle(
+                FormField<List<String>>(
+                  validator: (value) {
+                    if (_tags.isEmpty) {
+                      return 'Please add at least one tag.';
+                    }
+                    return null;
+                  },
+                  builder: (FormFieldState<List<String>> state) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          textCapitalization: TextCapitalization.characters,
+                          controller: _tagController,
+                          decoration: InputDecoration(
+                            hintText: 'Add relevant tags (e.g., FLUTTER, DART)',
+                            prefixIcon: Icon(
+                              Icons.tag_rounded,
                               color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                            ),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                Icons.add_circle,
+                                color: theme.colorScheme.primary,
+                              ),
+                              onPressed: () {
+                                _addTag();
+                                state.validate();
+                              },
+                              tooltip: 'Add tag',
+                            ),
+                            errorText: state.hasError ? state.errorText : null,
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.primary,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            errorBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.error,
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedErrorBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.error,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          backgroundColor: Colors.transparent,
-                          deleteIcon: Icon(
-                            Icons.close,
-                            size: 18,
-                            color: theme.colorScheme.primary,
-                          ),
-                          onDeleted: () => _removeTag(tag),
-                          elevation: 0,
+                          onSubmitted: (_) {
+                            _addTag();
+                            state.validate();
+                          },
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                        // Tags Display
+                        if (_tags.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8.0,
+                            runSpacing: 8.0,
+                            children: _tags.map((tag) {
+                              return Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      theme.colorScheme.primary.withValues(alpha: 0.15),
+                                      theme.colorScheme.secondary
+                                          .withValues(alpha: 0.1),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: theme.colorScheme.primary
+                                        .withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Chip(
+                                  label: Text(
+                                    tag,
+                                    style: TextStyle(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  backgroundColor: Colors.transparent,
+                                  deleteIcon: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  onDeleted: () {
+                                    _removeTag(tag);
+                                    state.validate();
+                                  },
+                                  elevation: 0,
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+
+
                 const SizedBox(height: 24),
 
                 // Poll Section
@@ -794,34 +862,17 @@ class _add_discussionState extends State<add_discussion> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      if (_titleController.text.trim().isEmpty ||
-                          _descriptionController.text.trim().isEmpty ||
-                          _tags.isEmpty) {
-                        Get.showSnackbar(
-                          GetSnackBar(
-                            title: "Missing Information",
-                            message: "Please fill in all required fields",
-                            icon: const Icon(Icons.error_outline,
-                                color: Colors.white),
-                            backgroundColor: theme.colorScheme.error,
-                            duration: const Duration(seconds: 3),
-                            snackPosition: SnackPosition.TOP,
+                    onPressed: _isLoading ? null : shareDiscussion,
+                    icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.send_rounded),
+                    label: _isLoading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5,))
+                        : const Text(
+                            'Start Discussion',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        );
-                        return;
-                      }
-                      shareDiscussion();
-                      Navigator.pop(context);
-                    },
-                    icon: const Icon(Icons.send_rounded),
-                    label: const Text(
-                      'Start Discussion',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                     style: ElevatedButton.styleFrom(
                       elevation: 2,
                       shape: RoundedRectangleBorder(
@@ -839,3 +890,4 @@ class _add_discussionState extends State<add_discussion> {
     );
   }
 }
+  

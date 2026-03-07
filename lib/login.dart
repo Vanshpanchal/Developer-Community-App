@@ -3,6 +3,8 @@ import 'package:developer_community_app/signup.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'utils/app_snackbar.dart';
+import 'utils/app_validators.dart';
 
 class login extends StatefulWidget {
   const login({super.key});
@@ -16,6 +18,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
   final TextEditingController passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  final _formKey = GlobalKey<FormState>();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -47,9 +50,8 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
   }
 
   Future<void> userLogin() async {
-    if (emailController.text.isEmpty || passwordController.text.isEmpty) {
-      _showSnackbar(
-          'Error', 'Please fill in all fields', Icons.error, Colors.red);
+    if (!_formKey.currentState!.validate()) {
+      AppSnackbar.error('Please fix the errors in the form.');
       return;
     }
 
@@ -61,10 +63,9 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
       );
       await AnalyticsService().logLogin(method: 'email');
     } on FirebaseAuthException catch (e) {
-      _showSnackbar('Error', e.code, Icons.error, Colors.red);
+      AppSnackbar.error(e.code, title: 'Error');
     } catch (e) {
-      _showSnackbar(
-          'Error', 'An unexpected error occurred', Icons.error, Colors.red);
+      AppSnackbar.error('An unexpected error occurred', title: 'Error');
       debugPrint("Login error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -73,44 +74,19 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
 
   Future<void> forgetPassword() async {
     if (emailController.text.isEmpty) {
-      _showSnackbar(
-          'Error', 'Please enter your email first', Icons.error, Colors.red);
+      AppSnackbar.error('Please enter your email first', title: 'Error');
       return;
     }
 
     try {
       await FirebaseAuth.instance
           .sendPasswordResetEmail(email: emailController.text.trim());
-      _showSnackbar('Success', 'Password reset email sent!', Icons.check_circle,
-          Colors.green);
+      AppSnackbar.success('Password reset email sent!', title: 'Success');
     } on FirebaseAuthException catch (e) {
-      _showSnackbar('Error', e.code, Icons.error, Colors.red);
+      AppSnackbar.error(e.code, title: 'Error');
     } catch (e) {
       debugPrint("Reset password error: $e");
     }
-  }
-
-  void _showSnackbar(String title, String message, IconData icon, Color color) {
-    Get.showSnackbar(GetSnackBar(
-      titleText: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-          fontSize: 16,
-        ),
-      ),
-      messageText: Text(
-        message,
-        style: const TextStyle(color: Colors.white),
-      ),
-      icon: Icon(icon, color: color),
-      backgroundColor: Colors.grey[900]!,
-      duration: const Duration(seconds: 3),
-      margin: const EdgeInsets.all(16),
-      borderRadius: 12,
-      snackPosition: SnackPosition.TOP,
-    ));
   }
 
   @override
@@ -218,9 +194,11 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           // Email Field
           _buildInputField(
             controller: emailController,
@@ -228,6 +206,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
             hint: 'Enter your email',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
+            validator: AppValidators.validateEmail,
           ),
           const SizedBox(height: 20),
           // Password Field
@@ -237,6 +216,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
             hint: 'Enter your password',
             icon: Icons.lock_outline,
             isPassword: true,
+            validator: AppValidators.validatePassword,
           ),
           const SizedBox(height: 12),
           // Forgot Password
@@ -268,6 +248,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           // Social Login
           _buildSocialLogin(),
         ],
+        ),
       ),
     );
   }
@@ -279,6 +260,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
     required IconData icon,
     bool isPassword = false,
     TextInputType? keyboardType,
+    String? Function(String?)? validator,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -291,50 +273,64 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.grey.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.grey.withValues(alpha: 0.1),
+        TextFormField(
+          controller: controller,
+          obscureText: isPassword && !_isPasswordVisible,
+          keyboardType: keyboardType,
+          style: const TextStyle(fontSize: 16),
+          validator: validator,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.grey.withValues(alpha: 0.08),
+            hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.withValues(alpha: 0.6),
+              fontSize: 15,
             ),
-          ),
-          child: TextField(
-            controller: controller,
-            obscureText: isPassword && !_isPasswordVisible,
-            keyboardType: keyboardType,
-            style: const TextStyle(fontSize: 16),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(
-                color: Colors.grey.withValues(alpha: 0.6),
-                fontSize: 15,
-              ),
-              prefixIcon: Icon(
-                icon,
-                color: Colors.grey.withValues(alpha: 0.6),
-                size: 22,
-              ),
-              suffixIcon: isPassword
-                  ? IconButton(
-                      icon: Icon(
-                        _isPasswordVisible
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: Colors.grey.withValues(alpha: 0.6),
-                        size: 22,
-                      ),
-                      onPressed: () {
-                        setState(
-                            () => _isPasswordVisible = !_isPasswordVisible);
-                      },
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 16,
-              ),
+            prefixIcon: Icon(
+              icon,
+              color: Colors.grey.withValues(alpha: 0.6),
+              size: 22,
+            ),
+            suffixIcon: isPassword
+                ? IconButton(
+                    icon: Icon(
+                      _isPasswordVisible
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.grey.withValues(alpha: 0.6),
+                      size: 22,
+                    ),
+                    onPressed: () {
+                      setState(
+                          () => _isPasswordVisible = !_isPasswordVisible);
+                    },
+                  )
+                : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 1.5),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
             ),
           ),
         ),
@@ -410,8 +406,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           icon: Icons.g_mobiledata_rounded,
           label: 'Google',
           onTap: () {
-            _showSnackbar(
-                'Info', 'Google sign-in coming soon!', Icons.info, Colors.blue);
+            AppSnackbar.info('Google sign-in coming soon!');
           },
         ),
         const SizedBox(width: 16),
@@ -419,8 +414,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           icon: Icons.apple_rounded,
           label: 'Apple',
           onTap: () {
-            _showSnackbar(
-                'Info', 'Apple sign-in coming soon!', Icons.info, Colors.blue);
+            AppSnackbar.info('Apple sign-in coming soon!');
           },
         ),
       ],

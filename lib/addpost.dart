@@ -5,6 +5,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
+import 'utils/app_snackbar.dart';
+import 'utils/app_validators.dart';
 
 class addpost extends StatefulWidget {
   addpost({super.key});
@@ -22,37 +24,34 @@ class addpostState extends State<addpost> {
   String code = ''; // Code content to show in the 'Code' tab
   final _gamificationService = GamificationService();
 
+  bool _isLoading = false;
+  final _formKey = GlobalKey<FormState>();
+
   String? selectedSubject;
-  sharepost() async {
-    try {
-      // Get the current user
-      var user = FirebaseAuth.instance.currentUser;
-
-      // Trim and validate inputs
-      String title = _titleController.text.trim();
-      String description = _descriptionController.text.trim();
-
-      if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
-        // Show error if any field is empty
-        Get.showSnackbar(GetSnackBar(
-          title: "Error",
-          message: "All fields must be filled!",
-          icon: Icon(
-            Icons.error,
-            color: Colors.redAccent,
-          ),
-          duration: Duration(seconds: 3),
-        ));
+  Future<void> sharepost() async {
+      // 1. Validate Form First
+      if (!_formKey.currentState!.validate()) {
+        AppSnackbar.error("Please fix the errors in the form.");
         return;
       }
+      if (_tags.isEmpty) {
+        AppSnackbar.error("Please add at least one tag.");
+        return;
+      }
+
+      setState(() => _isLoading = true);
+
+      try {
+      // Get the current user
+      var user = FirebaseAuth.instance.currentUser;
 
       // Generate document ID
       String docId = FirebaseFirestore.instance.collection('Explore').doc().id;
 
       // Prepare data to be stored
       Map<String, dynamic> data = {
-        'Title': title.capitalizeFirst,
-        'Description': description.capitalizeFirst,
+        'Title': _titleController.text.trim().capitalizeFirst,
+        'Description': _descriptionController.text.trim().capitalizeFirst,
         'Uid': user?.uid,
         'Report': false,
         'Tags': _tags,
@@ -68,31 +67,28 @@ class addpostState extends State<addpost> {
       await FirebaseFirestore.instance
           .collection("Explore")
           .doc(docId)
-          .set(data)
-          .then((_) async {
-        debugPrint("AddUser: User Added");
+          .set(data);
+          
+      debugPrint("AddUser: User Added");
 
-        // Award XP for creating post
-        await _gamificationService.awardXp(XpAction.createPost);
-        await _gamificationService.recordActivity();
+      // Award XP for creating post
+      await _gamificationService.awardXp(XpAction.createPost);
+      await _gamificationService.recordActivity();
 
-        Get.showSnackbar(GetSnackBar(
-          title: "Post Created",
-          message: "Success! +${XpAction.createPost.defaultXp} XP",
-          icon: Icon(
-            Icons.cloud_done_sharp,
-            color: Colors.white,
-          ),
-          duration: Duration(seconds: 3),
-        ));
-      }).catchError((e) {
-        debugPrint("AddUser  {$e}");
-      });
+      AppSnackbar.success("Success! +${XpAction.createPost.defaultXp} XP", title: "Post Created");
+      
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.code)));
+      AppSnackbar.error(e.message ?? 'An error occurred', title: 'Authentication Error');
     } catch (e) {
       debugPrint("Sharepost  {$e}");
+      AppSnackbar.error(e.toString(), title: "Error");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -407,6 +403,7 @@ class addpostState extends State<addpost> {
         ),
       ),
       body: Form(
+        key: _formKey,
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.all(20.0),
@@ -471,8 +468,10 @@ class addpostState extends State<addpost> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                TextFormField(
                   controller: _titleController,
+                  validator: AppValidators.validateTitle,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   maxLines: 3,
                   minLines: 1,
                   decoration: InputDecoration(
@@ -495,6 +494,20 @@ class addpostState extends State<addpost> {
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
+                    errorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -508,8 +521,10 @@ class addpostState extends State<addpost> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
+                TextFormField(
                   controller: _descriptionController,
+                  validator: AppValidators.validateDescription,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
                   maxLines: 8,
                   minLines: 4,
                   decoration: InputDecoration(
@@ -532,6 +547,20 @@ class addpostState extends State<addpost> {
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
+                    errorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.error,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -545,85 +574,112 @@ class addpostState extends State<addpost> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextField(
-                  textCapitalization: TextCapitalization.characters,
-                  controller: _tagController,
-                  decoration: InputDecoration(
-                    hintText: 'Add tags (e.g., FLUTTER, DART)',
-                    prefixIcon: Icon(
-                      Icons.tag_rounded,
-                      color: theme.colorScheme.primary,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        Icons.add_circle,
-                        color: theme.colorScheme.primary,
-                      ),
-                      onPressed: _addTag,
-                      tooltip: 'Add tag',
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                        color: theme.colorScheme.primary,
-                        width: 2,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  onSubmitted: (_) => _addTag(),
-                ),
-
-                // Tags Display
-                if (_tags.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8.0,
-                    runSpacing: 8.0,
-                    children: _tags.map((tag) {
-                      return Container(
-                        // decoration: BoxDecoration(
-                        //   gradient: LinearGradient(
-                        //     colors: [
-                        //       theme.colorScheme.primary.withValues(alpha: 0.15),
-                        //       theme.colorScheme.secondary
-                        //           .withValues(alpha: 0.1),
-                        //     ],
-                        //   ),
-                        //   borderRadius: BorderRadius.circular(20),
-                        //   border: Border.all(
-                        //     color: theme.colorScheme.primary
-                        //         .withValues(alpha: 0.3),
-                        //   ),
-                        // ),
-                        child: Chip(
-                          label: Text(
-                            tag,
-                            style: TextStyle(
+                FormField<List<String>>(
+                  validator: (value) {
+                    if (_tags.isEmpty) {
+                      return 'Please add at least one tag.';
+                    }
+                    return null;
+                  },
+                  builder: (FormFieldState<List<String>> state) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          textCapitalization: TextCapitalization.characters,
+                          controller: _tagController,
+                          decoration: InputDecoration(
+                            hintText: 'Add tags (e.g., FLUTTER, DART)',
+                            prefixIcon: Icon(
+                              Icons.tag_rounded,
                               color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                            ),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                Icons.add_circle,
+                                color: theme.colorScheme.primary,
+                              ),
+                              onPressed: () {
+                                _addTag();
+                                state.validate();
+                              },
+                              tooltip: 'Add tag',
+                            ),
+                            errorText: state.hasError ? state.errorText : null,
+                            enabledBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.primary,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            errorBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.error,
+                                width: 1,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            focusedErrorBorder: OutlineInputBorder(
+                              borderSide: BorderSide(
+                                color: theme.colorScheme.error,
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          backgroundColor: Colors.transparent,
-                          deleteIcon: Icon(
-                            Icons.close,
-                            size: 18,
-                            color: theme.colorScheme.primary,
-                          ),
-                          onDeleted: () => _removeTag(tag),
-                          elevation: 0,
+                          onSubmitted: (_) {
+                            _addTag();
+                            state.validate();
+                          },
                         ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                        
+                        // Tags Display
+                        if (_tags.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8.0,
+                            runSpacing: 8.0,
+                            children: _tags.map((tag) {
+                              return Container(
+                                child: Chip(
+                                  label: Text(
+                                    tag,
+                                    style: TextStyle(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                                  deleteIcon: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  onDeleted: () {
+                                    _removeTag(tag);
+                                    state.validate();
+                                  },
+                                  elevation: 0,
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+
+
                 const SizedBox(height: 24),
 
                 // Code Section
@@ -787,34 +843,17 @@ class addpostState extends State<addpost> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      if (_titleController.text.trim().isEmpty ||
-                          _descriptionController.text.trim().isEmpty ||
-                          _tags.isEmpty) {
-                        Get.showSnackbar(
-                          GetSnackBar(
-                            title: "Missing Information",
-                            message: "Please fill in all required fields",
-                            icon: const Icon(Icons.error_outline,
-                                color: Colors.white),
-                            backgroundColor: theme.colorScheme.error,
-                            duration: const Duration(seconds: 3),
-                            snackPosition: SnackPosition.TOP,
+                    onPressed: _isLoading ? null : sharepost,
+                    icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.send_rounded),
+                    label: _isLoading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5,))
+                        : const Text(
+                            'Publish Post',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        );
-                        return;
-                      }
-                      sharepost();
-                      Navigator.pop(context);
-                    },
-                    icon: const Icon(Icons.send_rounded),
-                    label: const Text(
-                      'Publish Post',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                     style: ElevatedButton.styleFrom(
                       elevation: 2,
                       shape: RoundedRectangleBorder(

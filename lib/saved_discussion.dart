@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'detail_discussion.dart';
 import 'widgets/modern_widgets.dart';
+import 'utils/app_snackbar.dart';
 
 // if (snapshot.connectionState == ConnectionState.waiting) {
 // return Center(child: CircularProgressIndicator());
@@ -316,43 +317,33 @@ class displayCardState extends State<displayCard> {
   }
 
   removesaved(itemId) async {
-    var usercredential = FirebaseAuth.instance.currentUser;
-    await FirebaseFirestore.instance
-        .collection("User")
-        .doc(usercredential?.uid)
-        .update({
-      'SavedDiscussion': FieldValue.arrayRemove([itemId])
-    });
-
-    Get.showSnackbar(GetSnackBar(
-      title: "Success",
-      message: "Unsaved the Discussion",
-      icon: Icon(
-        Icons.bookmark_border,
-        color: Colors.green,
-      ),
-      duration: Duration(seconds: 2),
-    ));
+    try {
+      var usercredential = FirebaseAuth.instance.currentUser;
+      await FirebaseFirestore.instance
+          .collection("User")
+          .doc(usercredential?.uid)
+          .update({
+        'SavedDiscussion': FieldValue.arrayRemove([itemId])
+      });
+      AppSnackbar.success('Unsaved the Discussion');
+    } catch (e) {
+      AppSnackbar.error('Failed to unsave discussion');
+    }
   }
 
   save(itemId) async {
-    var usercredential = FirebaseAuth.instance.currentUser;
-    await FirebaseFirestore.instance
-        .collection("User")
-        .doc(usercredential?.uid)
-        .update({
-      'SavedDiscussion': FieldValue.arrayUnion([itemId])
-    });
-
-    Get.showSnackbar(GetSnackBar(
-      title: "Success",
-      message: "Discussion Saved",
-      icon: Icon(
-        Icons.bookmark,
-        color: Colors.green,
-      ),
-      duration: Duration(seconds: 2),
-    ));
+    try {
+      var usercredential = FirebaseAuth.instance.currentUser;
+      await FirebaseFirestore.instance
+          .collection("User")
+          .doc(usercredential?.uid)
+          .update({
+        'SavedDiscussion': FieldValue.arrayUnion([itemId])
+      });
+      AppSnackbar.success('Discussion Saved', title: 'Success');
+    } catch (e) {
+      AppSnackbar.error('Failed to save discussion');
+    }
   }
 
   @override

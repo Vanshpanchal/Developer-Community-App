@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'ai_service.dart';
+import 'utils/app_snackbar.dart';
 
 class attachcode extends StatefulWidget {
   final String docId;
@@ -24,136 +25,7 @@ class _attachcodeState extends State<attachcode> {
   String code = ''; // Code content to show in the 'Code' tab
   String? _aiReview; // AI generated code review
   bool _reviewLoading = false;
-
-  String? selectedSubject;
-  sharepost() async {
-    try {
-      // Get the current user
-      var user = FirebaseAuth.instance.currentUser;
-
-      // Trim and validate inputs
-      String title = _titleController.text.trim();
-      String description = _descriptionController.text.trim();
-
-      if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
-        // Show error if any field is empty
-        Get.showSnackbar(GetSnackBar(
-          title: "Error",
-          message: "All fields must be filled!",
-          icon: Icon(
-            Icons.error,
-            color: Colors.redAccent,
-          ),
-          duration: Duration(seconds: 3),
-        ));
-        return;
-      }
-
-      // Generate document ID
-      String docId = FirebaseFirestore.instance.collection('Explore').doc().id;
-
-      // Prepare data to be stored
-      Map<String, dynamic> data = {
-        'Title': title.capitalizeFirst,
-        'Description': description.capitalizeFirst,
-        'Uid': user?.uid,
-        'Report': false,
-        'Tags': _tags,
-        'uid': user?.uid,
-        'code': code,
-        'docId': docId,
-        'likescount': 0,
-        'likes': [],
-        'Timestamp': FieldValue.serverTimestamp(),
-      };
-
-      // Add data to Firestore
-      await FirebaseFirestore.instance
-          .collection("Explore")
-          .doc(docId)
-          .set(data)
-          .then((_) {
-        debugPrint("AddUser: User Added");
-        Get.showSnackbar(GetSnackBar(
-          title: "Post Created",
-          message: "Success",
-          icon: Icon(
-            Icons.cloud_done_sharp,
-            color: Colors.white,
-          ),
-          duration: Duration(seconds: 3),
-        ));
-      }).catchError((e) {
-        debugPrint("AddUser  {$e}");
-      });
-    } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.code)));
-    } catch (e) {
-      debugPrint("Sharepost  {$e}");
-    }
-  }
-
-  // sharepost() async {
-  //   try {
-  //     String title = _titleController.text.trim();
-  //     String description = _descriptionController.text.trim();
-  //
-  //     if (title.isEmpty || description.isEmpty || _tags.isEmpty) {
-  //       // Show error if any field is empty
-  //       Get.showSnackbar( GetSnackBar(
-  //         title: "Error",
-  //         message: "All fields must be filled!",
-  //         icon: Icon(
-  //           Icons.error,
-  //           color: Colors.white,
-  //         ),
-  //         duration: Duration(seconds: 3),
-  //       ));
-  //       return;
-  //     }
-  //     var user = FirebaseAuth.instance.currentUser;
-  //     String doc_id =
-  //         FirebaseFirestore.instance.collection('Explore').doc().id;
-  //     Map<String, dynamic> Data = {
-  //       'Title': _titleController.text.trim().capitalizeFirst,
-  //       'Description': _descriptionController.text.trim().capitalizeFirst,
-  //       'Uid': user?.uid,
-  //       'Report': false,
-  //       'Tags': _tags,
-  //       'uid': user?.uid,
-  //       'code' : code,
-  //       'docId' : doc_id,
-  //       'likescount': 0,
-  //       'likes': [],
-  //       'Timestamp': FieldValue.serverTimestamp()
-  //     };
-  //     await FirebaseFirestore.instance
-  //         .collection("Explore")
-  //         .doc(doc_id)
-  //         .set(Data)
-  //         .then((_) => {
-  //               debugPrint("AddUser: User Added"),
-  //               Get.showSnackbar( GetSnackBar(
-  //                 title: "Post Created",
-  //                 message: "Success",
-  //                 icon: Icon(
-  //                   Icons.cloud_done_sharp,
-  //                   color: Colors.white,
-  //                 ),
-  //                 duration: Duration(seconds: 3),
-  //               ))
-  //             })
-  //         .catchError((e) {
-  //       debugPrint("AddUser  {$e}");
-  //     });
-  //   } on FirebaseAuthException catch (e) {
-  //     ScaffoldMessenger.of(context)
-  //         .showSnackBar(SnackBar(content: Text(e.code)));
-  //   } catch (e) {
-  //     debugPrint("Sharepost  {$e}");
-  //   }
-  // }
+  bool _isLoading = false;
 
   final TextEditingController _tagController = TextEditingController();
   final List<String> _tags = [];
@@ -199,20 +71,18 @@ class _attachcodeState extends State<attachcode> {
         _descriptionController.text = data['reply']; // Fetch 'title' field
       } else {
         // Handle the case where the document does not exist
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reply not found')),
-        );
+        AppSnackbar.error('Reply not found');
       }
     } catch (e) {
       // Handle errors
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching data: $e')),
-      );
+      AppSnackbar.error('Error fetching data: $e');
     }
   }
 
   // Function to update the 'code' field in the reply document
   Future<void> _updateCode() async {
+    setState(() => _isLoading = true);
+    
     try {
       // Access the reply document from the subcollection
       var docRef = FirebaseFirestore.instance
@@ -228,22 +98,24 @@ class _attachcodeState extends State<attachcode> {
       });
 
       // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Code updated successfully')),
-      );
+      AppSnackbar.success('Code updated successfully');
+      
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        Navigator.pop(context);
+      }
+      
     } catch (e) {
       // Handle errors
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating code: $e')),
-      );
+      AppSnackbar.error('Error updating code: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _generateAIReview() async {
     if (code.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Add code before requesting review.')),
-      );
+      AppSnackbar.warning('Add code before requesting review.');
       return;
     }
     setState(() {
@@ -683,28 +555,23 @@ class _attachcodeState extends State<attachcode> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton.icon(
-                    onPressed: () {
+                    onPressed: _isLoading ? null : () async {
                       if (code.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                                'Please add some code before attaching'),
-                            backgroundColor: theme.colorScheme.error,
-                          ),
-                        );
+                        AppSnackbar.error('Please add some code before attaching');
                         return;
                       }
-                      _updateCode();
-                      Navigator.pop(context);
+                      await _updateCode();
                     },
-                    icon: const Icon(Icons.attach_file),
-                    label: const Text(
-                      'Attach Code',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.attach_file),
+                    label: _isLoading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5,))
+                        : const Text(
+                            'Attach Code',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                     style: ElevatedButton.styleFrom(
                       elevation: 2,
                       shape: RoundedRectangleBorder(

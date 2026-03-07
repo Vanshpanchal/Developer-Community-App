@@ -12,6 +12,7 @@ import 'models/poll_model.dart';
 import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'utils/app_snackbar.dart';
 import 'dart:math' as math;
 
 class ongoing_discussion extends StatefulWidget {
@@ -644,23 +645,18 @@ class displayCardState extends State<displayCard> {
   }
 
   save(itemId) async {
-    var usercredential = FirebaseAuth.instance.currentUser;
-    await FirebaseFirestore.instance
-        .collection("User")
-        .doc(usercredential?.uid)
-        .update({
-      'SavedDiscussion': FieldValue.arrayUnion([itemId])
-    });
-
-    Get.showSnackbar(GetSnackBar(
-      title: "Success",
-      message: "Discussion Saved",
-      icon: Icon(
-        Icons.bookmark,
-        color: Colors.green,
-      ),
-      duration: Duration(seconds: 2),
-    ));
+    try {
+      var usercredential = FirebaseAuth.instance.currentUser;
+      await FirebaseFirestore.instance
+          .collection("User")
+          .doc(usercredential?.uid)
+          .update({
+        'SavedDiscussion': FieldValue.arrayUnion([itemId])
+      });
+      AppSnackbar.success('Discussion Saved', title: 'Success');
+    } catch (e) {
+      AppSnackbar.error('Failed to save discussion');
+    }
   }
 
   @override

@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:developer_community_app/services/analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'utils/app_snackbar.dart';
+import 'utils/app_validators.dart';
 
 import 'login.dart';
 
@@ -24,6 +26,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
   bool _acceptedTerms = false;
+  final _formKey = GlobalKey<FormState>();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -58,35 +61,13 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
 
   Future<void> userSignup() async {
     // Validation
-    if (usernameController.text.isEmpty ||
-        emailController.text.isEmpty ||
-        passwordController.text.isEmpty ||
-        confirmPasswordController.text.isEmpty) {
-      _showSnackbar(
-          'Error', 'Please fill in all fields', Icons.error, Colors.red);
-      return;
-    }
-
-    if (usernameController.text.length < 3) {
-      _showSnackbar('Error', 'Username must be at least 3 characters',
-          Icons.error, Colors.red);
-      return;
-    }
-
-    if (passwordController.text.length < 6) {
-      _showSnackbar('Error', 'Password must be at least 6 characters',
-          Icons.error, Colors.red);
-      return;
-    }
-
-    if (passwordController.text != confirmPasswordController.text) {
-      _showSnackbar('Error', 'Passwords do not match', Icons.error, Colors.red);
+    if (!_formKey.currentState!.validate()) {
+      AppSnackbar.error('Please fix the errors in the form.');
       return;
     }
 
     if (!_acceptedTerms) {
-      _showSnackbar('Error', 'Please accept the terms and conditions',
-          Icons.error, Colors.red);
+      AppSnackbar.error('Please accept the terms and conditions');
       return;
     }
 
@@ -119,41 +100,16 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
 
       await AnalyticsService().logSignUp(method: 'email');
 
-      _showSnackbar('Welcome! 🎉', 'Account created successfully',
-          Icons.celebration, Colors.green);
+      AppSnackbar.success('Account created successfully', title: 'Welcome! 🎉');
       Get.offAll(() => wrapper());
     } on FirebaseAuthException catch (e) {
-      _showSnackbar('Error', e.code, Icons.error, Colors.red);
+      AppSnackbar.error(e.message ?? e.code);
     } catch (e) {
-      _showSnackbar(
-          'Error', 'An unexpected error occurred', Icons.error, Colors.red);
+      AppSnackbar.error('An unexpected error occurred');
       debugPrint("Signup error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showSnackbar(String title, String message, IconData icon, Color color) {
-    Get.showSnackbar(GetSnackBar(
-      titleText: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-          fontSize: 16,
-        ),
-      ),
-      messageText: Text(
-        message,
-        style: const TextStyle(color: Colors.white),
-      ),
-      icon: Icon(icon, color: color),
-      backgroundColor: Colors.grey[900]!,
-      duration: const Duration(seconds: 3),
-      margin: const EdgeInsets.all(16),
-      borderRadius: 12,
-      snackPosition: SnackPosition.TOP,
-    ));
   }
 
   @override
@@ -299,15 +255,18 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           // Username Field
           _buildInputField(
             controller: usernameController,
             label: 'Username',
             hint: 'Choose a unique username',
             icon: Icons.person_outline_rounded,
+            validator: AppValidators.validateUsername,
           ),
           const SizedBox(height: 18),
           // Email Field
@@ -317,6 +276,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
             hint: 'Enter your email',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
+            validator: AppValidators.validateEmail,
           ),
           const SizedBox(height: 18),
           // Password Field
@@ -327,6 +287,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
             icon: Icons.lock_outline_rounded,
             isPassword: true,
             isConfirmPassword: false,
+            validator: AppValidators.validatePassword,
           ),
           const SizedBox(height: 18),
           // Confirm Password Field
@@ -337,6 +298,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
             icon: Icons.lock_outline_rounded,
             isPassword: true,
             isConfirmPassword: true,
+            validator: (val) => AppValidators.validateConfirmPassword(passwordController.text, val),
           ),
           const SizedBox(height: 20),
           // Terms Checkbox
@@ -348,6 +310,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
           // Password strength indicator
           _buildPasswordStrengthIndicator(),
         ],
+        ),
       ),
     );
   }
@@ -360,6 +323,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
     bool isPassword = false,
     bool isConfirmPassword = false,
     TextInputType? keyboardType,
+    String? Function(String?)? validator,
   }) {
     bool isVisible =
         isConfirmPassword ? _isConfirmPasswordVisible : _isPasswordVisible;
@@ -375,59 +339,73 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.grey.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.grey.withValues(alpha: 0.1),
+        TextFormField(
+          controller: controller,
+          obscureText: isPassword && !isVisible,
+          keyboardType: keyboardType,
+          style: const TextStyle(fontSize: 16),
+          validator: validator,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          onChanged: isPassword && !isConfirmPassword
+              ? (_) => setState(() {})
+              : null,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.grey.withValues(alpha: 0.08),
+            hintText: hint,
+            hintStyle: TextStyle(
+              color: Colors.grey.withValues(alpha: 0.6),
+              fontSize: 15,
             ),
-          ),
-          child: TextField(
-            controller: controller,
-            obscureText: isPassword && !isVisible,
-            keyboardType: keyboardType,
-            style: const TextStyle(fontSize: 16),
-            onChanged: isPassword && !isConfirmPassword
-                ? (_) => setState(() {})
+            prefixIcon: Icon(
+              icon,
+              color: Colors.grey.withValues(alpha: 0.6),
+              size: 22,
+            ),
+            suffixIcon: isPassword
+                ? IconButton(
+                    icon: Icon(
+                      isVisible
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: Colors.grey.withValues(alpha: 0.6),
+                      size: 22,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (isConfirmPassword) {
+                          _isConfirmPasswordVisible =
+                              !_isConfirmPasswordVisible;
+                        } else {
+                          _isPasswordVisible = !_isPasswordVisible;
+                        }
+                      });
+                    },
+                  )
                 : null,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(
-                color: Colors.grey.withValues(alpha: 0.6),
-                fontSize: 15,
-              ),
-              prefixIcon: Icon(
-                icon,
-                color: Colors.grey.withValues(alpha: 0.6),
-                size: 22,
-              ),
-              suffixIcon: isPassword
-                  ? IconButton(
-                      icon: Icon(
-                        isVisible
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: Colors.grey.withValues(alpha: 0.6),
-                        size: 22,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          if (isConfirmPassword) {
-                            _isConfirmPasswordVisible =
-                                !_isConfirmPasswordVisible;
-                          } else {
-                            _isPasswordVisible = !_isPasswordVisible;
-                          }
-                        });
-                      },
-                    )
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 16,
-              ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 1.5),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
             ),
           ),
         ),

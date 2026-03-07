@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/poll_model.dart';
 import '../services/poll_service.dart';
+import '../utils/app_snackbar.dart';
 
 /// Widget to create a new poll
 class CreatePollWidget extends StatefulWidget {
@@ -93,16 +94,12 @@ class _CreatePollWidgetState extends State<CreatePollWidget> {
         .toList();
 
     if (question.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a question')),
-      );
+      AppSnackbar.error('Please enter a question');
       return;
     }
 
     if (options.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add at least 2 options')),
-      );
+      AppSnackbar.error('Please add at least 2 options');
       return;
     }
 

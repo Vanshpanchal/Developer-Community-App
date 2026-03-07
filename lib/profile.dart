@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'utils/app_snackbar.dart';
 import 'services/firebase_cache_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'messagemodel.dart';
@@ -1152,24 +1153,24 @@ class _ProfileState extends State<profile>
                       onPressed: () async {
                         final val = controller.text.trim();
                         Navigator.pop(ctx);
-                        if (val.isEmpty) {
-                          await FirebaseFirestore.instance
-                              .collection('User')
-                              .doc(user!.uid)
-                              .update({'github': FieldValue.delete()});
-                          setState(() => githubUsername = null);
-                        } else {
-                          await FirebaseFirestore.instance
-                              .collection('User')
-                              .doc(user!.uid)
-                              .update({'github': val});
-                          setState(() => githubUsername = val);
+                        try {
+                          if (val.isEmpty) {
+                            await FirebaseFirestore.instance
+                                .collection('User')
+                                .doc(user!.uid)
+                                .update({'github': FieldValue.delete()});
+                            setState(() => githubUsername = null);
+                          } else {
+                            await FirebaseFirestore.instance
+                                .collection('User')
+                                .doc(user!.uid)
+                                .update({'github': val});
+                            setState(() => githubUsername = val);
+                          }
+                          AppSnackbar.success('GitHub updated', title: 'Saved');
+                        } catch (e) {
+                          AppSnackbar.error('Failed to update GitHub: $e');
                         }
-                        Get.showSnackbar(const GetSnackBar(
-                          title: 'Saved',
-                          message: 'GitHub updated',
-                          duration: Duration(seconds: 2),
-                        ));
                       },
                       child: const Text('Save'),
                     ),
@@ -1342,15 +1343,9 @@ class _ProfileState extends State<profile>
                           Navigator.pop(ctx);
                           try {
                             await ApiKeyManager.instance.saveUserKey(key);
-                            Get.showSnackbar(const GetSnackBar(
-                                title: 'Saved',
-                                message: 'Gemini key stored securely',
-                                duration: Duration(seconds: 2)));
+                            AppSnackbar.success('Gemini key stored securely', title: 'Saved');
                           } catch (e) {
-                            Get.showSnackbar(GetSnackBar(
-                                title: 'Error',
-                                message: e.toString(),
-                                duration: const Duration(seconds: 3)));
+                            AppSnackbar.error(e.toString(), title: 'Error');
                           }
                         },
                         child: const Text('Save'),

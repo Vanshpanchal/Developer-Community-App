@@ -11,6 +11,7 @@ import 'ai_service.dart';
 import 'api_key_manager.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'utils/app_snackbar.dart';
 
 class CopyOverlay extends StatefulWidget {
   final BuildContext context;
@@ -153,19 +154,7 @@ class _ChatScreenState extends State<ChatScreen1> {
   }
 
   void _showCopiedSnackBar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Message copied to clipboard'),
-        behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 1),
-        action: SnackBarAction(
-          label: 'Dismiss',
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          },
-        ),
-      ),
-    );
+    AppSnackbar.success('Message copied to clipboard');
   }
 
   Future<void> _sendMessage() async {

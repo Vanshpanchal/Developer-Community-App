@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'ai_service.dart';
+import 'utils/app_snackbar.dart';
 
 class RepoAnalyzerScreen extends StatefulWidget {
   RepoAnalyzerScreen({super.key});
@@ -195,8 +196,7 @@ class _RepoAnalyzerScreenState extends State<RepoAnalyzerScreen> {
                       onPressed: () async {
                         await Clipboard.setData(ClipboardData(text: _result!));
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Analysis copied')));
+                          AppSnackbar.success('Analysis copied');
                         }
                       },
                     ),

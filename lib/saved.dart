@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'utils/app_snackbar.dart';
 
 class saved extends StatefulWidget {
   const saved({super.key});
@@ -475,23 +476,18 @@ class _QuestionCardState extends State<QuestionCard> {
   }
 
   removesaved(itemId) async {
-    var usercredential = FirebaseAuth.instance.currentUser;
-    await FirebaseFirestore.instance
-        .collection("User")
-        .doc(usercredential?.uid)
-        .update({
-      'Saved': FieldValue.arrayRemove([itemId])
-    });
-
-    Get.showSnackbar(GetSnackBar(
-      title: "Success",
-      message: "Unsaved the post",
-      icon: Icon(
-        Icons.bookmark_border,
-        color: Colors.green,
-      ),
-      duration: Duration(seconds: 2),
-    ));
+    try {
+      var usercredential = FirebaseAuth.instance.currentUser;
+      await FirebaseFirestore.instance
+          .collection("User")
+          .doc(usercredential?.uid)
+          .update({
+        'Saved': FieldValue.arrayRemove([itemId])
+      });
+      AppSnackbar.success('Unsaved the post');
+    } catch (e) {
+      AppSnackbar.error('Failed to unsave post');
+    }
   }
 
   save(itemId) async {
@@ -849,12 +845,7 @@ class _QuestionCardState extends State<QuestionCard> {
                   icon: Icon(Icons.copy_rounded, size: 14),
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: widget.code!));
-                    Get.showSnackbar(GetSnackBar(
-                      title: "Copied!",
-                      message: 'Code copied to clipboard',
-                      icon: const Icon(Icons.check, color: Colors.green),
-                      duration: const Duration(seconds: 2),
-                    ));
+                    AppSnackbar.success('Code copied to clipboard', title: 'Copied!');
                   },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),

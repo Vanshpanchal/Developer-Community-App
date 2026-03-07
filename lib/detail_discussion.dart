@@ -13,6 +13,7 @@ import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'utils/app_snackbar.dart';
 
 class detail_discussion extends StatefulWidget {
   final String docId;
@@ -32,6 +33,7 @@ class _detail_discussionState extends State<detail_discussion> {
   // ignore: unused_field
   String? _threadSummary;
   final _gamificationService = GamificationService();
+  bool _isLoading = false;
 
   Future<void> updateXP2(String uid, int points) async {
     try {
@@ -123,6 +125,7 @@ class _detail_discussionState extends State<detail_discussion> {
   }
 
   Future<void> addReply() async {
+    setState(() => _isLoading = true);
     try {
       // Fetch the current user
       final user = FirebaseAuth.instance.currentUser;
@@ -160,9 +163,6 @@ class _detail_discussionState extends State<detail_discussion> {
           'accepted': false, // Set initial accepted to false
         });
 
-        // int replies_count = getRepliesCount();
-        // await FirebaseFirestore.instance.doc(widget.docId)
-        //     .collection('Replies').get()
         // Clear the reply text field
         _replyController.clear();
 
@@ -172,11 +172,7 @@ class _detail_discussionState extends State<detail_discussion> {
         await _gamificationService.recordActivity();
 
         // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Reply added successfully! +${XpAction.postReply.defaultXp} XP')),
-        );
+        AppSnackbar.success('Reply added successfully! +${XpAction.postReply.defaultXp} XP');
       } else {
         // Handle case where user document does not exist
         throw Exception('User document not found in Firestore.');
@@ -186,9 +182,9 @@ class _detail_discussionState extends State<detail_discussion> {
       print('Error adding reply: $e');
 
       // Show error message to the user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add reply: $e')),
-      );
+      AppSnackbar.error('Failed to add reply: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -335,12 +331,7 @@ class _detail_discussionState extends State<detail_discussion> {
                       }
                     } catch (e) {
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Summary failed: $e'),
-                            backgroundColor: AppTheme.errorColor,
-                          ),
-                        );
+                        AppSnackbar.error('Summary failed: $e');
                       }
                     } finally {
                       if (mounted)
@@ -604,19 +595,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                                       'code'] ??
                                                                   'Sample Code Here'),
                                                         );
-                                                        ScaffoldMessenger.of(
-                                                                context)
-                                                            .showSnackBar(
-                                                          SnackBar(
-                                                            content: Text(
-                                                                'Code Copied to Clipboard!'),
-                                                            duration: Duration(
-                                                                seconds: 2),
-                                                            backgroundColor:
-                                                                AppTheme
-                                                                    .successColor,
-                                                          ),
-                                                        );
+                                                        AppSnackbar.success('Code Copied to Clipboard!');
                                                       },
                                                       child: Container(
                                                         padding:
@@ -751,19 +730,9 @@ class _detail_discussionState extends State<detail_discussion> {
                                                 .doc(replyData['replyId'])
                                                 .delete();
 
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                  content: Text(
-                                                      'Reply deleted successfully!')),
-                                            );
+                                            AppSnackbar.success('Reply deleted successfully!');
                                           } catch (e) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                  content: Text(
-                                                      'Failed to delete reply: $e')),
-                                            );
+                                            AppSnackbar.error('Failed to delete reply: $e');
                                             print(e);
                                           }
                                         }
@@ -1126,29 +1095,9 @@ class _detail_discussionState extends State<detail_discussion> {
 
                                                             updateXP(replyData[
                                                                 'uid']);
-                                                            ScaffoldMessenger
-                                                                    .of(context)
-                                                                .showSnackBar(
-                                                              SnackBar(
-                                                                content: const Text(
-                                                                    'Reply accepted!'),
-                                                                backgroundColor:
-                                                                    AppTheme
-                                                                        .successColor,
-                                                              ),
-                                                            );
+                                                            AppSnackbar.success('Reply accepted!');
                                                           } catch (e) {
-                                                            ScaffoldMessenger
-                                                                    .of(context)
-                                                                .showSnackBar(
-                                                              SnackBar(
-                                                                content: Text(
-                                                                    'Failed to accept: $e'),
-                                                                backgroundColor:
-                                                                    AppTheme
-                                                                        .errorColor,
-                                                              ),
-                                                            );
+                                                            AppSnackbar.error('Failed to accept: $e');
                                                           }
                                                         }
                                                       },
@@ -1270,12 +1219,18 @@ class _detail_discussionState extends State<detail_discussion> {
                         ],
                       ),
                       child: IconButton(
-                        icon: const Icon(
-                          Icons.send,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: () async {
+                        icon: _isLoading 
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                            )
+                          : const Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                        onPressed: _isLoading ? null : () async {
                           if (_replyController.text.trim().isNotEmpty) {
                             addReply();
                           }
@@ -1393,15 +1348,7 @@ class display_discussionCardState extends State<display_discussion> {
       'SavedDiscussion': FieldValue.arrayUnion([itemId])
     });
 
-    Get.showSnackbar(GetSnackBar(
-      title: "Success",
-      message: "Discussion Saved",
-      icon: Icon(
-        Icons.bookmark,
-        color: Colors.green,
-      ),
-      duration: Duration(seconds: 2),
-    ));
+    AppSnackbar.success('Discussion Saved', title: 'Success');
   }
 
   @override
@@ -1783,9 +1730,7 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
                       if (mounted) setState(() => _copied = false);
                     });
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Summary copied to clipboard')),
-                      );
+                      AppSnackbar.success('Summary copied to clipboard');
                     }
                   },
                   icon: Icon(_copied ? Icons.check : Icons.copy),
@@ -1840,9 +1785,7 @@ class _ThreadSummarySheetState extends State<_ThreadSummarySheet> {
                     await Clipboard.setData(
                         ClipboardData(text: widget.summary));
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Copied')),
-                      );
+                      AppSnackbar.success('Copied');
                     }
                   },
                   icon: Icon(Icons.copy_all),
