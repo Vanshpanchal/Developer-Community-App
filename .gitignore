@@ -70,4 +70,4 @@ app.*.map.json
 
 # Documentation files (ignore all .md except README.md)
 *.md
-!README.md
+!/README.md

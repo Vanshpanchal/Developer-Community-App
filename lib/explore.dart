@@ -17,9 +17,11 @@ import 'services/firebase_cache_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/content_moderation.dart';
 import 'widgets/modern_widgets.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import 'widgets/scroll_fade_in.dart';
 
 class explore extends StatefulWidget {
   explore({super.key});
@@ -41,6 +43,7 @@ class exploreState extends State<explore>
   bool _hasMore = true;
   bool _isLoadingMore = false;
   bool _isInitialLoading = true;
+  bool _isRefreshing = false;
   List<Map<String, dynamic>> _posts = [];
   String? _lastDocumentId;
   StreamSubscription<List<Map<String, dynamic>>>? _streamSubscription;
@@ -96,9 +99,9 @@ class exploreState extends State<explore>
 
       if (cachedPosts != null && cachedPosts.isNotEmpty) {
         setState(() {
-          _posts = cachedPosts;
+          _posts = _rankPosts(cachedPosts);
           _isInitialLoading = false;
-          _lastDocumentId = cachedPosts.last['id'];
+          _lastDocumentId = _posts.isNotEmpty ? _posts.last['id'] : null;
         });
       }
     } catch (e) {
@@ -123,8 +126,8 @@ class exploreState extends State<explore>
           // or if we rely on the stream to be the source of truth.
           // Since we just loaded cache, let's update if we have new data.
           if (_posts.isEmpty || data.isNotEmpty) {
-            _posts = data;
-            if (data.isNotEmpty) _lastDocumentId = data.last['id'];
+            _posts = _rankPosts(data);
+            if (_posts.isNotEmpty) _lastDocumentId = _posts.last['id'];
           }
         });
       }
@@ -168,8 +171,8 @@ class exploreState extends State<explore>
         final newData =
             nextBatch.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
         setState(() {
-          _posts.addAll(newData);
-          _lastDocumentId = newData.last['id'];
+          _posts = _rankPosts([..._posts, ...newData]);
+          _lastDocumentId = _posts.isNotEmpty ? _posts.last['id'] : null;
           _hasMore = newData.length == _limit;
         });
       } else {
@@ -202,21 +205,24 @@ class exploreState extends State<explore>
   }
 
   List<Map<String, dynamic>> _performSearch(List<Map<String, dynamic>> docs) {
-    if (_searchQuery.isEmpty) return docs;
+    final rankedDocs = _rankPosts(docs);
+    if (_searchQuery.isEmpty) return rankedDocs;
 
     // Perform search on the current docs
 
     // Calculate relevance scores for each document
-    final scoredDocs = docs
+    final scoredDocs = rankedDocs
         .map((doc) {
           final data = doc;
-          final score = ExploreSearchAlgorithm.calculateRelevance(
+          final relevance = ExploreSearchAlgorithm.calculateRelevance(
             query: _searchQuery,
             title: data['Title']?.toString() ?? '',
             description: data['Description']?.toString() ?? '',
             tags: List<String>.from(data['Tags'] ?? []),
             code: data['code']?.toString() ?? '',
           );
+          final score = (relevance * 100) +
+              ContentModerationService.calculateFeedScore(data);
           return {'doc': doc, 'score': score};
         })
         .where((item) => (item['score'] as double) > 0.0)
@@ -230,6 +236,28 @@ class exploreState extends State<explore>
     return scoredDocs
         .map((item) => item['doc']! as Map<String, dynamic>)
         .toList();
+  }
+
+  List<Map<String, dynamic>> _rankPosts(List<Map<String, dynamic>> posts) {
+    final rankedPosts = posts
+        .where((post) => post['contentStatus']?.toString() != 'blocked')
+        .toList();
+
+    rankedPosts.sort((a, b) {
+      final scoreComparison = ContentModerationService.calculateFeedScore(b)
+          .compareTo(ContentModerationService.calculateFeedScore(a));
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      final leftTime = (a['Timestamp'] as Timestamp?)?.toDate() ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final rightTime = (b['Timestamp'] as Timestamp?)?.toDate() ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return rightTime.compareTo(leftTime);
+    });
+
+    return rankedPosts;
   }
 
   all() {
@@ -278,18 +306,47 @@ class exploreState extends State<explore>
   }
 
   Future<void> _refreshPosts() async {
-    // Clear cache to force fetch from server
-    await _cacheService
-        .clearCache('Explore_Report_false_order_Timestamp_limit_20');
+    if (_isRefreshing) return;
 
     setState(() {
-      _posts.clear();
-      _lastDocumentId = null;
-      _hasMore = true;
-      _isLoadingMore = false;
+      _isRefreshing = true;
     });
 
-    _setupFeed();
+    try {
+      await _cacheService
+          .clearCache('Explore_Report_false_order_Timestamp_limit_20');
+
+      final refreshedBatch = await FirebaseFirestore.instance
+          .collection('Explore')
+          .where('Report', isEqualTo: false)
+          .orderBy('Timestamp', descending: true)
+          .limit(_limit)
+          .get();
+
+      if (!mounted) return;
+
+      final refreshedPosts = refreshedBatch.docs
+          .map((doc) => {...doc.data(), 'id': doc.id})
+          .toList();
+
+      setState(() {
+        _posts = _rankPosts(refreshedPosts);
+        _lastDocumentId = _posts.isNotEmpty ? _posts.last['id'] : null;
+        _hasMore = refreshedPosts.length == _limit;
+        _isLoadingMore = false;
+        _isInitialLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        AppSnackbar.error('Failed to refresh posts.', title: 'Refresh Error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
   }
 
   @override
@@ -344,18 +401,8 @@ class exploreState extends State<explore>
                         }
 
                         final data = questions[index];
-                        return TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.0, end: 1.0),
-                          duration: Duration(milliseconds: 300 + (index * 100)),
-                          builder: (context, value, child) {
-                            return Transform.translate(
-                              offset: Offset(0, 20 * (1 - value)),
-                              child: Opacity(
-                                opacity: value,
-                                child: child,
-                              ),
-                            );
-                          },
+                        return ScrollFadeIn(
+                          delay: Duration(milliseconds: index < 5 ? index * 80 : 0),
                           child: QuestionCard(
                             title: data['Title'] ?? '',
                             description: data['Description'] ?? '',

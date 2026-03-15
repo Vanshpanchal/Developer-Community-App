@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/content_moderation.dart';
 import 'utils/app_validators.dart';
 
 class addpost extends StatefulWidget {
@@ -23,25 +24,38 @@ class addpostState extends State<addpost> {
   String markdownContent = ''; // Markdown content for Preview
   String code = ''; // Code content to show in the 'Code' tab
   final _gamificationService = GamificationService();
-
   bool _isLoading = false;
+  bool _isSubmitted = false;
   final _formKey = GlobalKey<FormState>();
 
   String? selectedSubject;
   Future<void> sharepost() async {
-      // 1. Validate Form First
-      if (!_formKey.currentState!.validate()) {
-        AppSnackbar.error("Please fix the errors in the form.");
-        return;
-      }
-      if (_tags.isEmpty) {
-        AppSnackbar.error("Please add at least one tag.");
-        return;
-      }
+    setState(() => _isSubmitted = true);
+    // 1. Validate Form First
+    if (!_formKey.currentState!.validate()) {
+      AppSnackbar.error("Please fix the errors in the form.");
+      return;
+    }
+    if (_tags.isEmpty) {
+      AppSnackbar.error("Please add at least one tag.");
+      return;
+    }
 
-      setState(() => _isLoading = true);
+    setState(() => _isLoading = true);
 
-      try {
+    final moderation = await ContentModerationService.moderateSubmission(
+      title: _titleController.text,
+      description: _descriptionController.text,
+      tags: _tags,
+      code: code,
+    );
+    if (moderation.shouldReject) {
+      if (mounted) setState(() => _isLoading = false);
+      AppSnackbar.error(moderation.userMessage, title: 'Post Rejected');
+      return;
+    }
+
+    try {
       // Get the current user
       var user = FirebaseAuth.instance.currentUser;
 
@@ -60,6 +74,11 @@ class addpostState extends State<addpost> {
         'docId': docId,
         'likescount': 0,
         'likes': [],
+        'qualityScore': moderation.qualityScore,
+        'contentStatus': moderation.statusKey,
+        'deprioritizeInFeed': moderation.shouldDeprioritize,
+        'moderationFlags': moderation.flags,
+        'moderationSource': moderation.source,
         'Timestamp': FieldValue.serverTimestamp(),
       };
 
@@ -68,22 +87,24 @@ class addpostState extends State<addpost> {
           .collection("Explore")
           .doc(docId)
           .set(data);
-          
+
       debugPrint("AddUser: User Added");
 
       // Award XP for creating post
       await _gamificationService.awardXp(XpAction.createPost);
       await _gamificationService.recordActivity();
 
-      AppSnackbar.success("Success! +${XpAction.createPost.defaultXp} XP", title: "Post Created");
-      
+      AppSnackbar.success("Success! +${XpAction.createPost.defaultXp} XP",
+          title: "Post Created");
+
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
-      AppSnackbar.error(e.message ?? 'An error occurred', title: 'Authentication Error');
+      AppSnackbar.error(e.message ?? 'An error occurred',
+          title: 'Authentication Error');
     } catch (e) {
       debugPrint("Sharepost  {$e}");
       AppSnackbar.error(e.toString(), title: "Error");
@@ -470,8 +491,20 @@ class addpostState extends State<addpost> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _titleController,
-                  validator: AppValidators.validateTitle,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (v) => _isSubmitted ? AppValidators.validateTitle(v) : null,
+                  autovalidateMode: AutovalidateMode.disabled,
+                  onTap: () {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
+                  onChanged: (val) {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
                   maxLines: 3,
                   minLines: 1,
                   decoration: InputDecoration(
@@ -523,8 +556,20 @@ class addpostState extends State<addpost> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descriptionController,
-                  validator: AppValidators.validateDescription,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (v) => _isSubmitted ? AppValidators.validateDescription(v) : null,
+                  autovalidateMode: AutovalidateMode.disabled,
+                  onTap: () {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
+                  onChanged: (val) {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
                   maxLines: 8,
                   minLines: 4,
                   decoration: InputDecoration(
@@ -576,6 +621,7 @@ class addpostState extends State<addpost> {
                 const SizedBox(height: 8),
                 FormField<List<String>>(
                   validator: (value) {
+                    if (!_isSubmitted) return null;
                     if (_tags.isEmpty) {
                       return 'Please add at least one tag.';
                     }
@@ -588,6 +634,18 @@ class addpostState extends State<addpost> {
                         TextField(
                           textCapitalization: TextCapitalization.characters,
                           controller: _tagController,
+                          onTap: () {
+                            if (_isSubmitted) {
+                              setState(() => _isSubmitted = false);
+                              state.validate();
+                            }
+                          },
+                          onChanged: (val) {
+                            if (_isSubmitted) {
+                              setState(() => _isSubmitted = false);
+                              state.validate();
+                            }
+                          },
                           decoration: InputDecoration(
                             hintText: 'Add tags (e.g., FLUTTER, DART)',
                             prefixIcon: Icon(
@@ -608,7 +666,8 @@ class addpostState extends State<addpost> {
                             errorText: state.hasError ? state.errorText : null,
                             enabledBorder: OutlineInputBorder(
                               borderSide: BorderSide(
-                                color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                                color: theme.colorScheme.outline
+                                    .withValues(alpha: 0.3),
                                 width: 1,
                               ),
                               borderRadius: BorderRadius.circular(8),
@@ -640,7 +699,7 @@ class addpostState extends State<addpost> {
                             state.validate();
                           },
                         ),
-                        
+
                         // Tags Display
                         if (_tags.isNotEmpty) ...[
                           const SizedBox(height: 12),
@@ -658,7 +717,8 @@ class addpostState extends State<addpost> {
                                       fontSize: 12,
                                     ),
                                   ),
-                                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                                  backgroundColor: theme.colorScheme.primary
+                                      .withValues(alpha: 0.1),
                                   deleteIcon: Icon(
                                     Icons.close,
                                     size: 18,
@@ -678,7 +738,6 @@ class addpostState extends State<addpost> {
                     );
                   },
                 ),
-
 
                 const SizedBox(height: 24),
 
@@ -844,9 +903,17 @@ class addpostState extends State<addpost> {
                   height: 50,
                   child: ElevatedButton.icon(
                     onPressed: _isLoading ? null : sharepost,
-                    icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.send_rounded),
+                    icon: _isLoading
+                        ? const SizedBox.shrink()
+                        : const Icon(Icons.send_rounded),
                     label: _isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5,))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ))
                         : const Text(
                             'Publish Post',
                             style: TextStyle(

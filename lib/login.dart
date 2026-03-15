@@ -18,6 +18,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
   final TextEditingController passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  bool _isSubmitted = false;
   final _formKey = GlobalKey<FormState>();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -50,6 +51,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
   }
 
   Future<void> userLogin() async {
+    setState(() => _isSubmitted = true);
     if (!_formKey.currentState!.validate()) {
       AppSnackbar.error('Please fix the errors in the form.');
       return;
@@ -63,7 +65,11 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
       );
       await AnalyticsService().logLogin(method: 'email');
     } on FirebaseAuthException catch (e) {
-      AppSnackbar.error(e.code, title: 'Error');
+      if (e.code == 'invalid-credential' || e.code == 'wrong-password' || e.code == 'user-not-found') {
+        AppSnackbar.error('Invalid email or password. Please try again.', title: 'Login Failed');
+      } else {
+        AppSnackbar.error(e.message ?? e.code, title: 'Error');
+      }
     } catch (e) {
       AppSnackbar.error('An unexpected error occurred', title: 'Error');
       debugPrint("Login error: $e");
@@ -73,6 +79,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
   }
 
   Future<void> forgetPassword() async {
+    setState(() => _isSubmitted = true);
     if (emailController.text.isEmpty) {
       AppSnackbar.error('Please enter your email first', title: 'Error');
       return;
@@ -241,12 +248,6 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           const SizedBox(height: 28),
           // Login Button
           _buildLoginButton(theme),
-          const SizedBox(height: 24),
-          // Divider
-          _buildDivider(),
-          const SizedBox(height: 24),
-          // Social Login
-          _buildSocialLogin(),
         ],
         ),
       ),
@@ -278,8 +279,20 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           obscureText: isPassword && !_isPasswordVisible,
           keyboardType: keyboardType,
           style: const TextStyle(fontSize: 16),
-          validator: validator,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
+          validator: (val) => _isSubmitted && validator != null ? validator(val) : null,
+          autovalidateMode: AutovalidateMode.disabled,
+          onTap: () {
+            if (_isSubmitted) {
+              setState(() => _isSubmitted = false);
+              _formKey.currentState?.validate();
+            }
+          },
+          onChanged: (val) {
+            if (_isSubmitted) {
+              setState(() => _isSubmitted = false);
+              _formKey.currentState?.validate();
+            }
+          },
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.grey.withValues(alpha: 0.08),
@@ -379,81 +392,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _buildDivider() {
-    return Row(
-      children: [
-        Expanded(child: Divider(color: Colors.grey.withValues(alpha: 0.3))),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'or continue with',
-            style: TextStyle(
-              color: Colors.grey.withValues(alpha: 0.7),
-              fontSize: 13,
-            ),
-          ),
-        ),
-        Expanded(child: Divider(color: Colors.grey.withValues(alpha: 0.3))),
-      ],
-    );
-  }
 
-  Widget _buildSocialLogin() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildSocialButton(
-          icon: Icons.g_mobiledata_rounded,
-          label: 'Google',
-          onTap: () {
-            AppSnackbar.info('Google sign-in coming soon!');
-          },
-        ),
-        const SizedBox(width: 16),
-        _buildSocialButton(
-          icon: Icons.apple_rounded,
-          label: 'Apple',
-          onTap: () {
-            AppSnackbar.info('Apple sign-in coming soon!');
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSocialButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.withValues(alpha: 0.25)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 24, color: Colors.grey[700]),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildSignUpLink() {
     return Center(

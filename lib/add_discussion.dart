@@ -10,6 +10,7 @@ import 'widgets/poll_widgets.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/content_moderation.dart';
 import 'utils/app_validators.dart';
 
 class add_discussion extends StatefulWidget {
@@ -31,22 +32,35 @@ class _add_discussionState extends State<add_discussion> {
   final _gamificationService = GamificationService();
 
   bool _isLoading = false;
+  bool _isSubmitted = false;
   final _formKey = GlobalKey<FormState>();
 
   String? selectedSubject;
   Future<void> shareDiscussion() async {
-      if (!_formKey.currentState!.validate()) {
-        AppSnackbar.error("Please fix the errors in the form.");
-        return;
-      }
-      if (_tags.isEmpty) {
-        AppSnackbar.error("Please add at least one tag.");
-        return;
-      }
+    setState(() => _isSubmitted = true);
+    if (!_formKey.currentState!.validate()) {
+      AppSnackbar.error("Please fix the errors in the form.");
+      return;
+    }
+    if (_tags.isEmpty) {
+      AppSnackbar.error("Please add at least one tag.");
+      return;
+    }
 
-      setState(() => _isLoading = true);
-      
-      try {
+    setState(() => _isLoading = true);
+
+    final moderation = await ContentModerationService.moderateSubmission(
+      title: _titleController.text,
+      description: _descriptionController.text,
+      tags: _tags,
+    );
+    if (moderation.shouldReject) {
+      if (mounted) setState(() => _isLoading = false);
+      AppSnackbar.error(moderation.userMessage, title: 'Discussion Rejected');
+      return;
+    }
+
+    try {
       // Get the current user
       var user = FirebaseAuth.instance.currentUser;
 
@@ -65,6 +79,11 @@ class _add_discussionState extends State<add_discussion> {
         'Timestamp': FieldValue.serverTimestamp(),
         'Replies': [], // Initialize an empty array for replies
         'hasPoll': _pollData != null && _pollData!.isValid,
+        'qualityScore': moderation.qualityScore,
+        'contentStatus': moderation.statusKey,
+        'deprioritizeInFeed': moderation.shouldDeprioritize,
+        'moderationFlags': moderation.flags,
+        'moderationSource': moderation.source,
       };
 
       // Add poll data if exists
@@ -91,15 +110,17 @@ class _add_discussionState extends State<add_discussion> {
         await _gamificationService.incrementCounter('pollsCreated');
       }
 
-      AppSnackbar.success("Success! +${XpAction.createDiscussion.defaultXp} XP", title: "Discussion Created");
+      AppSnackbar.success("Success! +${XpAction.createDiscussion.defaultXp} XP",
+          title: "Discussion Created");
 
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
-      AppSnackbar.error(e.message ?? 'An error occurred', title: 'Authentication Error');
+      AppSnackbar.error(e.message ?? 'An error occurred',
+          title: 'Authentication Error');
     } catch (e) {
       debugPrint("ShareDiscussion Error: {$e}");
       AppSnackbar.error(e.toString(), title: "Error");
@@ -448,8 +469,20 @@ class _add_discussionState extends State<add_discussion> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _titleController,
-                  validator: AppValidators.validateTitle,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (v) => _isSubmitted ? AppValidators.validateTitle(v) : null,
+                  autovalidateMode: AutovalidateMode.disabled,
+                  onTap: () {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
+                  onChanged: (val) {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
                   maxLines: 3,
                   minLines: 1,
                   decoration: InputDecoration(
@@ -501,8 +534,20 @@ class _add_discussionState extends State<add_discussion> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descriptionController,
-                  validator: AppValidators.validateDescription,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  validator: (v) => _isSubmitted ? AppValidators.validateDescription(v) : null,
+                  autovalidateMode: AutovalidateMode.disabled,
+                  onTap: () {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
+                  onChanged: (val) {
+                    if (_isSubmitted) {
+                      setState(() => _isSubmitted = false);
+                      _formKey.currentState?.validate();
+                    }
+                  },
                   maxLines: 8,
                   minLines: 4,
                   decoration: InputDecoration(
@@ -555,6 +600,7 @@ class _add_discussionState extends State<add_discussion> {
                 const SizedBox(height: 8),
                 FormField<List<String>>(
                   validator: (value) {
+                    if (!_isSubmitted) return null;
                     if (_tags.isEmpty) {
                       return 'Please add at least one tag.';
                     }
@@ -567,6 +613,18 @@ class _add_discussionState extends State<add_discussion> {
                         TextField(
                           textCapitalization: TextCapitalization.characters,
                           controller: _tagController,
+                          onTap: () {
+                            if (_isSubmitted) {
+                              setState(() => _isSubmitted = false);
+                              state.validate();
+                            }
+                          },
+                          onChanged: (val) {
+                            if (_isSubmitted) {
+                              setState(() => _isSubmitted = false);
+                              state.validate();
+                            }
+                          },
                           decoration: InputDecoration(
                             hintText: 'Add relevant tags (e.g., FLUTTER, DART)',
                             prefixIcon: Icon(
@@ -587,7 +645,8 @@ class _add_discussionState extends State<add_discussion> {
                             errorText: state.hasError ? state.errorText : null,
                             enabledBorder: OutlineInputBorder(
                               borderSide: BorderSide(
-                                color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                                color: theme.colorScheme.outline
+                                    .withValues(alpha: 0.3),
                                 width: 1,
                               ),
                               borderRadius: BorderRadius.circular(8),
@@ -630,7 +689,8 @@ class _add_discussionState extends State<add_discussion> {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
-                                      theme.colorScheme.primary.withValues(alpha: 0.15),
+                                      theme.colorScheme.primary
+                                          .withValues(alpha: 0.15),
                                       theme.colorScheme.secondary
                                           .withValues(alpha: 0.1),
                                     ],
@@ -670,7 +730,6 @@ class _add_discussionState extends State<add_discussion> {
                     );
                   },
                 ),
-
 
                 const SizedBox(height: 24),
 
@@ -863,9 +922,17 @@ class _add_discussionState extends State<add_discussion> {
                   height: 50,
                   child: ElevatedButton.icon(
                     onPressed: _isLoading ? null : shareDiscussion,
-                    icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.send_rounded),
+                    icon: _isLoading
+                        ? const SizedBox.shrink()
+                        : const Icon(Icons.send_rounded),
                     label: _isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5,))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ))
                         : const Text(
                             'Start Discussion',
                             style: TextStyle(
@@ -890,4 +957,3 @@ class _add_discussionState extends State<add_discussion> {
     );
   }
 }
-  

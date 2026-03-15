@@ -14,6 +14,8 @@ import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/content_moderation.dart';
+import 'widgets/scroll_fade_in.dart';
 
 class detail_discussion extends StatefulWidget {
   final String docId;
@@ -27,6 +29,7 @@ class detail_discussion extends StatefulWidget {
 
 class _detail_discussionState extends State<detail_discussion> {
   final _replyController = TextEditingController();
+  final _nestedReplyController = TextEditingController();
 
   final user = FirebaseAuth.instance.currentUser;
   bool _summaryLoading = false;
@@ -34,6 +37,19 @@ class _detail_discussionState extends State<detail_discussion> {
   String? _threadSummary;
   final _gamificationService = GamificationService();
   bool _isLoading = false;
+  bool _nestedReplyLoading = false;
+
+  /// The replyId currently being replied to (inline nested reply)
+  String? _replyingToId;
+  /// The username being replied to (for display)
+  String? _replyingToUserName;
+
+  @override
+  void dispose() {
+    _replyController.dispose();
+    _nestedReplyController.dispose();
+    super.dispose();
+  }
 
   Future<void> updateXP2(String uid, int points) async {
     try {
@@ -125,7 +141,16 @@ class _detail_discussionState extends State<detail_discussion> {
   }
 
   Future<void> addReply() async {
+    final replyText = _replyController.text.trim();
     setState(() => _isLoading = true);
+
+    final moderation = await ContentModerationService.moderateReply(replyText);
+    if (moderation.shouldReject) {
+      if (mounted) setState(() => _isLoading = false);
+      AppSnackbar.error(moderation.userMessage, title: 'Reply Rejected');
+      return;
+    }
+
     try {
       // Fetch the current user
       final user = FirebaseAuth.instance.currentUser;
@@ -153,14 +178,20 @@ class _detail_discussionState extends State<detail_discussion> {
             .collection('Replies')
             .doc();
         await replyDocRef.set({
-          'replyId': replyDocRef.id, // Use the document ID as the replyId
-          'reply': _replyController.text.trim(),
+          'replyId': replyDocRef.id,
+          'reply': replyText,
           'user_name': username,
           'profilePicture': imageUrl,
           'uid': FirebaseAuth.instance.currentUser?.uid,
           'timestamp': FieldValue.serverTimestamp(),
           'code': "",
-          'accepted': false, // Set initial accepted to false
+          'accepted': false,
+          'likes': [],
+          'qualityScore': moderation.qualityScore,
+          'contentStatus': moderation.statusKey,
+          'deprioritizeInFeed': moderation.shouldDeprioritize,
+          'moderationFlags': moderation.flags,
+          'moderationSource': moderation.source,
         });
 
         // Clear the reply text field
@@ -172,7 +203,8 @@ class _detail_discussionState extends State<detail_discussion> {
         await _gamificationService.recordActivity();
 
         // Show success message
-        AppSnackbar.success('Reply added successfully! +${XpAction.postReply.defaultXp} XP');
+        AppSnackbar.success(
+            'Reply added successfully! +${XpAction.postReply.defaultXp} XP');
       } else {
         // Handle case where user document does not exist
         throw Exception('User document not found in Firestore.');
@@ -186,6 +218,105 @@ class _detail_discussionState extends State<detail_discussion> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Toggle like on a reply
+  Future<void> _toggleLike(String replyId, List<dynamic> currentLikes) async {
+    final uid = user?.uid;
+    if (uid == null) return;
+    final replyRef = FirebaseFirestore.instance
+        .collection('Discussions')
+        .doc(widget.docId)
+        .collection('Replies')
+        .doc(replyId);
+    if (currentLikes.contains(uid)) {
+      await replyRef.update({'likes': FieldValue.arrayRemove([uid])});
+    } else {
+      await replyRef.update({'likes': FieldValue.arrayUnion([uid])});
+    }
+  }
+
+  /// Toggle like on a *nested* reply
+  Future<void> _toggleNestedLike(String parentReplyId, String subReplyId, List<dynamic> currentLikes) async {
+    final uid = user?.uid;
+    if (uid == null) return;
+    final ref = FirebaseFirestore.instance
+        .collection('Discussions')
+        .doc(widget.docId)
+        .collection('Replies')
+        .doc(parentReplyId)
+        .collection('SubReplies')
+        .doc(subReplyId);
+    if (currentLikes.contains(uid)) {
+      await ref.update({'likes': FieldValue.arrayRemove([uid])});
+    } else {
+      await ref.update({'likes': FieldValue.arrayUnion([uid])});
+    }
+  }
+
+  /// Add a nested reply to a parent reply
+  Future<void> _addNestedReply(String parentReplyId) async {
+    final text = _nestedReplyController.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _nestedReplyLoading = true);
+
+    final moderation = await ContentModerationService.moderateReply(text);
+    if (moderation.shouldReject) {
+      if (mounted) setState(() => _nestedReplyLoading = false);
+      AppSnackbar.error(moderation.userMessage, title: 'Reply Rejected');
+      return;
+    }
+
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) throw Exception('Not authenticated');
+      final userDoc = await FirebaseFirestore.instance
+          .collection('User').doc(currentUser.uid).get();
+      if (!userDoc.exists) throw Exception('User not found');
+      final username = userDoc.data()?['Username'] ?? 'Anonymous';
+      final profilePic = userDoc.data()?['profilePicture'] ?? '';
+
+      final subRef = FirebaseFirestore.instance
+          .collection('Discussions')
+          .doc(widget.docId)
+          .collection('Replies')
+          .doc(parentReplyId)
+          .collection('SubReplies')
+          .doc();
+      await subRef.set({
+        'subReplyId': subRef.id,
+        'reply': text,
+        'user_name': username,
+        'profilePicture': profilePic,
+        'uid': currentUser.uid,
+        'timestamp': FieldValue.serverTimestamp(),
+        'likes': [],
+        'qualityScore': moderation.qualityScore,
+        'contentStatus': moderation.statusKey,
+        'moderationFlags': moderation.flags,
+      });
+
+      _nestedReplyController.clear();
+      setState(() { _replyingToId = null; _replyingToUserName = null; });
+      AppSnackbar.success('Reply added!');
+      await _gamificationService.awardXp(XpAction.postReply);
+    } catch (e) {
+      AppSnackbar.error('Failed: $e');
+    } finally {
+      if (mounted) setState(() => _nestedReplyLoading = false);
+    }
+  }
+
+  /// Relative time helper (e.g. "2h", "5d", "just now")
+  String _relativeTime(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w';
+    if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo';
+    return '${(diff.inDays / 365).floor()}y';
   }
 
   Future<void> updateXP(String uid) async {
@@ -407,33 +538,72 @@ class _detail_discussionState extends State<detail_discussion> {
                             horizontal: 16, vertical: 8),
                         sliver: SliverList(
                           delegate: SliverChildListDelegate([
-                            display_discussion(
-                              title: discussionData['Title'] ?? '',
-                              description: discussionData['Description'] ?? '',
-                              tags: List<String>.from(
-                                  discussionData['Tags'] ?? []),
-                              timestamp:
-                                  (discussionData['Timestamp'] as Timestamp?)
-                                          ?.toDate() ??
-                                      DateTime.now(),
-                              uid: discussionData['Uid'] ?? '',
-                              docid: widget.docId,
-                              replies: [],
-                            ),
-                            const SizedBox(height: 16),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 4),
-                              child: Text(
-                                'Replies',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.white : Colors.black87,
-                                ),
+                            ScrollFadeIn(
+                              child: display_discussion(
+                                title: discussionData['Title'] ?? '',
+                                description: discussionData['Description'] ?? '',
+                                tags: List<String>.from(
+                                    discussionData['Tags'] ?? []),
+                                timestamp:
+                                    (discussionData['Timestamp'] as Timestamp?)
+                                            ?.toDate() ??
+                                        DateTime.now(),
+                                uid: discussionData['Uid'] ?? '',
+                                docid: widget.docId,
+                                replies: [],
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 12),
+                            // ── Reddit-style replies divider ──
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.forum_outlined,
+                                    size: 18,
+                                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Discussion',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: isDark 
+                                          ? Colors.grey.shade800 
+                                          : Colors.grey.shade100,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.sort_rounded, size: 14, 
+                                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Oldest',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 4),
                           ]),
                         ),
                       ),
@@ -466,31 +636,52 @@ class _detail_discussionState extends State<detail_discussion> {
                           }
                           if (repliesSnapshot.data?.docs.isEmpty ?? true) {
                             return SliverToBoxAdapter(
-                              child: SizedBox(
-                                height: 200,
-                                child: Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.chat_bubble_outline,
-                                        size: 48,
-                                        color: isDark
-                                            ? Colors.grey.shade500
-                                            : Colors.grey.shade400,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        'No replies yet.',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: isDark
-                                              ? Colors.grey.shade300
-                                              : Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? AppTheme.darkCard.withValues(alpha: 0.5)
+                                      : Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade200,
+                                    width: 1,
                                   ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.forum_outlined,
+                                      size: 40,
+                                      color: isDark
+                                          ? Colors.grey.shade600
+                                          : Colors.grey.shade400,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Be the first to reply',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? Colors.grey.shade400
+                                            : Colors.grey.shade600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Share your thoughts on this discussion',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: isDark
+                                            ? Colors.grey.shade600
+                                            : Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
@@ -505,634 +696,504 @@ class _detail_discussionState extends State<detail_discussion> {
                                 (context, index) {
                                   var replyData = replies[index].data()
                                       as Map<String, dynamic>;
+                                  final bool isAccepted = replyData['accepted'] == true;
+                                  final bool isOwner = user?.uid == replyData['uid'];
+                                  final DateTime replyTime = replyData['timestamp'] != null
+                                      ? (replyData['timestamp'] as Timestamp).toDate()
+                                      : DateTime.now();
+                                  final List<dynamic> likes = replyData['likes'] ?? [];
+                                  final bool isLiked = user != null && likes.contains(user!.uid);
+                                  final String replyId = replyData['replyId'] ?? '';
+
+                                  // Thread line color cycling
+                                  final threadColors = [
+                                    AppTheme.primaryColor,
+                                    const Color(0xFFFF6B6B),
+                                    const Color(0xFF51CF66),
+                                    const Color(0xFFFCC419),
+                                    const Color(0xFFCC5DE8),
+                                    const Color(0xFF22B8CF),
+                                  ];
+                                  final threadColor = threadColors[index % threadColors.length];
 
                                   return GestureDetector(
-                                    onTap: () async {
-                                      print("hello vansh");
-                                      var code = replyData['code']!!;
-                                      print(code);
-                                      if (code.toString().isNotEmpty) {
-                                        showModalBottomSheet(
-                                          context: context,
-                                          isScrollControlled: true,
-                                          backgroundColor: isDark
-                                              ? AppTheme.darkCard
-                                              : Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.vertical(
-                                              top: Radius.circular(24),
-                                            ),
-                                          ),
-                                          builder: (context) {
-                                            return Padding(
-                                              padding: EdgeInsets.only(
-                                                top: 16,
-                                                left: 16,
-                                                right: 16,
-                                                bottom: MediaQuery.of(context)
-                                                        .viewInsets
-                                                        .bottom +
-                                                    16,
-                                              ),
-                                              child: SizedBox(
-                                                width: MediaQuery.of(context)
-                                                    .size
-                                                    .width,
-                                                child: Column(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    // Modern heading
-                                                    Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                              12),
-                                                      decoration: BoxDecoration(
-                                                        color: AppTheme
-                                                            .primaryColor
-                                                            .withValues(
-                                                                alpha: 0.1),
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(12),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisAlignment:
-                                                            MainAxisAlignment
-                                                                .center,
-                                                        children: [
-                                                          Icon(
-                                                            Icons.code,
-                                                            color: AppTheme
-                                                                .primaryColor,
-                                                            size: 20,
-                                                          ),
-                                                          const SizedBox(
-                                                              width: 8),
-                                                          Text(
-                                                            'Code Snippet',
-                                                            style: TextStyle(
-                                                              fontSize: 16,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                              color: isDark
-                                                                  ? Colors.white
-                                                                  : Colors
-                                                                      .black87,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 16),
-                                                    // Code Block with modern styling
-                                                    GestureDetector(
-                                                      onLongPress: () {
-                                                        Clipboard.setData(
-                                                          ClipboardData(
-                                                              text: replyData[
-                                                                      'code'] ??
-                                                                  'Sample Code Here'),
-                                                        );
-                                                        AppSnackbar.success('Code Copied to Clipboard!');
-                                                      },
-                                                      child: Container(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .all(16),
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          color: isDark
-                                                              ? AppTheme
-                                                                  .darkSurface
-                                                              : Colors.grey
-                                                                  .shade100,
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(12),
-                                                          border: Border.all(
-                                                            color: isDark
-                                                                ? Colors.grey
-                                                                    .shade700
-                                                                : Colors.grey
-                                                                    .shade300,
-                                                          ),
-                                                        ),
-                                                        child: MarkdownBody(
-                                                          data:
-                                                              "```\n${replyData['code'] ?? 'Sample Code Here'}\n```",
-                                                          styleSheet:
-                                                              AppMarkdownStyles
-                                                                  .getCodeStyle(
-                                                                      context),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 16),
-                                                    // Modern close button
-                                                    ElevatedButton(
-                                                      onPressed: () {
-                                                        Navigator.pop(context);
-                                                      },
-                                                      style: ElevatedButton
-                                                          .styleFrom(
-                                                        backgroundColor:
-                                                            AppTheme
-                                                                .primaryColor,
-                                                        foregroundColor:
-                                                            Colors.white,
-                                                        shape:
-                                                            RoundedRectangleBorder(
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(12),
-                                                        ),
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal: 24,
-                                                                vertical: 12),
-                                                      ),
-                                                      child:
-                                                          const Text("Close"),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        );
-                                      }
-                                    },
                                     onLongPress: () async {
-                                      if (user?.uid == replyData['uid']) {
+                                      if (isOwner) {
                                         bool? confirmDelete = await showDialog(
                                           barrierDismissible: false,
                                           context: context,
                                           builder: (context) => AlertDialog(
-                                            backgroundColor: isDark
-                                                ? AppTheme.darkCard
-                                                : Colors.white,
-                                            surfaceTintColor:
-                                                Colors.transparent,
+                                            backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+                                            surfaceTintColor: Colors.transparent,
                                             shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
+                                              borderRadius: BorderRadius.circular(20),
                                             ),
-                                            title: Text(
-                                              "Delete Reply",
-                                              style: TextStyle(
-                                                color: isDark
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                              ),
-                                            ),
-                                            content: Text(
-                                              "Are you sure you want to delete this reply?",
-                                              style: TextStyle(
-                                                color: isDark
-                                                    ? Colors.grey.shade300
-                                                    : Colors.grey.shade600,
-                                              ),
-                                            ),
+                                            title: Text("Delete Reply",
+                                              style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
+                                            content: Text("Are you sure you want to delete this reply?",
+                                              style: TextStyle(color: isDark ? Colors.grey.shade300 : Colors.grey.shade600)),
                                             actions: [
                                               TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, false),
-                                                child: Text(
-                                                  "Cancel",
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                  ),
-                                                ),
+                                                onPressed: () => Navigator.pop(context, false),
+                                                child: Text("Cancel", style: TextStyle(color: Colors.grey.shade600)),
                                               ),
                                               TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, true),
-                                                style: TextButton.styleFrom(
-                                                  foregroundColor:
-                                                      AppTheme.errorColor,
-                                                ),
+                                                onPressed: () => Navigator.pop(context, true),
+                                                style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
                                                 child: const Text("Delete"),
                                               ),
                                             ],
                                           ),
                                         );
-
                                         if (confirmDelete == true) {
                                           try {
-                                            // Delete the reply from Firestore
                                             await FirebaseFirestore.instance
-                                                .collection('Discussions')
-                                                .doc(widget.docId)
-                                                .collection('Replies')
-                                                .doc(replyData['replyId'])
-                                                .delete();
-
+                                                .collection('Discussions').doc(widget.docId)
+                                                .collection('Replies').doc(replyId).delete();
                                             AppSnackbar.success('Reply deleted successfully!');
                                           } catch (e) {
                                             AppSnackbar.error('Failed to delete reply: $e');
-                                            print(e);
                                           }
                                         }
-
                                         if (replyData['accepted'] == true) {
                                           updateXP2(replyData['uid'], 50);
                                         }
                                       }
                                     },
                                     child: Container(
-                                      margin: const EdgeInsets.only(bottom: 12),
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: isDark
-                                            ? AppTheme.darkCard
-                                            : Colors.white,
-                                        borderRadius: BorderRadius.circular(16),
-                                        border: Border.all(
-                                          color: isDark
-                                              ? Colors.grey.shade700
-                                              : Colors.grey.shade200,
-                                          width: 1,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.05),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          // Modern user info row
-                                          Row(
-                                            children: [
-                                              // Profile avatar with modern styling
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.all(2),
-                                                decoration: BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  gradient:
-                                                      replyData['accepted'] ==
-                                                              true
-                                                          ? AppTheme
-                                                              .primaryGradient
-                                                          : null,
-                                                  border: Border.all(
-                                                    color: isDark
-                                                        ? Colors.grey.shade600
-                                                        : Colors.grey.shade300,
-                                                    width: 2,
+                                      margin: const EdgeInsets.only(bottom: 2),
+                                      child: IntrinsicHeight(
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            // ── Thread line ──
+                                            GestureDetector(
+                                              onTap: () {},
+                                              child: Container(
+                                                width: 20,
+                                                alignment: Alignment.center,
+                                                child: Container(
+                                                  width: 3,
+                                                  decoration: BoxDecoration(
+                                                    color: isAccepted
+                                                        ? AppTheme.successColor
+                                                        : threadColor.withValues(alpha: isDark ? 0.5 : 0.35),
+                                                    borderRadius: BorderRadius.circular(2),
                                                   ),
                                                 ),
-                                                child: FutureBuilder<String?>(
-                                                  future:
-                                                      _fetchUserProfileImage(
-                                                          replyData['uid']),
-                                                  builder: (context, snapshot) {
-                                                    if (snapshot
-                                                            .connectionState ==
-                                                        ConnectionState
-                                                            .waiting) {
-                                                      return CircleAvatar(
-                                                        radius: 18,
-                                                        backgroundColor: Colors
-                                                            .grey.shade300,
-                                                      );
-                                                    } else if (snapshot
-                                                            .hasError ||
-                                                        snapshot.data == null ||
-                                                        snapshot
-                                                            .data!.isEmpty) {
-                                                      return CircleAvatar(
-                                                        radius: 18,
-                                                        backgroundColor: isDark
-                                                            ? AppTheme
-                                                                .darkSurface
-                                                            : Colors
-                                                                .grey.shade200,
-                                                        child: Text(
-                                                          replyData['user_name']
-                                                                      ?.isNotEmpty ==
-                                                                  true
-                                                              ? replyData[
-                                                                      'user_name'][0]
-                                                                  .toUpperCase()
-                                                              : '?',
-                                                          style: TextStyle(
-                                                            fontSize: 14,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                            color: isDark
-                                                                ? Colors.white
-                                                                : Colors
-                                                                    .black87,
-                                                          ),
-                                                        ),
-                                                      );
-                                                    } else {
-                                                      return CircleAvatar(
-                                                        radius: 18,
-                                                        backgroundImage:
-                                                            NetworkImage(
-                                                                snapshot.data!),
-                                                      );
-                                                    }
-                                                  },
-                                                ),
                                               ),
-                                              const SizedBox(width: 12),
-                                              // User name and timestamp
-                                              Expanded(
+                                            ),
+                                            const SizedBox(width: 8),
+
+                                            // ── Reply content area ──
+                                            Expanded(
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                                                decoration: BoxDecoration(
+                                                  border: Border(
+                                                    bottom: BorderSide(
+                                                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+                                                      width: 0.5,
+                                                    ),
+                                                  ),
+                                                ),
                                                 child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
                                                   children: [
-                                                    Text(
-                                                      "~${replyData['user_name'] ?? 'Unknown User'}",
-                                                      style: TextStyle(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: isDark
-                                                            ? Colors.white
-                                                            : Colors.black87,
+                                                    // ── Accepted badge ──
+                                                    if (isAccepted)
+                                                      Container(
+                                                        margin: const EdgeInsets.only(bottom: 8),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                        decoration: BoxDecoration(
+                                                          color: AppTheme.successColor.withValues(alpha: isDark ? 0.15 : 0.08),
+                                                          borderRadius: BorderRadius.circular(6),
+                                                          border: Border.all(color: AppTheme.successColor.withValues(alpha: 0.3)),
+                                                        ),
+                                                        child: Row(
+                                                          mainAxisSize: MainAxisSize.min,
+                                                          children: [
+                                                            Icon(Icons.check_circle, color: AppTheme.successColor, size: 14),
+                                                            const SizedBox(width: 4),
+                                                            Text('Accepted Answer',
+                                                              style: TextStyle(color: AppTheme.successColor, fontWeight: FontWeight.w700, fontSize: 11)),
+                                                          ],
+                                                        ),
+                                                      ),
+
+                                                    // ── User header ──
+                                                    Row(
+                                                      children: [
+                                                        FutureBuilder<String?>(
+                                                          future: _fetchUserProfileImage(replyData['uid']),
+                                                          builder: (context, snapshot) {
+                                                            if (snapshot.connectionState == ConnectionState.waiting) {
+                                                              return CircleAvatar(radius: 14, backgroundColor: isDark ? Colors.grey.shade700 : Colors.grey.shade300);
+                                                            } else if (snapshot.hasError || snapshot.data == null || snapshot.data!.isEmpty) {
+                                                              return CircleAvatar(
+                                                                radius: 14,
+                                                                backgroundColor: isDark ? AppTheme.darkSurface : Colors.grey.shade200,
+                                                                child: Text(
+                                                                  replyData['user_name']?.isNotEmpty == true ? replyData['user_name'][0].toUpperCase() : '?',
+                                                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
+                                                                ),
+                                                              );
+                                                            } else {
+                                                              return CircleAvatar(radius: 14, backgroundImage: NetworkImage(snapshot.data!));
+                                                            }
+                                                          },
+                                                        ),
+                                                        const SizedBox(width: 8),
+                                                        Text(replyData['user_name'] ?? 'Unknown',
+                                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
+                                                        const SizedBox(width: 6),
+                                                        Text('•', style: TextStyle(fontSize: 10, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400)),
+                                                        const SizedBox(width: 6),
+                                                        Text(_relativeTime(replyTime),
+                                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                                        const Spacer(),
+                                                        FutureBuilder<String?>(
+                                                          future: _fetchUserXP(replyData['uid']),
+                                                          builder: (context, snapshot) {
+                                                            if (snapshot.hasData && snapshot.data != null) {
+                                                              return Container(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                                decoration: BoxDecoration(
+                                                                  color: AppTheme.primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                                                                  borderRadius: BorderRadius.circular(10),
+                                                                ),
+                                                                child: Text('${snapshot.data} XP',
+                                                                  style: TextStyle(color: AppTheme.primaryColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                                                              );
+                                                            }
+                                                            return const SizedBox.shrink();
+                                                          },
+                                                        ),
+                                                        if (isOwner)
+                                                          Padding(
+                                                            padding: const EdgeInsets.only(left: 4),
+                                                            child: Icon(Icons.more_horiz, size: 16, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
+                                                          ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(height: 8),
+
+                                                    // ── Reply text ──
+                                                    RichText(
+                                                      text: TextSpan(
+                                                        style: TextStyle(color: isDark ? Colors.grey.shade200 : Colors.black87, fontSize: 14, height: 1.5),
+                                                        children: _buildDescription(replyData['reply'] ?? '', Theme.of(context)),
                                                       ),
                                                     ),
-                                                    Text(
-                                                      DateFormat(
-                                                              'MMM dd, yyyy • hh:mm a')
-                                                          .format(replyData[
-                                                                  'timestamp']
-                                                              .toDate()),
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: isDark
-                                                            ? Colors
-                                                                .grey.shade400
-                                                            : Colors
-                                                                .grey.shade600,
+                                                    const SizedBox(height: 10),
+
+                                                    // ══════════════════════════════════════
+                                                    // ── ACTION BAR: Like, Reply, Code, Accept ──
+                                                    // ══════════════════════════════════════
+                                                    Row(
+                                                      children: [
+                                                        // ── Like button ──
+                                                        _buildActionChip(
+                                                          icon: isLiked ? Icons.favorite : Icons.favorite_border,
+                                                          label: likes.isEmpty ? 'Like' : '${likes.length}',
+                                                          color: isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                                          isDark: isDark,
+                                                          onTap: () => _toggleLike(replyId, likes),
+                                                        ),
+                                                        const SizedBox(width: 8),
+
+                                                        // ── Reply button ──
+                                                        _buildActionChip(
+                                                          icon: Icons.reply_rounded,
+                                                          label: 'Reply',
+                                                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                                          isDark: isDark,
+                                                          onTap: () {
+                                                            setState(() {
+                                                              if (_replyingToId == replyId) {
+                                                                _replyingToId = null;
+                                                                _replyingToUserName = null;
+                                                              } else {
+                                                                _replyingToId = replyId;
+                                                                _replyingToUserName = replyData['user_name'] ?? 'Unknown';
+                                                                _nestedReplyController.clear();
+                                                              }
+                                                            });
+                                                          },
+                                                        ),
+                                                        const SizedBox(width: 8),
+
+                                                        // ── Code button ──
+                                                        if (replyData['code'].toString().isNotEmpty)
+                                                          _buildActionChip(
+                                                            icon: Icons.code_rounded,
+                                                            label: 'Code',
+                                                            color: AppTheme.primaryColor,
+                                                            isDark: isDark,
+                                                            onTap: () {
+                                                              showModalBottomSheet(
+                                                                context: context,
+                                                                isScrollControlled: true,
+                                                                backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
+                                                                shape: const RoundedRectangleBorder(
+                                                                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                                                ),
+                                                                builder: (ctx) => Padding(
+                                                                  padding: EdgeInsets.only(top: 16, left: 16, right: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
+                                                                  child: Column(
+                                                                    mainAxisSize: MainAxisSize.min,
+                                                                    children: [
+                                                                      Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
+                                                                      const SizedBox(height: 16),
+                                                                      Row(children: [
+                                                                        Icon(Icons.code_rounded, color: AppTheme.primaryColor, size: 20),
+                                                                        const SizedBox(width: 8),
+                                                                        Text('Code Snippet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
+                                                                        const Spacer(),
+                                                                        IconButton(
+                                                                          onPressed: () { Clipboard.setData(ClipboardData(text: replyData['code'] ?? '')); AppSnackbar.success('Copied!'); },
+                                                                          icon: Icon(Icons.copy_rounded, size: 18, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                                                        ),
+                                                                      ]),
+                                                                      const SizedBox(height: 12),
+                                                                      Container(
+                                                                        width: double.infinity,
+                                                                        padding: const EdgeInsets.all(16),
+                                                                        decoration: BoxDecoration(
+                                                                          color: isDark ? AppTheme.darkSurface : Colors.grey.shade100,
+                                                                          borderRadius: BorderRadius.circular(12),
+                                                                          border: Border.all(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+                                                                        ),
+                                                                        child: MarkdownBody(data: "```\n${replyData['code'] ?? ''}\n```", styleSheet: AppMarkdownStyles.getCodeStyle(context)),
+                                                                      ),
+                                                                      const SizedBox(height: 16),
+                                                                    ],
+                                                                  ),
+                                                                ),
+                                                              );
+                                                            },
+                                                          )
+                                                        else if (isOwner)
+                                                          _buildActionChip(
+                                                            icon: Icons.attach_file_rounded,
+                                                            label: 'Code',
+                                                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                                            isDark: isDark,
+                                                            onTap: () => Get.to(() => attachcode(docId: replyId, discussionId: widget.docId)),
+                                                          ),
+
+                                                        const Spacer(),
+
+                                                        // ── Accept button ──
+                                                        if (!isAccepted)
+                                                          FutureBuilder<User?>(
+                                                            future: FirebaseAuth.instance.authStateChanges().first,
+                                                            builder: (context, snapshot) {
+                                                              if (snapshot.hasData && snapshot.data!.uid == widget.creatorId && user?.uid != replyData['uid']) {
+                                                                return _buildActionChip(
+                                                                  icon: Icons.check_circle_outline_rounded,
+                                                                  label: 'Accept',
+                                                                  color: AppTheme.successColor,
+                                                                  isDark: isDark,
+                                                                  onTap: () async {
+                                                                    try {
+                                                                      await FirebaseFirestore.instance
+                                                                          .collection('Discussions').doc(widget.docId)
+                                                                          .collection('Replies').doc(replyId)
+                                                                          .update({'accepted': true});
+                                                                      updateXP(replyData['uid']);
+                                                                      AppSnackbar.success('Reply accepted!');
+                                                                    } catch (e) {
+                                                                      AppSnackbar.error('Failed to accept: $e');
+                                                                    }
+                                                                  },
+                                                                );
+                                                              }
+                                                              return const SizedBox.shrink();
+                                                            },
+                                                          ),
+                                                      ],
+                                                    ),
+
+                                                    // ══════════════════════════════════════
+                                                    // ── INLINE NESTED REPLY INPUT ──
+                                                    // ══════════════════════════════════════
+                                                    if (_replyingToId == replyId)
+                                                      Container(
+                                                        margin: const EdgeInsets.only(top: 10),
+                                                        padding: const EdgeInsets.all(10),
+                                                        decoration: BoxDecoration(
+                                                          color: isDark ? AppTheme.darkSurface : Colors.grey.shade50,
+                                                          borderRadius: BorderRadius.circular(12),
+                                                          border: Border.all(
+                                                            color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                                                          ),
+                                                        ),
+                                                        child: Column(
+                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                          children: [
+                                                            Row(
+                                                              children: [
+                                                                Icon(Icons.reply, size: 14, color: AppTheme.primaryColor),
+                                                                const SizedBox(width: 6),
+                                                                Text('Replying to ',
+                                                                  style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600)),
+                                                                Text(_replyingToUserName ?? '',
+                                                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
+                                                                const Spacer(),
+                                                                GestureDetector(
+                                                                  onTap: () => setState(() { _replyingToId = null; _replyingToUserName = null; }),
+                                                                  child: Icon(Icons.close, size: 16, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                            const SizedBox(height: 8),
+                                                            Row(
+                                                              children: [
+                                                                Expanded(
+                                                                  child: TextField(
+                                                                    controller: _nestedReplyController,
+                                                                    maxLines: 2,
+                                                                    minLines: 1,
+                                                                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
+                                                                    decoration: InputDecoration(
+                                                                      hintText: 'Write a reply...',
+                                                                      hintStyle: TextStyle(fontSize: 13, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
+                                                                      border: InputBorder.none,
+                                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                                      isDense: true,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                                const SizedBox(width: 8),
+                                                                GestureDetector(
+                                                                  onTap: _nestedReplyLoading ? null : () => _addNestedReply(replyId),
+                                                                  child: Container(
+                                                                    padding: const EdgeInsets.all(8),
+                                                                    decoration: BoxDecoration(
+                                                                      gradient: AppTheme.primaryGradient,
+                                                                      shape: BoxShape.circle,
+                                                                    ),
+                                                                    child: _nestedReplyLoading
+                                                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                                                        : const Icon(Icons.send, color: Colors.white, size: 16),
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
+                                                          ],
+                                                        ),
                                                       ),
+
+                                                    // ══════════════════════════════════════
+                                                    // ── NESTED SUB-REPLIES (Gemini-style) ──
+                                                    // ══════════════════════════════════════
+                                                    StreamBuilder<QuerySnapshot>(
+                                                      stream: FirebaseFirestore.instance
+                                                          .collection('Discussions')
+                                                          .doc(widget.docId)
+                                                          .collection('Replies')
+                                                          .doc(replyId)
+                                                          .collection('SubReplies')
+                                                          .orderBy('timestamp')
+                                                          .snapshots(),
+                                                      builder: (context, subSnapshot) {
+                                                        if (!subSnapshot.hasData || subSnapshot.data!.docs.isEmpty) {
+                                                          return const SizedBox.shrink();
+                                                        }
+                                                        final subReplies = subSnapshot.data!.docs;
+                                                        return Container(
+                                                          margin: const EdgeInsets.only(top: 10, left: 16),
+                                                          child: Column(
+                                                            children: subReplies.map((subDoc) {
+                                                              final sub = subDoc.data() as Map<String, dynamic>;
+                                                              final subLikes = (sub['likes'] as List<dynamic>?) ?? [];
+                                                              final subIsLiked = user != null && subLikes.contains(user!.uid);
+                                                              final subTime = sub['timestamp'] != null
+                                                                  ? (sub['timestamp'] as Timestamp).toDate()
+                                                                  : DateTime.now();
+                                                              return Container(
+                                                                margin: const EdgeInsets.only(bottom: 8),
+                                                                padding: const EdgeInsets.all(12),
+                                                                decoration: BoxDecoration(
+                                                                  color: isDark 
+                                                                      ? AppTheme.primaryColor.withValues(alpha: 0.12)
+                                                                      : Colors.blue.withValues(alpha: 0.05),
+                                                                  borderRadius: const BorderRadius.only(
+                                                                    topRight: Radius.circular(16),
+                                                                    bottomRight: Radius.circular(16),
+                                                                    bottomLeft: Radius.circular(16),
+                                                                    topLeft: Radius.circular(4),
+                                                                  ),
+                                                                  border: Border.all(
+                                                                    color: AppTheme.primaryColor.withValues(alpha: isDark ? 0.3 : 0.15),
+                                                                    width: 0.5,
+                                                                  ),
+                                                                ),
+                                                                child: Column(
+                                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                                  children: [
+                                                                    // Sub-reply header
+                                                                    Row(
+                                                                      children: [
+                                                                        FutureBuilder<String?>(
+                                                                          future: _fetchUserProfileImage(sub['uid'] ?? ''),
+                                                                          builder: (context, snap) {
+                                                                            return CircleAvatar(
+                                                                              radius: 9, 
+                                                                              backgroundImage: snap.hasData && snap.data != null && snap.data!.isNotEmpty 
+                                                                                  ? NetworkImage(snap.data!) 
+                                                                                  : null,
+                                                                              child: (!snap.hasData || snap.data == null || snap.data!.isEmpty)
+                                                                                  ? Text(sub['user_name']?[0].toUpperCase() ?? '?', style: const TextStyle(fontSize: 8))
+                                                                                  : null,
+                                                                            );
+                                                                          },
+                                                                        ),
+                                                                        const SizedBox(width: 8),
+                                                                        Text(sub['user_name'] ?? 'Unknown',
+                                                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
+                                                                        const SizedBox(width: 6),
+                                                                        Text(_relativeTime(subTime),
+                                                                          style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                                                                      ],
+                                                                    ),
+                                                                    const SizedBox(height: 6),
+                                                                    Text(sub['reply'] ?? '',
+                                                                      style: TextStyle(fontSize: 13, height: 1.4, color: isDark ? Colors.grey.shade300 : Colors.black87)),
+                                                                    const SizedBox(height: 8),
+                                                                    GestureDetector(
+                                                                      onTap: () => _toggleNestedLike(replyId, sub['subReplyId'] ?? '', subLikes),
+                                                                      child: Row(
+                                                                        mainAxisSize: MainAxisSize.min,
+                                                                        children: [
+                                                                          Icon(
+                                                                            subIsLiked ? Icons.favorite : Icons.favorite_border,
+                                                                            size: 13,
+                                                                            color: subIsLiked ? const Color(0xFFFF6B6B) : Colors.grey.shade500,
+                                                                          ),
+                                                                          if (subLikes.isNotEmpty) ...[
+                                                                            const SizedBox(width: 3),
+                                                                            Text('${subLikes.length}',
+                                                                              style: TextStyle(fontSize: 11, color: subIsLiked ? const Color(0xFFFF6B6B) : Colors.grey.shade500)),
+                                                                          ],
+                                                                        ],
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              );
+                                                            }).toList(),
+                                                          ),
+                                                        );
+                                                      },
                                                     ),
                                                   ],
                                                 ),
                                               ),
-                                              // XP badge
-                                              FutureBuilder<String?>(
-                                                future: _fetchUserXP(
-                                                    replyData['uid']),
-                                                builder: (context, snapshot) {
-                                                  if (snapshot.hasData &&
-                                                      snapshot.data != null) {
-                                                    return Container(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4),
-                                                      decoration: BoxDecoration(
-                                                        gradient: AppTheme
-                                                            .primaryGradient,
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(12),
-                                                      ),
-                                                      child: Text(
-                                                        '${snapshot.data} XP',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-                                                  return const SizedBox
-                                                      .shrink();
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 12),
-                                          // Reply content
-                                          RichText(
-                                            text: TextSpan(
-                                              style: TextStyle(
-                                                color: isDark
-                                                    ? Colors.grey.shade200
-                                                    : Colors.black87,
-                                                fontSize: 14,
-                                                height: 1.4,
-                                              ),
-                                              children: _buildDescription(
-                                                replyData['reply'] ??
-                                                    'No reply content',
-                                                Theme.of(context),
-                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 12),
-                                          // Action buttons row
-                                          Row(
-                                            children: [
-                                              // Code attachment indicator
-                                              if (replyData['code']
-                                                  .toString()
-                                                  .isNotEmpty)
-                                                Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 4),
-                                                  decoration: BoxDecoration(
-                                                    color: AppTheme.primaryColor
-                                                        .withValues(alpha: 0.1),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Icon(
-                                                        Icons.code,
-                                                        size: 14,
-                                                        color: AppTheme
-                                                            .primaryColor,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        'Code attached',
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: AppTheme
-                                                              .primaryColor,
-                                                          fontWeight:
-                                                              FontWeight.w500,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              const Spacer(),
-                                              // Attach code button (only for reply owner)
-                                              if (replyData['code']
-                                                      .toString()
-                                                      .isEmpty &&
-                                                  replyData['uid'] == user?.uid)
-                                                TextButton.icon(
-                                                  onPressed: () {
-                                                    Get.to(() => attachcode(
-                                                          docId: replyData[
-                                                              'replyId'],
-                                                          discussionId:
-                                                              widget.docId,
-                                                        ));
-                                                  },
-                                                  icon: Icon(
-                                                    Icons.attach_file,
-                                                    size: 16,
-                                                    color:
-                                                        AppTheme.primaryColor,
-                                                  ),
-                                                  label: Text(
-                                                    'Attach Code',
-                                                    style: TextStyle(
-                                                      color:
-                                                          AppTheme.primaryColor,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                  style: TextButton.styleFrom(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          // Accepted reply indicator or accept button
-                                          if (replyData['accepted'] == true)
-                                            Container(
-                                              margin:
-                                                  const EdgeInsets.only(top: 8),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 12,
-                                                      vertical: 6),
-                                              decoration: BoxDecoration(
-                                                color: AppTheme.successColor
-                                                    .withValues(alpha: 0.1),
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                border: Border.all(
-                                                  color: AppTheme.successColor
-                                                      .withValues(alpha: 0.3),
-                                                ),
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.check_circle,
-                                                    color:
-                                                        AppTheme.successColor,
-                                                    size: 16,
-                                                  ),
-                                                  const SizedBox(width: 6),
-                                                  Text(
-                                                    'Accepted Answer',
-                                                    style: TextStyle(
-                                                      color:
-                                                          AppTheme.successColor,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            )
-                                          else
-                                            FutureBuilder<User?>(
-                                              future: FirebaseAuth.instance
-                                                  .authStateChanges()
-                                                  .first,
-                                              builder: (context, snapshot) {
-                                                if (snapshot.hasData &&
-                                                    snapshot.data!.uid ==
-                                                        widget.creatorId) {
-                                                  return Container(
-                                                    margin:
-                                                        const EdgeInsets.only(
-                                                            top: 8),
-                                                    child: TextButton.icon(
-                                                      onPressed: () async {
-                                                        if (user?.uid !=
-                                                            replyData['uid']) {
-                                                          try {
-                                                            await FirebaseFirestore
-                                                                .instance
-                                                                .collection(
-                                                                    'Discussions')
-                                                                .doc(widget
-                                                                    .docId)
-                                                                .collection(
-                                                                    'Replies')
-                                                                .doc(replyData[
-                                                                    'replyId'])
-                                                                .update({
-                                                              'accepted': true
-                                                            });
-
-                                                            updateXP(replyData[
-                                                                'uid']);
-                                                            AppSnackbar.success('Reply accepted!');
-                                                          } catch (e) {
-                                                            AppSnackbar.error('Failed to accept: $e');
-                                                          }
-                                                        }
-                                                      },
-                                                      icon: Icon(
-                                                        Icons
-                                                            .check_circle_outline,
-                                                        size: 16,
-                                                        color: AppTheme
-                                                            .primaryColor,
-                                                      ),
-                                                      label: Text(
-                                                        'Accept Answer',
-                                                        style: TextStyle(
-                                                          color: AppTheme
-                                                              .primaryColor,
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                      style:
-                                                          TextButton.styleFrom(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                                horizontal: 12,
-                                                                vertical: 6),
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-                                                return const SizedBox.shrink();
-                                              },
-                                            ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   );
@@ -1219,26 +1280,63 @@ class _detail_discussionState extends State<detail_discussion> {
                         ],
                       ),
                       child: IconButton(
-                        icon: _isLoading 
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                            )
-                          : const Icon(
-                              Icons.send,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                        onPressed: _isLoading ? null : () async {
-                          if (_replyController.text.trim().isNotEmpty) {
-                            addReply();
-                          }
-                        },
+                        icon: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2))
+                            : const Icon(
+                                Icons.send,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                        onPressed: _isLoading
+                            ? null
+                            : () async {
+                                if (_replyController.text.trim().isNotEmpty) {
+                                  addReply();
+                                }
+                              },
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Builds a compact action chip for reply action bars (Reddit-style)
+  Widget _buildActionChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: isDark ? 0.12 : 0.06),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
             ),
           ],
@@ -1293,14 +1391,12 @@ class display_discussionCardState extends State<display_discussion> {
   bool isLiked = false;
   bool isFetchingUserName = false;
   late Future<String?> _userNameFuture;
-  bool _showFullDescription = false; // For expandable description
+  bool _showFullDescription = true; // Show full on detail page by default
 
   @override
   void initState() {
     super.initState();
-    print(widget.uid);
     _userNameFuture = _fetchUserName(widget.uid);
-    print("object${_userNameFuture.toString()}");
     // _checkIfLiked();
     // Access the parameters with widget.parameterName
   }
@@ -1354,6 +1450,7 @@ class display_discussionCardState extends State<display_discussion> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Card(
         child: InkWell(
             onTap: () {
@@ -1545,43 +1642,17 @@ class display_discussionCardState extends State<display_discussion> {
                     style: theme.textTheme.titleMedium,
                   ),
                   SizedBox(height: 0),
-                  // Description with Read More functionality
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
                       RichText(
                         text: TextSpan(
-                          style: theme.textTheme.bodyMedium,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            height: 1.6,
+                            fontSize: 15,
+                            color: isDark ? Colors.grey.shade200 : Colors.black87,
+                          ),
                           children:
                               _buildDescription(widget.description, theme),
                         ),
-                        maxLines: _showFullDescription ? null : 1,
-                        textAlign: TextAlign.justify,
-                        overflow: _showFullDescription
-                            ? TextOverflow.visible
-                            : TextOverflow.ellipsis,
                       ),
-                      if (widget.description.length >
-                          100) // Show button if description is long
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _showFullDescription = !_showFullDescription;
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              _showFullDescription ? 'Show less' : 'Read more',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
                   //  SizedBox(height: 8),
                   // code = widget.code!!
                   // Wrap(

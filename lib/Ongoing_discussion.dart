@@ -13,7 +13,9 @@ import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/content_moderation.dart';
 import 'dart:math' as math;
+import 'widgets/scroll_fade_in.dart';
 
 class ongoing_discussion extends StatefulWidget {
   const ongoing_discussion({super.key});
@@ -45,6 +47,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   var discussionStream = FirebaseFirestore.instance
       .collection('Discussions')
       .where('Report', isEqualTo: false)
+      .orderBy('Timestamp', descending: true)
       .limit(20)
       .snapshots();
 
@@ -53,6 +56,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
       discussionStream = FirebaseFirestore.instance
           .collection('Discussions')
           .where('Report', isEqualTo: false)
+          .orderBy('Timestamp', descending: true)
           .limit(20)
           .snapshots();
       // .snapshots();
@@ -104,21 +108,24 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   }
 
   List<QueryDocumentSnapshot> _performSearch(List<QueryDocumentSnapshot> docs) {
-    if (_searchQuery.isEmpty) return docs;
+    final rankedDocs = _rankDiscussions(docs);
+    if (_searchQuery.isEmpty) return rankedDocs;
 
     // Store all discussions
-    _allDiscussions = docs;
+    _allDiscussions = rankedDocs;
 
     // Calculate relevance scores for each document
-    final scoredDocs = docs
+    final scoredDocs = rankedDocs
         .map((doc) {
           final data = doc.data() as Map<String, dynamic>;
-          final score = SearchAlgorithm.calculateRelevance(
+          final relevance = SearchAlgorithm.calculateRelevance(
             query: _searchQuery,
             title: data['Title']?.toString() ?? '',
             description: data['Description']?.toString() ?? '',
             tags: List<String>.from(data['Tags'] ?? []),
           );
+          final score = (relevance * 100) +
+              ContentModerationService.calculateFeedScore(data);
           return {'doc': doc, 'score': score};
         })
         .where((item) => (item['score'] as double) > 0.0)
@@ -132,6 +139,34 @@ class _ongoing_discussionState extends State<ongoing_discussion>
     return scoredDocs
         .map((item) => item['doc']! as QueryDocumentSnapshot)
         .toList();
+  }
+
+  List<QueryDocumentSnapshot> _rankDiscussions(
+      List<QueryDocumentSnapshot> docs) {
+    final rankedDocs = docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return data['contentStatus']?.toString() != 'blocked';
+    }).toList();
+
+    rankedDocs.sort((a, b) {
+      final leftData = a.data() as Map<String, dynamic>;
+      final rightData = b.data() as Map<String, dynamic>;
+
+      final scoreComparison =
+          ContentModerationService.calculateFeedScore(rightData)
+              .compareTo(ContentModerationService.calculateFeedScore(leftData));
+      if (scoreComparison != 0) {
+        return scoreComparison;
+      }
+
+      final leftTime = (leftData['Timestamp'] as Timestamp?)?.toDate() ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final rightTime = (rightData['Timestamp'] as Timestamp?)?.toDate() ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      return rightTime.compareTo(leftTime);
+    });
+
+    return rankedDocs;
   }
 
   @override
@@ -180,6 +215,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
       final nextBatch = await FirebaseFirestore.instance
           .collection('Discussions')
           .where('Report', isEqualTo: false)
+          .orderBy('Timestamp', descending: true)
           .startAfterDocument(_lastDocument!)
           .limit(_limit)
           .get();
@@ -236,12 +272,12 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                       return _buildEmptyState();
                     }
 
-                    // Update pagination state on first load only
-                    if (_discussions.isEmpty &&
-                        snapshot.data!.docs.isNotEmpty) {
-                      _discussions.addAll(snapshot.data!.docs);
-                      _lastDocument = snapshot.data!.docs.last;
-                    }
+                    // Sync pagination state with stream data
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted && snapshot.data!.docs.isNotEmpty) {
+                        _lastDocument = snapshot.data!.docs.last;
+                      }
+                    });
 
                     // Apply advanced search algorithm
                     final questions = _performSearch(snapshot.data!.docs);
@@ -250,45 +286,44 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                       return _buildNoResultsState();
                     }
 
-                    return ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      itemCount: questions.length + (_isLoadingMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == questions.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-
-                        final data =
-                            questions[index].data() as Map<String, dynamic>;
-                        return TweenAnimationBuilder<double>(
-                          tween: Tween(begin: 0.0, end: 1.0),
-                          duration: Duration(milliseconds: 300 + (index * 100)),
-                          builder: (context, value, child) {
-                            return Transform.translate(
-                              offset: Offset(0, 20 * (1 - value)),
-                              child: Opacity(opacity: value, child: child),
-                            );
-                          },
-                          child: displayCard(
-                            title: data['Title'] ?? '',
-                            description: data['Description'] ?? '',
-                            tags: List<String>.from(data['Tags'] ?? []),
-                            timestamp:
-                                (data['Timestamp'] as Timestamp?)?.toDate() ??
-                                    DateTime.now(),
-                            uid: data['Uid'] ?? '',
-                            docid: data['docId'] ?? '',
-                            replies: [],
-                            hasPoll: data['hasPoll'] == true,
-                            pollData: data['poll'] as Map<String, dynamic>?,
-                          ),
-                        );
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        all(); // Re-fetches the initial stream
+                        await Future.delayed(const Duration(milliseconds: 800));
                       },
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        itemCount: questions.length + (_isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == questions.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+
+                          final data =
+                              questions[index].data() as Map<String, dynamic>;
+                          return ScrollFadeIn(
+                            child: displayCard(
+                              title: data['Title'] ?? '',
+                              description: data['Description'] ?? '',
+                              tags: List<String>.from(data['Tags'] ?? []),
+                              timestamp:
+                                  (data['Timestamp'] as Timestamp?)?.toDate() ??
+                                      DateTime.now(),
+                              uid: data['Uid'] ?? '',
+                              docid: data['docId'] ?? '',
+                              replies: [],
+                              hasPoll: data['hasPoll'] == true,
+                              pollData: data['poll'] as Map<String, dynamic>?,
+                            ),
+                          );
+                        },
+                      ),
                     );
                   },
                 ),

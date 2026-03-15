@@ -25,6 +25,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
+  bool _isSubmitted = false;
   bool _acceptedTerms = false;
   final _formKey = GlobalKey<FormState>();
   late AnimationController _animationController;
@@ -60,6 +61,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
   }
 
   Future<void> userSignup() async {
+    setState(() => _isSubmitted = true);
     // Validation
     if (!_formKey.currentState!.validate()) {
       AppSnackbar.error('Please fix the errors in the form.');
@@ -170,7 +172,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
 
   Widget _buildBackButton() {
     return GestureDetector(
-      onTap: () => Get.back(),
+      onTap: () => Navigator.pop(context),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -344,11 +346,23 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
           obscureText: isPassword && !isVisible,
           keyboardType: keyboardType,
           style: const TextStyle(fontSize: 16),
-          validator: validator,
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          onChanged: isPassword && !isConfirmPassword
-              ? (_) => setState(() {})
-              : null,
+          validator: (val) => _isSubmitted && validator != null ? validator(val) : null,
+          autovalidateMode: AutovalidateMode.disabled,
+          onTap: () {
+            if (_isSubmitted) {
+              setState(() => _isSubmitted = false);
+              _formKey.currentState?.validate();
+            }
+          },
+          onChanged: (val) {
+            if (_isSubmitted) {
+              setState(() => _isSubmitted = false);
+              _formKey.currentState?.validate();
+            }
+            if (isPassword && !isConfirmPassword) {
+              setState(() {});
+            }
+          },
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.grey.withValues(alpha: 0.08),
