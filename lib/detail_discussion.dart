@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'services/gamification_service.dart';
@@ -15,6 +16,7 @@ import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
+import 'widgets/app_dialogs.dart';
 import 'widgets/scroll_fade_in.dart';
 
 class detail_discussion extends StatefulWidget {
@@ -38,16 +40,34 @@ class _detail_discussionState extends State<detail_discussion> {
   final _gamificationService = GamificationService();
   bool _isLoading = false;
   bool _nestedReplyLoading = false;
+  late final Stream<DocumentSnapshot> _discussionStream;
+  late final Stream<QuerySnapshot> _repliesStream;
 
-  /// The replyId currently being replied to (inline nested reply)
-  String? _replyingToId;
-  /// The username being replied to (for display)
-  String? _replyingToUserName;
+  final ValueNotifier<String?> _activeReplyId = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> _activeReplyUserName =
+      ValueNotifier<String?>(null);
+
+  @override
+  void initState() {
+    super.initState();
+    _discussionStream = FirebaseFirestore.instance
+        .collection('Discussions')
+        .doc(widget.docId)
+        .snapshots();
+    _repliesStream = FirebaseFirestore.instance
+        .collection('Discussions')
+        .doc(widget.docId)
+        .collection('Replies')
+        .orderBy('timestamp')
+        .snapshots();
+  }
 
   @override
   void dispose() {
     _replyController.dispose();
     _nestedReplyController.dispose();
+    _activeReplyId.dispose();
+    _activeReplyUserName.dispose();
     super.dispose();
   }
 
@@ -230,14 +250,19 @@ class _detail_discussionState extends State<detail_discussion> {
         .collection('Replies')
         .doc(replyId);
     if (currentLikes.contains(uid)) {
-      await replyRef.update({'likes': FieldValue.arrayRemove([uid])});
+      await replyRef.update({
+        'likes': FieldValue.arrayRemove([uid])
+      });
     } else {
-      await replyRef.update({'likes': FieldValue.arrayUnion([uid])});
+      await replyRef.update({
+        'likes': FieldValue.arrayUnion([uid])
+      });
     }
   }
 
   /// Toggle like on a *nested* reply
-  Future<void> _toggleNestedLike(String parentReplyId, String subReplyId, List<dynamic> currentLikes) async {
+  Future<void> _toggleNestedLike(String parentReplyId, String subReplyId,
+      List<dynamic> currentLikes) async {
     final uid = user?.uid;
     if (uid == null) return;
     final ref = FirebaseFirestore.instance
@@ -248,9 +273,13 @@ class _detail_discussionState extends State<detail_discussion> {
         .collection('SubReplies')
         .doc(subReplyId);
     if (currentLikes.contains(uid)) {
-      await ref.update({'likes': FieldValue.arrayRemove([uid])});
+      await ref.update({
+        'likes': FieldValue.arrayRemove([uid])
+      });
     } else {
-      await ref.update({'likes': FieldValue.arrayUnion([uid])});
+      await ref.update({
+        'likes': FieldValue.arrayUnion([uid])
+      });
     }
   }
 
@@ -271,7 +300,9 @@ class _detail_discussionState extends State<detail_discussion> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) throw Exception('Not authenticated');
       final userDoc = await FirebaseFirestore.instance
-          .collection('User').doc(currentUser.uid).get();
+          .collection('User')
+          .doc(currentUser.uid)
+          .get();
       if (!userDoc.exists) throw Exception('User not found');
       final username = userDoc.data()?['Username'] ?? 'Anonymous';
       final profilePic = userDoc.data()?['profilePicture'] ?? '';
@@ -297,7 +328,8 @@ class _detail_discussionState extends State<detail_discussion> {
       });
 
       _nestedReplyController.clear();
-      setState(() { _replyingToId = null; _replyingToUserName = null; });
+      _activeReplyId.value = null;
+      _activeReplyUserName.value = null;
       AppSnackbar.success('Reply added!');
       await _gamificationService.awardXp(XpAction.postReply);
     } catch (e) {
@@ -488,17 +520,10 @@ class _detail_discussionState extends State<detail_discussion> {
           children: [
             Expanded(
               child: StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('Discussions')
-                    .doc(widget.docId)
-                    .snapshots(),
+                stream: _discussionStream,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(
-                      child: CircularProgressIndicator(
-                        color: AppTheme.primaryColor,
-                      ),
-                    );
+                    return _buildDetailDiscussionShimmer(theme, isDark);
                   }
                   if (snapshot.hasError) {
                     return Center(
@@ -526,10 +551,6 @@ class _detail_discussionState extends State<detail_discussion> {
                   }
 
                   var discussionData = snapshot.data!;
-                  var repliesRef = FirebaseFirestore.instance
-                      .collection('Discussions')
-                      .doc(widget.docId)
-                      .collection('Replies');
 
                   return CustomScrollView(
                     slivers: [
@@ -541,7 +562,8 @@ class _detail_discussionState extends State<detail_discussion> {
                             ScrollFadeIn(
                               child: display_discussion(
                                 title: discussionData['Title'] ?? '',
-                                description: discussionData['Description'] ?? '',
+                                description:
+                                    discussionData['Description'] ?? '',
                                 tags: List<String>.from(
                                     discussionData['Tags'] ?? []),
                                 timestamp:
@@ -556,13 +578,16 @@ class _detail_discussionState extends State<detail_discussion> {
                             const SizedBox(height: 12),
                             // ── Reddit-style replies divider ──
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 8),
                               child: Row(
                                 children: [
                                   Icon(
                                     Icons.forum_outlined,
                                     size: 18,
-                                    color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                    color: isDark
+                                        ? Colors.grey.shade400
+                                        : Colors.grey.shade600,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
@@ -570,31 +595,39 @@ class _detail_discussionState extends State<detail_discussion> {
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
-                                      color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                                      color: isDark
+                                          ? Colors.grey.shade300
+                                          : Colors.grey.shade700,
                                       letterSpacing: 0.3,
                                     ),
                                   ),
                                   const Spacer(),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: isDark 
-                                          ? Colors.grey.shade800 
+                                      color: isDark
+                                          ? Colors.grey.shade800
                                           : Colors.grey.shade100,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.sort_rounded, size: 14, 
-                                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                        Icon(Icons.sort_rounded,
+                                            size: 14,
+                                            color: isDark
+                                                ? Colors.grey.shade400
+                                                : Colors.grey.shade600),
                                         const SizedBox(width: 4),
                                         Text(
                                           'Oldest',
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w600,
-                                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                            color: isDark
+                                                ? Colors.grey.shade400
+                                                : Colors.grey.shade600,
                                           ),
                                         ),
                                       ],
@@ -608,16 +641,12 @@ class _detail_discussionState extends State<detail_discussion> {
                         ),
                       ),
                       StreamBuilder<QuerySnapshot>(
-                        stream: repliesRef.orderBy('timestamp').snapshots(),
+                        stream: _repliesStream,
                         builder: (context, repliesSnapshot) {
                           if (repliesSnapshot.connectionState ==
                               ConnectionState.waiting) {
                             return SliverToBoxAdapter(
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: AppTheme.primaryColor,
-                                ),
-                              ),
+                              child: _buildRepliesShimmer(theme, isDark),
                             );
                           }
                           if (repliesSnapshot.hasError) {
@@ -637,8 +666,10 @@ class _detail_discussionState extends State<detail_discussion> {
                           if (repliesSnapshot.data?.docs.isEmpty ?? true) {
                             return SliverToBoxAdapter(
                               child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 16),
-                                padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 40, horizontal: 24),
                                 decoration: BoxDecoration(
                                   color: isDark
                                       ? AppTheme.darkCard.withValues(alpha: 0.5)
@@ -696,14 +727,22 @@ class _detail_discussionState extends State<detail_discussion> {
                                 (context, index) {
                                   var replyData = replies[index].data()
                                       as Map<String, dynamic>;
-                                  final bool isAccepted = replyData['accepted'] == true;
-                                  final bool isOwner = user?.uid == replyData['uid'];
-                                  final DateTime replyTime = replyData['timestamp'] != null
-                                      ? (replyData['timestamp'] as Timestamp).toDate()
-                                      : DateTime.now();
-                                  final List<dynamic> likes = replyData['likes'] ?? [];
-                                  final bool isLiked = user != null && likes.contains(user!.uid);
-                                  final String replyId = replyData['replyId'] ?? '';
+                                  final bool isAccepted =
+                                      replyData['accepted'] == true;
+                                  final bool isOwner =
+                                      user?.uid == replyData['uid'];
+                                  final DateTime replyTime =
+                                      replyData['timestamp'] != null
+                                          ? (replyData['timestamp']
+                                                  as Timestamp)
+                                              .toDate()
+                                          : DateTime.now();
+                                  final List<dynamic> likes =
+                                      replyData['likes'] ?? [];
+                                  final bool isLiked =
+                                      user != null && likes.contains(user!.uid);
+                                  final String replyId =
+                                      replyData['replyId'] ?? '';
 
                                   // Thread line color cycling
                                   final threadColors = [
@@ -714,45 +753,35 @@ class _detail_discussionState extends State<detail_discussion> {
                                     const Color(0xFFCC5DE8),
                                     const Color(0xFF22B8CF),
                                   ];
-                                  final threadColor = threadColors[index % threadColors.length];
+                                  final threadColor =
+                                      threadColors[index % threadColors.length];
 
                                   return GestureDetector(
                                     onLongPress: () async {
                                       if (isOwner) {
-                                        bool? confirmDelete = await showDialog(
+                                        bool? confirmDelete =
+                                            await AppDialogs.showConfirmation(
+                                          context,
+                                          title: 'Delete Reply',
+                                          message:
+                                              'Are you sure you want to delete this reply?',
+                                          confirmText: 'Delete',
+                                          cancelText: 'Cancel',
                                           barrierDismissible: false,
-                                          context: context,
-                                          builder: (context) => AlertDialog(
-                                            backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
-                                            surfaceTintColor: Colors.transparent,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(20),
-                                            ),
-                                            title: Text("Delete Reply",
-                                              style: TextStyle(color: isDark ? Colors.white : Colors.black87)),
-                                            content: Text("Are you sure you want to delete this reply?",
-                                              style: TextStyle(color: isDark ? Colors.grey.shade300 : Colors.grey.shade600)),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(context, false),
-                                                child: Text("Cancel", style: TextStyle(color: Colors.grey.shade600)),
-                                              ),
-                                              TextButton(
-                                                onPressed: () => Navigator.pop(context, true),
-                                                style: TextButton.styleFrom(foregroundColor: AppTheme.errorColor),
-                                                child: const Text("Delete"),
-                                              ),
-                                            ],
-                                          ),
                                         );
                                         if (confirmDelete == true) {
                                           try {
                                             await FirebaseFirestore.instance
-                                                .collection('Discussions').doc(widget.docId)
-                                                .collection('Replies').doc(replyId).delete();
-                                            AppSnackbar.success('Reply deleted successfully!');
+                                                .collection('Discussions')
+                                                .doc(widget.docId)
+                                                .collection('Replies')
+                                                .doc(replyId)
+                                                .delete();
+                                            AppSnackbar.success(
+                                                'Reply deleted successfully!');
                                           } catch (e) {
-                                            AppSnackbar.error('Failed to delete reply: $e');
+                                            AppSnackbar.error(
+                                                'Failed to delete reply: $e');
                                           }
                                         }
                                         if (replyData['accepted'] == true) {
@@ -764,7 +793,8 @@ class _detail_discussionState extends State<detail_discussion> {
                                       margin: const EdgeInsets.only(bottom: 2),
                                       child: IntrinsicHeight(
                                         child: Row(
-                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
                                           children: [
                                             // ── Thread line ──
                                             GestureDetector(
@@ -777,8 +807,14 @@ class _detail_discussionState extends State<detail_discussion> {
                                                   decoration: BoxDecoration(
                                                     color: isAccepted
                                                         ? AppTheme.successColor
-                                                        : threadColor.withValues(alpha: isDark ? 0.5 : 0.35),
-                                                    borderRadius: BorderRadius.circular(2),
+                                                        : threadColor
+                                                            .withValues(
+                                                                alpha: isDark
+                                                                    ? 0.5
+                                                                    : 0.35),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            2),
                                                   ),
                                                 ),
                                               ),
@@ -788,35 +824,75 @@ class _detail_discussionState extends State<detail_discussion> {
                                             // ── Reply content area ──
                                             Expanded(
                                               child: Container(
-                                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 10,
+                                                        horizontal: 4),
                                                 decoration: BoxDecoration(
                                                   border: Border(
                                                     bottom: BorderSide(
-                                                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+                                                      color: isDark
+                                                          ? Colors.grey.shade800
+                                                          : Colors
+                                                              .grey.shade200,
                                                       width: 0.5,
                                                     ),
                                                   ),
                                                 ),
                                                 child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     // ── Accepted badge ──
                                                     if (isAccepted)
                                                       Container(
-                                                        margin: const EdgeInsets.only(bottom: 8),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                                        decoration: BoxDecoration(
-                                                          color: AppTheme.successColor.withValues(alpha: isDark ? 0.15 : 0.08),
-                                                          borderRadius: BorderRadius.circular(6),
-                                                          border: Border.all(color: AppTheme.successColor.withValues(alpha: 0.3)),
+                                                        margin: const EdgeInsets
+                                                            .only(bottom: 8),
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                horizontal: 10,
+                                                                vertical: 4),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: AppTheme
+                                                              .successColor
+                                                              .withValues(
+                                                                  alpha: isDark
+                                                                      ? 0.15
+                                                                      : 0.08),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(6),
+                                                          border: Border.all(
+                                                              color: AppTheme
+                                                                  .successColor
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.3)),
                                                         ),
                                                         child: Row(
-                                                          mainAxisSize: MainAxisSize.min,
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
                                                           children: [
-                                                            Icon(Icons.check_circle, color: AppTheme.successColor, size: 14),
-                                                            const SizedBox(width: 4),
-                                                            Text('Accepted Answer',
-                                                              style: TextStyle(color: AppTheme.successColor, fontWeight: FontWeight.w700, fontSize: 11)),
+                                                            Icon(
+                                                                Icons
+                                                                    .check_circle,
+                                                                color: AppTheme
+                                                                    .successColor,
+                                                                size: 14),
+                                                            const SizedBox(
+                                                                width: 4),
+                                                            Text(
+                                                                'Accepted Answer',
+                                                                style: TextStyle(
+                                                                    color: AppTheme
+                                                                        .successColor,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w700,
+                                                                    fontSize:
+                                                                        11)),
                                                           ],
                                                         ),
                                                       ),
@@ -824,55 +900,178 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     // ── User header ──
                                                     Row(
                                                       children: [
-                                                        FutureBuilder<String?>(
-                                                          future: _fetchUserProfileImage(replyData['uid']),
-                                                          builder: (context, snapshot) {
-                                                            if (snapshot.connectionState == ConnectionState.waiting) {
-                                                              return CircleAvatar(radius: 14, backgroundColor: isDark ? Colors.grey.shade700 : Colors.grey.shade300);
-                                                            } else if (snapshot.hasError || snapshot.data == null || snapshot.data!.isEmpty) {
-                                                              return CircleAvatar(
-                                                                radius: 14,
-                                                                backgroundColor: isDark ? AppTheme.darkSurface : Colors.grey.shade200,
-                                                                child: Text(
-                                                                  replyData['user_name']?.isNotEmpty == true ? replyData['user_name'][0].toUpperCase() : '?',
-                                                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87),
-                                                                ),
-                                                              );
-                                                            } else {
-                                                              return CircleAvatar(radius: 14, backgroundImage: NetworkImage(snapshot.data!));
-                                                            }
-                                                          },
+                                                        ScrollFadeIn(
+                                                          duration:
+                                                              const Duration(
+                                                                  milliseconds:
+                                                                      320),
+                                                          slideOffset: 10,
+                                                          delay: Duration(
+                                                              milliseconds:
+                                                                  (index % 6) *
+                                                                      35),
+                                                          child: FutureBuilder<
+                                                              String?>(
+                                                            future:
+                                                                _fetchUserProfileImage(
+                                                                    replyData[
+                                                                        'uid']),
+                                                            builder: (context,
+                                                                snapshot) {
+                                                              if (snapshot
+                                                                      .connectionState ==
+                                                                  ConnectionState
+                                                                      .waiting) {
+                                                                return CircleAvatar(
+                                                                    radius: 14,
+                                                                    backgroundColor: isDark
+                                                                        ? Colors
+                                                                            .grey
+                                                                            .shade700
+                                                                        : Colors
+                                                                            .grey
+                                                                            .shade300);
+                                                              } else if (snapshot
+                                                                      .hasError ||
+                                                                  snapshot.data ==
+                                                                      null ||
+                                                                  snapshot.data!
+                                                                      .isEmpty) {
+                                                                return CircleAvatar(
+                                                                  radius: 14,
+                                                                  backgroundColor: isDark
+                                                                      ? AppTheme
+                                                                          .darkSurface
+                                                                      : Colors
+                                                                          .grey
+                                                                          .shade200,
+                                                                  child: Text(
+                                                                    replyData['user_name']?.isNotEmpty ==
+                                                                            true
+                                                                        ? replyData['user_name'][0]
+                                                                            .toUpperCase()
+                                                                        : '?',
+                                                                    style: TextStyle(
+                                                                        fontSize:
+                                                                            11,
+                                                                        fontWeight:
+                                                                            FontWeight
+                                                                                .bold,
+                                                                        color: isDark
+                                                                            ? Colors.white
+                                                                            : Colors.black87),
+                                                                  ),
+                                                                );
+                                                              } else {
+                                                                return CircleAvatar(
+                                                                    radius: 14,
+                                                                    backgroundImage:
+                                                                        NetworkImage(
+                                                                            snapshot.data!));
+                                                              }
+                                                            },
+                                                          ),
                                                         ),
-                                                        const SizedBox(width: 8),
-                                                        Text(replyData['user_name'] ?? 'Unknown',
-                                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
-                                                        const SizedBox(width: 6),
-                                                        Text('•', style: TextStyle(fontSize: 10, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400)),
-                                                        const SizedBox(width: 6),
-                                                        Text(_relativeTime(replyTime),
-                                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                                                        const SizedBox(
+                                                            width: 8),
+                                                        Text(
+                                                            replyData[
+                                                                    'user_name'] ??
+                                                                'Unknown',
+                                                            style: TextStyle(
+                                                                fontSize: 13,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: isDark
+                                                                    ? Colors
+                                                                        .white
+                                                                    : Colors
+                                                                        .black87)),
+                                                        const SizedBox(
+                                                            width: 6),
+                                                        Text('•',
+                                                            style: TextStyle(
+                                                                fontSize: 10,
+                                                                color: isDark
+                                                                    ? Colors
+                                                                        .grey
+                                                                        .shade500
+                                                                    : Colors
+                                                                        .grey
+                                                                        .shade400)),
+                                                        const SizedBox(
+                                                            width: 6),
+                                                        Text(
+                                                            _relativeTime(
+                                                                replyTime),
+                                                            style: TextStyle(
+                                                                fontSize: 12,
+                                                                color: Colors
+                                                                    .grey
+                                                                    .shade500)),
                                                         const Spacer(),
                                                         FutureBuilder<String?>(
-                                                          future: _fetchUserXP(replyData['uid']),
-                                                          builder: (context, snapshot) {
-                                                            if (snapshot.hasData && snapshot.data != null) {
+                                                          future: _fetchUserXP(
+                                                              replyData['uid']),
+                                                          builder: (context,
+                                                              snapshot) {
+                                                            if (snapshot
+                                                                    .hasData &&
+                                                                snapshot.data !=
+                                                                    null) {
                                                               return Container(
-                                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                                decoration: BoxDecoration(
-                                                                  color: AppTheme.primaryColor.withValues(alpha: isDark ? 0.2 : 0.1),
-                                                                  borderRadius: BorderRadius.circular(10),
+                                                                padding: const EdgeInsets
+                                                                    .symmetric(
+                                                                    horizontal:
+                                                                        6,
+                                                                    vertical:
+                                                                        2),
+                                                                decoration:
+                                                                    BoxDecoration(
+                                                                  color: AppTheme
+                                                                      .primaryColor
+                                                                      .withValues(
+                                                                          alpha: isDark
+                                                                              ? 0.2
+                                                                              : 0.1),
+                                                                  borderRadius:
+                                                                      BorderRadius
+                                                                          .circular(
+                                                                              10),
                                                                 ),
-                                                                child: Text('${snapshot.data} XP',
-                                                                  style: TextStyle(color: AppTheme.primaryColor, fontSize: 10, fontWeight: FontWeight.w600)),
+                                                                child: Text(
+                                                                    '${snapshot.data} XP',
+                                                                    style: TextStyle(
+                                                                        color: AppTheme
+                                                                            .primaryColor,
+                                                                        fontSize:
+                                                                            10,
+                                                                        fontWeight:
+                                                                            FontWeight.w600)),
                                                               );
                                                             }
-                                                            return const SizedBox.shrink();
+                                                            return const SizedBox
+                                                                .shrink();
                                                           },
                                                         ),
                                                         if (isOwner)
                                                           Padding(
-                                                            padding: const EdgeInsets.only(left: 4),
-                                                            child: Icon(Icons.more_horiz, size: 16, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .only(
+                                                                    left: 4),
+                                                            child: Icon(
+                                                                Icons
+                                                                    .more_horiz,
+                                                                size: 16,
+                                                                color: isDark
+                                                                    ? Colors
+                                                                        .grey
+                                                                        .shade500
+                                                                    : Colors
+                                                                        .grey
+                                                                        .shade400),
                                                           ),
                                                       ],
                                                     ),
@@ -881,8 +1080,21 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     // ── Reply text ──
                                                     RichText(
                                                       text: TextSpan(
-                                                        style: TextStyle(color: isDark ? Colors.grey.shade200 : Colors.black87, fontSize: 14, height: 1.5),
-                                                        children: _buildDescription(replyData['reply'] ?? '', Theme.of(context)),
+                                                        style: TextStyle(
+                                                            color: isDark
+                                                                ? Colors.grey
+                                                                    .shade200
+                                                                : Colors
+                                                                    .black87,
+                                                            fontSize: 14,
+                                                            height: 1.5),
+                                                        children:
+                                                            _buildDescription(
+                                                                replyData[
+                                                                        'reply'] ??
+                                                                    '',
+                                                                Theme.of(
+                                                                    context)),
                                                       ),
                                                     ),
                                                     const SizedBox(height: 10),
@@ -894,92 +1106,269 @@ class _detail_discussionState extends State<detail_discussion> {
                                                       children: [
                                                         // ── Like button ──
                                                         _buildActionChip(
-                                                          icon: isLiked ? Icons.favorite : Icons.favorite_border,
-                                                          label: likes.isEmpty ? 'Like' : '${likes.length}',
-                                                          color: isLiked ? const Color(0xFFFF6B6B) : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                                          icon: isLiked
+                                                              ? Icons.favorite
+                                                              : Icons
+                                                                  .favorite_border,
+                                                          label: likes.isEmpty
+                                                              ? 'Like'
+                                                              : '${likes.length}',
+                                                          color: isLiked
+                                                              ? const Color(
+                                                                  0xFFFF6B6B)
+                                                              : (isDark
+                                                                  ? Colors.grey
+                                                                      .shade400
+                                                                  : Colors.grey
+                                                                      .shade600),
                                                           isDark: isDark,
-                                                          onTap: () => _toggleLike(replyId, likes),
+                                                          onTap: () =>
+                                                              _toggleLike(
+                                                                  replyId,
+                                                                  likes),
                                                         ),
-                                                        const SizedBox(width: 8),
+                                                        const SizedBox(
+                                                            width: 8),
 
                                                         // ── Reply button ──
                                                         _buildActionChip(
-                                                          icon: Icons.reply_rounded,
+                                                          icon: Icons
+                                                              .reply_rounded,
                                                           label: 'Reply',
-                                                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                                          color: isDark
+                                                              ? Colors
+                                                                  .grey.shade400
+                                                              : Colors.grey
+                                                                  .shade600,
                                                           isDark: isDark,
                                                           onTap: () {
-                                                            setState(() {
-                                                              if (_replyingToId == replyId) {
-                                                                _replyingToId = null;
-                                                                _replyingToUserName = null;
-                                                              } else {
-                                                                _replyingToId = replyId;
-                                                                _replyingToUserName = replyData['user_name'] ?? 'Unknown';
-                                                                _nestedReplyController.clear();
-                                                              }
-                                                            });
+                                                            if (_activeReplyId
+                                                                    .value ==
+                                                                replyId) {
+                                                              _activeReplyId
+                                                                  .value = null;
+                                                              _activeReplyUserName
+                                                                  .value = null;
+                                                            } else {
+                                                              _activeReplyId
+                                                                      .value =
+                                                                  replyId;
+                                                              _activeReplyUserName
+                                                                      .value =
+                                                                  replyData[
+                                                                          'user_name'] ??
+                                                                      'Unknown';
+                                                              _nestedReplyController
+                                                                  .clear();
+                                                            }
                                                           },
                                                         ),
-                                                        const SizedBox(width: 8),
+                                                        const SizedBox(
+                                                            width: 8),
 
                                                         // ── Code button ──
-                                                        if (replyData['code'].toString().isNotEmpty)
+                                                        if (replyData['code']
+                                                            .toString()
+                                                            .isNotEmpty)
                                                           _buildActionChip(
-                                                            icon: Icons.code_rounded,
+                                                            icon: Icons
+                                                                .code_rounded,
                                                             label: 'Code',
-                                                            color: AppTheme.primaryColor,
+                                                            color: AppTheme
+                                                                .primaryColor,
                                                             isDark: isDark,
                                                             onTap: () {
+                                                              final codeText =
+                                                                  replyData['code']
+                                                                          as String? ??
+                                                                      '';
+                                                              var isCodePreviewLoading =
+                                                                  true;
+                                                              var shimmerScheduled =
+                                                                  false;
                                                               showModalBottomSheet(
-                                                                context: context,
-                                                                isScrollControlled: true,
-                                                                backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
-                                                                shape: const RoundedRectangleBorder(
-                                                                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                                                context:
+                                                                    context,
+                                                                isScrollControlled:
+                                                                    true,
+                                                                backgroundColor: isDark
+                                                                    ? AppTheme
+                                                                        .darkCard
+                                                                    : theme
+                                                                        .colorScheme
+                                                                        .surface,
+                                                                shape:
+                                                                    const RoundedRectangleBorder(
+                                                                  borderRadius:
+                                                                      BorderRadius.vertical(
+                                                                          top: Radius.circular(
+                                                                              20)),
                                                                 ),
-                                                                builder: (ctx) => Padding(
-                                                                  padding: EdgeInsets.only(top: 16, left: 16, right: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-                                                                  child: Column(
-                                                                    mainAxisSize: MainAxisSize.min,
-                                                                    children: [
-                                                                      Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
-                                                                      const SizedBox(height: 16),
-                                                                      Row(children: [
-                                                                        Icon(Icons.code_rounded, color: AppTheme.primaryColor, size: 20),
-                                                                        const SizedBox(width: 8),
-                                                                        Text('Code Snippet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
-                                                                        const Spacer(),
-                                                                        IconButton(
-                                                                          onPressed: () { Clipboard.setData(ClipboardData(text: replyData['code'] ?? '')); AppSnackbar.success('Copied!'); },
-                                                                          icon: Icon(Icons.copy_rounded, size: 18, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                                                                builder: (ctx) {
+                                                                  final bottomTheme =
+                                                                      Theme.of(
+                                                                          ctx);
+                                                                  final cs =
+                                                                      bottomTheme
+                                                                          .colorScheme;
+
+                                                                  return StatefulBuilder(
+                                                                    builder:
+                                                                        (context,
+                                                                            setModalState) {
+                                                                      if (isCodePreviewLoading &&
+                                                                          !shimmerScheduled) {
+                                                                        shimmerScheduled =
+                                                                            true;
+                                                                        Future
+                                                                            .delayed(
+                                                                          const Duration(
+                                                                              milliseconds: 550),
+                                                                          () {
+                                                                            if (context.mounted) {
+                                                                              setModalState(() => isCodePreviewLoading = false);
+                                                                            }
+                                                                          },
+                                                                        );
+                                                                      }
+
+                                                                      return SafeArea(
+                                                                        top:
+                                                                            false,
+                                                                        child:
+                                                                            Padding(
+                                                                          padding:
+                                                                              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+                                                                          child:
+                                                                              Container(
+                                                                            constraints:
+                                                                                BoxConstraints(
+                                                                              maxHeight: MediaQuery.of(ctx).size.height * 0.78,
+                                                                            ),
+                                                                            decoration:
+                                                                                BoxDecoration(
+                                                                              color: bottomTheme.dialogTheme.backgroundColor ?? (isDark ? AppTheme.darkCard : bottomTheme.colorScheme.surface),
+                                                                              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                                                                              border: Border.all(
+                                                                                color: cs.outlineVariant.withValues(alpha: 0.35),
+                                                                                width: 1,
+                                                                              ),
+                                                                            ),
+                                                                            child:
+                                                                                Column(
+                                                                              mainAxisSize: MainAxisSize.min,
+                                                                              children: [
+                                                                                const SizedBox(height: 8),
+                                                                                Container(
+                                                                                  width: 44,
+                                                                                  height: 4,
+                                                                                  decoration: BoxDecoration(
+                                                                                    color: cs.outlineVariant,
+                                                                                    borderRadius: BorderRadius.circular(6),
+                                                                                  ),
+                                                                                ),
+                                                                                Padding(
+                                                                                  padding: const EdgeInsets.fromLTRB(14, 12, 10, 6),
+                                                                                  child: Row(
+                                                                                    children: [
+                                                                                      Container(
+                                                                                        padding: const EdgeInsets.all(8),
+                                                                                        decoration: BoxDecoration(
+                                                                                          color: cs.primary.withValues(alpha: 0.12),
+                                                                                          borderRadius: BorderRadius.circular(10),
+                                                                                        ),
+                                                                                        child: Icon(
+                                                                                          Icons.code_rounded,
+                                                                                          color: cs.primary,
+                                                                                          size: 18,
+                                                                                        ),
+                                                                                      ),
+                                                                                      const SizedBox(width: 10),
+                                                                                      Expanded(
+                                                                                        child: Column(
+                                                                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                                                                          children: [
+                                                                                            Text(
+                                                                                              'Code Snippet',
+                                                                                              style: bottomTheme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                                                                                            ),
+                                                                                            Text(
+                                                                                              '${codeText.split('\n').length} lines',
+                                                                                              style: bottomTheme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                                                                                            ),
+                                                                                          ],
+                                                                                        ),
+                                                                                      ),
+                                                                                      IconButton(
+                                                                                        tooltip: 'Copy code',
+                                                                                        onPressed: () {
+                                                                                          Clipboard.setData(ClipboardData(text: codeText));
+                                                                                          AppSnackbar.success('Code copied');
+                                                                                        },
+                                                                                        icon: Icon(
+                                                                                          Icons.copy_rounded,
+                                                                                          size: 18,
+                                                                                          color: cs.onSurfaceVariant,
+                                                                                        ),
+                                                                                      ),
+                                                                                    ],
+                                                                                  ),
+                                                                                ),
+                                                                                Flexible(
+                                                                                  child: AnimatedSwitcher(
+                                                                                    duration: const Duration(milliseconds: 220),
+                                                                                    child: isCodePreviewLoading
+                                                                                        ? _buildCodeSnippetShimmer(bottomTheme, isDark)
+                                                                                        : SingleChildScrollView(
+                                                                                            padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                                                                                            child: Container(
+                                                                                              width: double.infinity,
+                                                                                              padding: const EdgeInsets.all(14),
+                                                                                              decoration: BoxDecoration(
+                                                                                                color: isDark ? AppTheme.darkSurface : cs.surfaceContainerHighest.withValues(alpha: 0.45),
+                                                                                                borderRadius: BorderRadius.circular(14),
+                                                                                                border: Border.all(
+                                                                                                  color: cs.outlineVariant.withValues(alpha: 0.45),
+                                                                                                ),
+                                                                                              ),
+                                                                                              child: MarkdownBody(
+                                                                                                data: "```\n$codeText\n```",
+                                                                                                selectable: true,
+                                                                                                styleSheet: AppMarkdownStyles.getCodeStyle(context),
+                                                                                              ),
+                                                                                            ),
+                                                                                          ),
+                                                                                  ),
+                                                                                ),
+                                                                              ],
+                                                                            ),
+                                                                          ),
                                                                         ),
-                                                                      ]),
-                                                                      const SizedBox(height: 12),
-                                                                      Container(
-                                                                        width: double.infinity,
-                                                                        padding: const EdgeInsets.all(16),
-                                                                        decoration: BoxDecoration(
-                                                                          color: isDark ? AppTheme.darkSurface : Colors.grey.shade100,
-                                                                          borderRadius: BorderRadius.circular(12),
-                                                                          border: Border.all(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
-                                                                        ),
-                                                                        child: MarkdownBody(data: "```\n${replyData['code'] ?? ''}\n```", styleSheet: AppMarkdownStyles.getCodeStyle(context)),
-                                                                      ),
-                                                                      const SizedBox(height: 16),
-                                                                    ],
-                                                                  ),
-                                                                ),
+                                                                      );
+                                                                    },
+                                                                  );
+                                                                },
                                                               );
                                                             },
                                                           )
                                                         else if (isOwner)
                                                           _buildActionChip(
-                                                            icon: Icons.attach_file_rounded,
+                                                            icon: Icons
+                                                                .attach_file_rounded,
                                                             label: 'Code',
-                                                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                                            color: isDark
+                                                                ? Colors.grey
+                                                                    .shade400
+                                                                : Colors.grey
+                                                                    .shade600,
                                                             isDark: isDark,
-                                                            onTap: () => Get.to(() => attachcode(docId: replyId, discussionId: widget.docId)),
+                                                            onTap: () => Get.to(
+                                                                () => attachcode(
+                                                                    docId:
+                                                                        replyId,
+                                                                    discussionId:
+                                                                        widget
+                                                                            .docId)),
                                                           ),
 
                                                         const Spacer(),
@@ -987,29 +1376,63 @@ class _detail_discussionState extends State<detail_discussion> {
                                                         // ── Accept button ──
                                                         if (!isAccepted)
                                                           FutureBuilder<User?>(
-                                                            future: FirebaseAuth.instance.authStateChanges().first,
-                                                            builder: (context, snapshot) {
-                                                              if (snapshot.hasData && snapshot.data!.uid == widget.creatorId && user?.uid != replyData['uid']) {
+                                                            future: FirebaseAuth
+                                                                .instance
+                                                                .authStateChanges()
+                                                                .first,
+                                                            builder: (context,
+                                                                snapshot) {
+                                                              if (snapshot
+                                                                      .hasData &&
+                                                                  snapshot.data!
+                                                                          .uid ==
+                                                                      widget
+                                                                          .creatorId &&
+                                                                  user?.uid !=
+                                                                      replyData[
+                                                                          'uid']) {
                                                                 return _buildActionChip(
-                                                                  icon: Icons.check_circle_outline_rounded,
-                                                                  label: 'Accept',
-                                                                  color: AppTheme.successColor,
-                                                                  isDark: isDark,
-                                                                  onTap: () async {
+                                                                  icon: Icons
+                                                                      .check_circle_outline_rounded,
+                                                                  label:
+                                                                      'Accept',
+                                                                  color: AppTheme
+                                                                      .successColor,
+                                                                  isDark:
+                                                                      isDark,
+                                                                  onTap:
+                                                                      () async {
                                                                     try {
-                                                                      await FirebaseFirestore.instance
-                                                                          .collection('Discussions').doc(widget.docId)
-                                                                          .collection('Replies').doc(replyId)
-                                                                          .update({'accepted': true});
-                                                                      updateXP(replyData['uid']);
-                                                                      AppSnackbar.success('Reply accepted!');
+                                                                      await FirebaseFirestore
+                                                                          .instance
+                                                                          .collection(
+                                                                              'Discussions')
+                                                                          .doc(widget
+                                                                              .docId)
+                                                                          .collection(
+                                                                              'Replies')
+                                                                          .doc(
+                                                                              replyId)
+                                                                          .update({
+                                                                        'accepted':
+                                                                            true
+                                                                      });
+                                                                      updateXP(
+                                                                          replyData[
+                                                                              'uid']);
+                                                                      AppSnackbar
+                                                                          .success(
+                                                                              'Reply accepted!');
                                                                     } catch (e) {
-                                                                      AppSnackbar.error('Failed to accept: $e');
+                                                                      AppSnackbar
+                                                                          .error(
+                                                                              'Failed to accept: $e');
                                                                     }
                                                                   },
                                                                 );
                                                               }
-                                                              return const SizedBox.shrink();
+                                                              return const SizedBox
+                                                                  .shrink();
                                                             },
                                                           ),
                                                       ],
@@ -1018,164 +1441,369 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     // ══════════════════════════════════════
                                                     // ── INLINE NESTED REPLY INPUT ──
                                                     // ══════════════════════════════════════
-                                                    if (_replyingToId == replyId)
-                                                      Container(
-                                                        margin: const EdgeInsets.only(top: 10),
-                                                        padding: const EdgeInsets.all(10),
-                                                        decoration: BoxDecoration(
-                                                          color: isDark ? AppTheme.darkSurface : Colors.grey.shade50,
-                                                          borderRadius: BorderRadius.circular(12),
-                                                          border: Border.all(
-                                                            color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                                                    ValueListenableBuilder<
+                                                        String?>(
+                                                      valueListenable:
+                                                          _activeReplyId,
+                                                      builder: (context,
+                                                          activeReplyId, _) {
+                                                        if (activeReplyId !=
+                                                            replyId) {
+                                                          return const SizedBox
+                                                              .shrink();
+                                                        }
+                                                        return Container(
+                                                          margin:
+                                                              const EdgeInsets
+                                                                  .only(
+                                                                  top: 10),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .all(10),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: isDark
+                                                                ? AppTheme
+                                                                    .darkSurface
+                                                                : Colors.grey
+                                                                    .shade50,
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        12),
+                                                            border: Border.all(
+                                                              color: isDark
+                                                                  ? Colors.grey
+                                                                      .shade700
+                                                                  : Colors.grey
+                                                                      .shade300,
+                                                            ),
                                                           ),
-                                                        ),
-                                                        child: Column(
-                                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                                          children: [
-                                                            Row(
-                                                              children: [
-                                                                Icon(Icons.reply, size: 14, color: AppTheme.primaryColor),
-                                                                const SizedBox(width: 6),
-                                                                Text('Replying to ',
-                                                                  style: TextStyle(fontSize: 12, color: isDark ? Colors.grey.shade400 : Colors.grey.shade600)),
-                                                                Text(_replyingToUserName ?? '',
-                                                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
-                                                                const Spacer(),
-                                                                GestureDetector(
-                                                                  onTap: () => setState(() { _replyingToId = null; _replyingToUserName = null; }),
-                                                                  child: Icon(Icons.close, size: 16, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                            const SizedBox(height: 8),
-                                                            Row(
-                                                              children: [
-                                                                Expanded(
-                                                                  child: TextField(
-                                                                    controller: _nestedReplyController,
-                                                                    maxLines: 2,
-                                                                    minLines: 1,
-                                                                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white : Colors.black87),
-                                                                    decoration: InputDecoration(
-                                                                      hintText: 'Write a reply...',
-                                                                      hintStyle: TextStyle(fontSize: 13, color: isDark ? Colors.grey.shade500 : Colors.grey.shade400),
-                                                                      border: InputBorder.none,
-                                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                                                      isDense: true,
+                                                          child: Column(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              Row(
+                                                                children: [
+                                                                  Icon(
+                                                                      Icons
+                                                                          .reply,
+                                                                      size: 14,
+                                                                      color: AppTheme
+                                                                          .primaryColor),
+                                                                  const SizedBox(
+                                                                      width: 6),
+                                                                  Text(
+                                                                      'Replying to ',
+                                                                      style: TextStyle(
+                                                                          fontSize:
+                                                                              12,
+                                                                          color: isDark
+                                                                              ? Colors.grey.shade400
+                                                                              : Colors.grey.shade600)),
+                                                                  Text(
+                                                                      _activeReplyUserName
+                                                                              .value ??
+                                                                          '',
+                                                                      style: TextStyle(
+                                                                          fontSize:
+                                                                              12,
+                                                                          fontWeight: FontWeight
+                                                                              .w600,
+                                                                          color:
+                                                                              AppTheme.primaryColor)),
+                                                                  const Spacer(),
+                                                                  GestureDetector(
+                                                                    onTap: () {
+                                                                      _activeReplyId
+                                                                              .value =
+                                                                          null;
+                                                                      _activeReplyUserName
+                                                                              .value =
+                                                                          null;
+                                                                    },
+                                                                    child: Icon(
+                                                                        Icons
+                                                                            .close,
+                                                                        size:
+                                                                            16,
+                                                                        color: isDark
+                                                                            ? Colors.grey.shade500
+                                                                            : Colors.grey.shade400),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                              const SizedBox(
+                                                                  height: 8),
+                                                              Row(
+                                                                children: [
+                                                                  Expanded(
+                                                                    child:
+                                                                        TextField(
+                                                                      controller:
+                                                                          _nestedReplyController,
+                                                                      maxLines:
+                                                                          2,
+                                                                      minLines:
+                                                                          1,
+                                                                      style: TextStyle(
+                                                                          fontSize:
+                                                                              13,
+                                                                          color: isDark
+                                                                              ? Colors.white
+                                                                              : Colors.black87),
+                                                                      decoration:
+                                                                          InputDecoration(
+                                                                        hintText:
+                                                                            'Write a reply...',
+                                                                        hintStyle: TextStyle(
+                                                                            fontSize:
+                                                                                13,
+                                                                            color: isDark
+                                                                                ? Colors.grey.shade500
+                                                                                : Colors.grey.shade400),
+                                                                        border:
+                                                                            InputBorder.none,
+                                                                        contentPadding: const EdgeInsets
+                                                                            .symmetric(
+                                                                            horizontal:
+                                                                                12,
+                                                                            vertical:
+                                                                                8),
+                                                                        isDense:
+                                                                            true,
+                                                                      ),
                                                                     ),
                                                                   ),
-                                                                ),
-                                                                const SizedBox(width: 8),
-                                                                GestureDetector(
-                                                                  onTap: _nestedReplyLoading ? null : () => _addNestedReply(replyId),
-                                                                  child: Container(
-                                                                    padding: const EdgeInsets.all(8),
-                                                                    decoration: BoxDecoration(
-                                                                      gradient: AppTheme.primaryGradient,
-                                                                      shape: BoxShape.circle,
+                                                                  const SizedBox(
+                                                                      width: 8),
+                                                                  GestureDetector(
+                                                                    onTap: _nestedReplyLoading
+                                                                        ? null
+                                                                        : () =>
+                                                                            _addNestedReply(replyId),
+                                                                    child:
+                                                                        Container(
+                                                                      padding:
+                                                                          const EdgeInsets
+                                                                              .all(
+                                                                              8),
+                                                                      decoration:
+                                                                          BoxDecoration(
+                                                                        gradient:
+                                                                            AppTheme.primaryGradient,
+                                                                        shape: BoxShape
+                                                                            .circle,
+                                                                      ),
+                                                                      child: _nestedReplyLoading
+                                                                          ? const SizedBox(
+                                                                              width: 16,
+                                                                              height: 16,
+                                                                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                                                          : const Icon(Icons.send, color: Colors.white, size: 16),
                                                                     ),
-                                                                    child: _nestedReplyLoading
-                                                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                                                        : const Icon(Icons.send, color: Colors.white, size: 16),
                                                                   ),
-                                                                ),
-                                                              ],
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
+                                                                ],
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
 
                                                     // ══════════════════════════════════════
                                                     // ── NESTED SUB-REPLIES (Gemini-style) ──
                                                     // ══════════════════════════════════════
-                                                    StreamBuilder<QuerySnapshot>(
-                                                      stream: FirebaseFirestore.instance
-                                                          .collection('Discussions')
+                                                    StreamBuilder<
+                                                        QuerySnapshot>(
+                                                      stream: FirebaseFirestore
+                                                          .instance
+                                                          .collection(
+                                                              'Discussions')
                                                           .doc(widget.docId)
                                                           .collection('Replies')
                                                           .doc(replyId)
-                                                          .collection('SubReplies')
+                                                          .collection(
+                                                              'SubReplies')
                                                           .orderBy('timestamp')
                                                           .snapshots(),
-                                                      builder: (context, subSnapshot) {
-                                                        if (!subSnapshot.hasData || subSnapshot.data!.docs.isEmpty) {
-                                                          return const SizedBox.shrink();
+                                                      builder: (context,
+                                                          subSnapshot) {
+                                                        if (!subSnapshot
+                                                                .hasData ||
+                                                            subSnapshot.data!
+                                                                .docs.isEmpty) {
+                                                          return const SizedBox
+                                                              .shrink();
                                                         }
-                                                        final subReplies = subSnapshot.data!.docs;
+                                                        final subReplies =
+                                                            subSnapshot
+                                                                .data!.docs;
                                                         return Container(
-                                                          margin: const EdgeInsets.only(top: 10, left: 16),
+                                                          margin:
+                                                              const EdgeInsets
+                                                                  .only(
+                                                                  top: 10,
+                                                                  left: 16),
                                                           child: Column(
-                                                            children: subReplies.map((subDoc) {
-                                                              final sub = subDoc.data() as Map<String, dynamic>;
-                                                              final subLikes = (sub['likes'] as List<dynamic>?) ?? [];
-                                                              final subIsLiked = user != null && subLikes.contains(user!.uid);
-                                                              final subTime = sub['timestamp'] != null
-                                                                  ? (sub['timestamp'] as Timestamp).toDate()
-                                                                  : DateTime.now();
+                                                            children: subReplies
+                                                                .map((subDoc) {
+                                                              final sub = subDoc
+                                                                      .data()
+                                                                  as Map<String,
+                                                                      dynamic>;
+                                                              final subLikes =
+                                                                  (sub['likes']
+                                                                          as List<
+                                                                              dynamic>?) ??
+                                                                      [];
+                                                              final subIsLiked = user !=
+                                                                      null &&
+                                                                  subLikes.contains(
+                                                                      user!
+                                                                          .uid);
+                                                              final subTime = sub[
+                                                                          'timestamp'] !=
+                                                                      null
+                                                                  ? (sub['timestamp']
+                                                                          as Timestamp)
+                                                                      .toDate()
+                                                                  : DateTime
+                                                                      .now();
                                                               return Container(
-                                                                margin: const EdgeInsets.only(bottom: 8),
-                                                                padding: const EdgeInsets.all(12),
-                                                                decoration: BoxDecoration(
-                                                                  color: isDark 
-                                                                      ? AppTheme.primaryColor.withValues(alpha: 0.12)
-                                                                      : Colors.blue.withValues(alpha: 0.05),
-                                                                  borderRadius: const BorderRadius.only(
-                                                                    topRight: Radius.circular(16),
-                                                                    bottomRight: Radius.circular(16),
-                                                                    bottomLeft: Radius.circular(16),
-                                                                    topLeft: Radius.circular(4),
+                                                                margin:
+                                                                    const EdgeInsets
+                                                                        .only(
+                                                                        bottom:
+                                                                            8),
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .all(
+                                                                        12),
+                                                                decoration:
+                                                                    BoxDecoration(
+                                                                  color: isDark
+                                                                      ? AppTheme
+                                                                          .primaryColor
+                                                                          .withValues(
+                                                                              alpha:
+                                                                                  0.12)
+                                                                      : Colors
+                                                                          .blue
+                                                                          .withValues(
+                                                                              alpha: 0.05),
+                                                                  borderRadius:
+                                                                      const BorderRadius
+                                                                          .only(
+                                                                    topRight: Radius
+                                                                        .circular(
+                                                                            16),
+                                                                    bottomRight:
+                                                                        Radius.circular(
+                                                                            16),
+                                                                    bottomLeft:
+                                                                        Radius.circular(
+                                                                            16),
+                                                                    topLeft: Radius
+                                                                        .circular(
+                                                                            4),
                                                                   ),
-                                                                  border: Border.all(
-                                                                    color: AppTheme.primaryColor.withValues(alpha: isDark ? 0.3 : 0.15),
+                                                                  border: Border
+                                                                      .all(
+                                                                    color: AppTheme
+                                                                        .primaryColor
+                                                                        .withValues(
+                                                                            alpha: isDark
+                                                                                ? 0.3
+                                                                                : 0.15),
                                                                     width: 0.5,
                                                                   ),
                                                                 ),
                                                                 child: Column(
-                                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                                  crossAxisAlignment:
+                                                                      CrossAxisAlignment
+                                                                          .start,
                                                                   children: [
                                                                     // Sub-reply header
                                                                     Row(
                                                                       children: [
-                                                                        FutureBuilder<String?>(
-                                                                          future: _fetchUserProfileImage(sub['uid'] ?? ''),
-                                                                          builder: (context, snap) {
+                                                                        FutureBuilder<
+                                                                            String?>(
+                                                                          future:
+                                                                              _fetchUserProfileImage(sub['uid'] ?? ''),
+                                                                          builder:
+                                                                              (context, snap) {
                                                                             return CircleAvatar(
-                                                                              radius: 9, 
-                                                                              backgroundImage: snap.hasData && snap.data != null && snap.data!.isNotEmpty 
-                                                                                  ? NetworkImage(snap.data!) 
-                                                                                  : null,
-                                                                              child: (!snap.hasData || snap.data == null || snap.data!.isEmpty)
-                                                                                  ? Text(sub['user_name']?[0].toUpperCase() ?? '?', style: const TextStyle(fontSize: 8))
-                                                                                  : null,
+                                                                              radius: 9,
+                                                                              backgroundImage: snap.hasData && snap.data != null && snap.data!.isNotEmpty ? NetworkImage(snap.data!) : null,
+                                                                              child: (!snap.hasData || snap.data == null || snap.data!.isEmpty) ? Text(sub['user_name']?[0].toUpperCase() ?? '?', style: const TextStyle(fontSize: 8)) : null,
                                                                             );
                                                                           },
                                                                         ),
-                                                                        const SizedBox(width: 8),
-                                                                        Text(sub['user_name'] ?? 'Unknown',
-                                                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87)),
-                                                                        const SizedBox(width: 6),
-                                                                        Text(_relativeTime(subTime),
-                                                                          style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                                                                        const SizedBox(
+                                                                            width:
+                                                                                8),
+                                                                        Text(
+                                                                            sub['user_name'] ??
+                                                                                'Unknown',
+                                                                            style: TextStyle(
+                                                                                fontSize: 12,
+                                                                                fontWeight: FontWeight.w600,
+                                                                                color: isDark ? Colors.white : Colors.black87)),
+                                                                        const SizedBox(
+                                                                            width:
+                                                                                6),
+                                                                        Text(
+                                                                            _relativeTime(
+                                                                                subTime),
+                                                                            style:
+                                                                                TextStyle(fontSize: 10, color: Colors.grey.shade500)),
                                                                       ],
                                                                     ),
-                                                                    const SizedBox(height: 6),
-                                                                    Text(sub['reply'] ?? '',
-                                                                      style: TextStyle(fontSize: 13, height: 1.4, color: isDark ? Colors.grey.shade300 : Colors.black87)),
-                                                                    const SizedBox(height: 8),
+                                                                    const SizedBox(
+                                                                        height:
+                                                                            6),
+                                                                    Text(
+                                                                        sub['reply'] ??
+                                                                            '',
+                                                                        style: TextStyle(
+                                                                            fontSize:
+                                                                                13,
+                                                                            height:
+                                                                                1.4,
+                                                                            color: isDark
+                                                                                ? Colors.grey.shade300
+                                                                                : Colors.black87)),
+                                                                    const SizedBox(
+                                                                        height:
+                                                                            8),
                                                                     GestureDetector(
-                                                                      onTap: () => _toggleNestedLike(replyId, sub['subReplyId'] ?? '', subLikes),
-                                                                      child: Row(
-                                                                        mainAxisSize: MainAxisSize.min,
+                                                                      onTap: () => _toggleNestedLike(
+                                                                          replyId,
+                                                                          sub['subReplyId'] ??
+                                                                              '',
+                                                                          subLikes),
+                                                                      child:
+                                                                          Row(
+                                                                        mainAxisSize:
+                                                                            MainAxisSize.min,
                                                                         children: [
                                                                           Icon(
-                                                                            subIsLiked ? Icons.favorite : Icons.favorite_border,
-                                                                            size: 13,
-                                                                            color: subIsLiked ? const Color(0xFFFF6B6B) : Colors.grey.shade500,
+                                                                            subIsLiked
+                                                                                ? Icons.favorite
+                                                                                : Icons.favorite_border,
+                                                                            size:
+                                                                                13,
+                                                                            color: subIsLiked
+                                                                                ? const Color(0xFFFF6B6B)
+                                                                                : Colors.grey.shade500,
                                                                           ),
-                                                                          if (subLikes.isNotEmpty) ...[
+                                                                          if (subLikes
+                                                                              .isNotEmpty) ...[
                                                                             const SizedBox(width: 3),
                                                                             Text('${subLikes.length}',
-                                                                              style: TextStyle(fontSize: 11, color: subIsLiked ? const Color(0xFFFF6B6B) : Colors.grey.shade500)),
+                                                                                style: TextStyle(fontSize: 11, color: subIsLiked ? const Color(0xFFFF6B6B) : Colors.grey.shade500)),
                                                                           ],
                                                                         ],
                                                                       ),
@@ -1266,11 +1894,10 @@ class _detail_discussionState extends State<detail_discussion> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Modern send button
                     Container(
                       decoration: BoxDecoration(
                         gradient: AppTheme.primaryGradient,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
                             color: AppTheme.primaryColor.withValues(alpha: 0.3),
@@ -1279,25 +1906,35 @@ class _detail_discussionState extends State<detail_discussion> {
                           ),
                         ],
                       ),
-                      child: IconButton(
-                        icon: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2))
-                            : const Icon(
-                                Icons.send,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                        onPressed: _isLoading
-                            ? null
-                            : () async {
-                                if (_replyController.text.trim().isNotEmpty) {
-                                  addReply();
-                                }
-                              },
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(24),
+                          onTap: _isLoading
+                              ? null
+                              : () {
+                                  if (_replyController.text.trim().isNotEmpty) {
+                                    addReply();
+                                  }
+                                },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.send_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -1305,6 +1942,124 @@ class _detail_discussionState extends State<detail_discussion> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailDiscussionShimmer(ThemeData theme, bool isDark) {
+    final baseColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35)
+        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8);
+    final highlightColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : theme.colorScheme.surface.withValues(alpha: 0.95);
+
+    return Shimmer.fromColors(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        children: [
+          Container(
+            height: 180,
+            decoration: BoxDecoration(
+              color: baseColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            height: 18,
+            width: 120,
+            decoration: BoxDecoration(
+              color: baseColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...List.generate(
+            4,
+            (index) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              height: 92,
+              decoration: BoxDecoration(
+                color: baseColor,
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRepliesShimmer(ThemeData theme, bool isDark) {
+    final baseColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35)
+        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8);
+    final highlightColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : theme.colorScheme.surface.withValues(alpha: 0.95);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Shimmer.fromColors(
+        baseColor: baseColor,
+        highlightColor: highlightColor,
+        child: Column(
+          children: List.generate(
+            3,
+            (index) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              height: 84,
+              decoration: BoxDecoration(
+                color: baseColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Builds a compact action chip for reply action bars (Reddit-style)
+  Widget _buildCodeSnippetShimmer(ThemeData theme, bool isDark) {
+    final baseColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35)
+        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.8);
+    final highlightColor = isDark
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55)
+        : theme.colorScheme.surface.withValues(alpha: 0.95);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+      child: Shimmer.fromColors(
+        baseColor: baseColor,
+        highlightColor: highlightColor,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: baseColor,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(
+              9,
+              (index) => Container(
+                height: 10,
+                width: index.isEven ? double.infinity : 220,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1391,12 +2146,89 @@ class display_discussionCardState extends State<display_discussion> {
   bool isLiked = false;
   bool isFetchingUserName = false;
   late Future<String?> _userNameFuture;
-  bool _showFullDescription = true; // Show full on detail page by default
+  late Future<String?> _userProfileImageFuture;
+  late Future<String?> _userXpFuture;
+  bool _showFullDescription = false;
+
+  void _openFullContentSheet(ThemeData theme) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          builder: (ctx, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: ListView(
+                controller: scrollController,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.outlineVariant,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.title,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SelectableText.rich(
+                    TextSpan(
+                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+                      children: _buildDescription(widget.description, theme),
+                    ),
+                  ),
+                  if (widget.tags.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: widget.tags
+                          .map(
+                            (tag) => Chip(
+                              label: Text(tag),
+                              backgroundColor:
+                                  theme.colorScheme.secondaryContainer,
+                              labelStyle: TextStyle(
+                                color: theme.colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     _userNameFuture = _fetchUserName(widget.uid);
+    _userProfileImageFuture = _fetchUserProfileImage(widget.uid);
+    _userXpFuture = _fetchUserXP(widget.uid);
     // _checkIfLiked();
     // Access the parameters with widget.parameterName
   }
@@ -1458,77 +2290,7 @@ class display_discussionCardState extends State<display_discussion> {
               // Get.to(detail_discussion(docId: widget.docid));
             },
             onLongPress: () {
-              // Show the description in a bottom sheet when the card is long pressed
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                // Allow content to scroll
-                backgroundColor: Colors.transparent,
-                // Transparent background for full-width
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(16)), // Rounded corners on top
-                ),
-                builder: (context) {
-                  return Container(
-                    width: double.infinity, // Full width of the screen
-                    padding: EdgeInsets.all(16.0),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      // Material 3 background color
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(16)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title of the discussion
-                        Text(
-                          widget.title,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        // Description of the discussion
-                        RichText(
-                          text: TextSpan(
-                            style: theme.textTheme.bodyMedium,
-                            children:
-                                _buildDescription(widget.description, theme),
-                          ),
-                          maxLines: 10,
-                          textAlign: TextAlign.justify,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        SizedBox(height: 16),
-
-                        Wrap(
-                          spacing: 5,
-                          children: widget.tags
-                              .map((tag) => Chip(
-                                    label: Text(tag),
-                                    backgroundColor:
-                                        theme.colorScheme.secondaryContainer,
-                                    labelStyle: TextStyle(
-                                        color: theme
-                                            .colorScheme.onSecondaryContainer),
-                                  ))
-                              .toList(),
-                        ),
-                        // You can add more content or buttons if needed
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context)
-                                .pop(); // Close the bottom sheet
-                          },
-                          child: Text('Close'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              );
+              _openFullContentSheet(theme);
             },
             child: Padding(
               padding: EdgeInsets.all(10.0),
@@ -1540,7 +2302,7 @@ class display_discussionCardState extends State<display_discussion> {
                     // mainAxisAlignment: Maina,
                     children: [
                       FutureBuilder<String?>(
-                          future: _fetchUserProfileImage(widget.uid),
+                          future: _userProfileImageFuture,
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
@@ -1583,7 +2345,7 @@ class display_discussionCardState extends State<display_discussion> {
                       ),
                       Spacer(),
                       FutureBuilder<String?>(
-                        future: _fetchUserXP(widget.uid),
+                        future: _userXpFuture,
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
@@ -1639,20 +2401,43 @@ class display_discussionCardState extends State<display_discussion> {
                   // Space between user info and title
                   Text(
                     widget.title,
-                    style: theme.textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(height: 1.3),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 0),
-                      RichText(
-                        text: TextSpan(
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            height: 1.6,
-                            fontSize: 15,
-                            color: isDark ? Colors.grey.shade200 : Colors.black87,
-                          ),
-                          children:
-                              _buildDescription(widget.description, theme),
-                        ),
+                  RichText(
+                    text: TextSpan(
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        height: 1.6,
+                        fontSize: 15,
+                        color: isDark ? Colors.grey.shade200 : Colors.black87,
                       ),
+                      children: _buildDescription(widget.description, theme),
+                    ),
+                    maxLines: _showFullDescription ? 14 : 4,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (widget.description.trim().length > 220)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: () => setState(() =>
+                                _showFullDescription = !_showFullDescription),
+                            child: Text(
+                              _showFullDescription ? 'Show less' : 'Show more',
+                            ),
+                          ),
+                          OutlinedButton(
+                            onPressed: () => _openFullContentSheet(theme),
+                            child: const Text('View full content'),
+                          ),
+                        ],
+                      ),
+                    ),
                   //  SizedBox(height: 8),
                   // code = widget.code!!
                   // Wrap(

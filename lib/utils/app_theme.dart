@@ -214,6 +214,16 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         behavior: SnackBarBehavior.floating,
       ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _AppPageTransitionsBuilder(),
+          TargetPlatform.iOS: _AppPageTransitionsBuilder(),
+          TargetPlatform.macOS: _AppPageTransitionsBuilder(),
+          TargetPlatform.linux: _AppPageTransitionsBuilder(),
+          TargetPlatform.windows: _AppPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _AppPageTransitionsBuilder(),
+        },
+      ),
     );
   }
 
@@ -259,7 +269,8 @@ class AppTheme {
         color: darkCard,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: darkBg, // Assuming isDark is true in darkTheme context, so darkCard is used. Original was darkBg.
+        backgroundColor:
+            darkBg, // Assuming isDark is true in darkTheme context, so darkCard is used. Original was darkBg.
         indicatorColor: const Color(0xFF2196F3).withValues(alpha: 0.1),
         elevation: 0,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
@@ -282,6 +293,43 @@ class AppTheme {
           }
           return const IconThemeData(color: Color(0xFF94A3B8), size: 24);
         }),
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _AppPageTransitionsBuilder(),
+          TargetPlatform.iOS: _AppPageTransitionsBuilder(),
+          TargetPlatform.macOS: _AppPageTransitionsBuilder(),
+          TargetPlatform.linux: _AppPageTransitionsBuilder(),
+          TargetPlatform.windows: _AppPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: _AppPageTransitionsBuilder(),
+        },
+      ),
+    );
+  }
+}
+
+class _AppPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _AppPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOut,
+      reverseCurve: Curves.easeIn,
+    );
+
+    return FadeTransition(
+      opacity: curved,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.985, end: 1.0).animate(curved),
+        child: child,
       ),
     );
   }

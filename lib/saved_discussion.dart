@@ -115,6 +115,7 @@ class _saved_discussionState extends State<saved_discussion> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
+        backgroundColor: isDark ? theme.colorScheme.surface : Colors.white,
         appBar: AppBar(
           title: Text('Saved Discussions'),
           elevation: 0,
@@ -146,7 +147,12 @@ class _saved_discussionState extends State<saved_discussion> {
           stream: savedIdsStream,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return Text('Error');
+              return Center(
+                child: Text(
+                  'Unable to load saved discussions',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              );
             }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Padding(
@@ -156,7 +162,7 @@ class _saved_discussionState extends State<saved_discussion> {
             }
 
             if (!snapshot.hasData || !snapshot.data!.exists) {
-              return Center(child: Text('No saved IDs available'));
+              return _buildEmptyState(theme, isDark);
             }
             // final questions = snapshot.data!.docs;
             List<String> documentIds =
@@ -174,29 +180,34 @@ class _saved_discussionState extends State<saved_discussion> {
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(child: Text('No Post found.'));
+                  return _buildEmptyState(theme, isDark);
                 }
 
                 var docs = snapshot.data!.docs
                     .where((doc) => documentIds.contains(doc.id))
                     .toList();
                 if (docs.length == 0) {
-                  return Center(child: Text('No saved IDs available'));
+                  return _buildEmptyState(theme, isDark);
                 } else {
                   return ListView.builder(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
                       final data = docs[index].data();
-                      return displayCard(
-                        title: data['Title'] ?? '',
-                        description: data['Description'] ?? '',
-                        tags: List<String>.from(data['Tags'] ?? []),
-                        timestamp:
-                            (data['Timestamp'] as Timestamp?)?.toDate() ??
-                                DateTime.now(),
-                        uid: data['Uid'] ?? '',
-                        docid: data['docId'] ?? '',
-                        replies: [],
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: displayCard(
+                          title: data['Title'] ?? '',
+                          description: data['Description'] ?? '',
+                          tags: List<String>.from(data['Tags'] ?? []),
+                          timestamp:
+                              (data['Timestamp'] as Timestamp?)?.toDate() ??
+                                  DateTime.now(),
+                          uid: data['Uid'] ?? '',
+                          docid: data['docId'] ?? '',
+                          replies: [],
+                        ),
                       );
                     },
                   );
@@ -205,6 +216,47 @@ class _saved_discussionState extends State<saved_discussion> {
             );
           },
         ));
+  }
+
+  Widget _buildEmptyState(ThemeData theme, bool isDark) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                Icons.bookmark_border_rounded,
+                size: 30,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No saved discussions yet',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Save discussions from the feed and they will appear here.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -253,13 +305,15 @@ class displayCardState extends State<displayCard> {
   bool isLiked = false;
   bool isFetchingUserName = false;
   late Future<String?> _userNameFuture;
+  late Future<String?> _userProfileImageFuture;
+  late Future<String?> _userXpFuture;
 
   @override
   void initState() {
     super.initState();
-    print(widget.uid);
     _userNameFuture = _fetchUserName(widget.uid);
-    print("object${_userNameFuture.toString()}");
+    _userProfileImageFuture = _fetchUserProfileImage(widget.uid);
+    _userXpFuture = _fetchUserXP(widget.uid);
     _fetchRepliesCount();
     // _checkIfLiked();
     // Access the parameters with widget.parameterName
@@ -349,8 +403,11 @@ class displayCardState extends State<displayCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
+    final isDark = theme.brightness == Brightness.dark;
+    return Material(
+        color: Colors.transparent,
         child: InkWell(
+            borderRadius: BorderRadius.circular(18),
             onTap: () {
               // Logic to handle card click, for example, navigating to a discussion detail screen
               Get.to(detail_discussion(
@@ -358,8 +415,18 @@ class displayCardState extends State<displayCard> {
                 creatorId: widget.uid,
               ));
             },
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? theme.colorScheme.surfaceContainerLow
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color:
+                      theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -368,24 +435,26 @@ class displayCardState extends State<displayCard> {
                     // mainAxisAlignment: Maina,
                     children: [
                       FutureBuilder<String?>(
-                          future: _fetchUserProfileImage(widget.uid),
+                          future: _userProfileImageFuture,
                           builder: (context, snapshot) {
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
-                              return CircleAvatar(
+                              return const CircleAvatar(
+                                radius: 16,
                                 backgroundColor: Colors.grey,
                               );
                             } else if (snapshot.hasError ||
                                 snapshot.data == null ||
                                 snapshot.data!.isEmpty) {
-                              print(snapshot.error);
-                              return CircleAvatar(
+                              return const CircleAvatar(
+                                radius: 16,
                                 foregroundImage: NetworkImage(
                                   'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                 ),
                               );
                             } else {
                               return CircleAvatar(
+                                radius: 16,
                                 foregroundImage: NetworkImage(snapshot.data!),
                               );
                             }
@@ -403,7 +472,12 @@ class displayCardState extends State<displayCard> {
                             return Text('Error fetching user name');
                           } else if (snapshot.hasData) {
                             String userName = "~ ${snapshot.data}";
-                            return Text(userName);
+                            return Text(
+                              userName,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            );
                           } else {
                             return Text('User not found');
                           }
@@ -411,118 +485,122 @@ class displayCardState extends State<displayCard> {
                       ),
                       Spacer(),
                       FutureBuilder<String?>(
-                        future: _fetchUserXP(widget.uid),
+                        future: _userXpFuture,
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
-                            return Text('XP: Loading...');
+                            return const SizedBox.shrink();
                           } else if (snapshot.hasError) {
-                            return Text('Error fetching XP');
+                            return const SizedBox.shrink();
                           } else if (snapshot.hasData) {
                             Object xp = snapshot.data ?? 0;
                             return Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 15, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.lightBlueAccent, // Light blue
-                                    Colors.blue, // Regular blue
-                                    Colors.blueAccent, // Darker blue
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(30),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 10,
-                                    offset: Offset(4, 4),
-                                  ),
-                                ],
+                                color: theme.colorScheme.primary
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'XP: $xp',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                '$xp XP',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             );
                           } else {
-                            return Text('XP: 0');
+                            return const SizedBox.shrink();
                           }
                         },
                       ),
                     ],
                   ),
-                  SizedBox(height: 16),
+                  SizedBox(height: 12),
                   // Space between user info and title
                   Text(
                     widget.title,
-                    style: theme.textTheme.titleLarge,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   SizedBox(height: 8),
                   RichText(
                     text: TextSpan(
-                      style: theme.textTheme.bodyMedium,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        height: 1.5,
+                        color: isDark ? Colors.grey.shade300 : Colors.black87,
+                      ),
                       children: _buildDescription(widget.description, theme),
                     ),
                     maxLines: 3,
-                    textAlign: TextAlign.justify,
                     overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 8),
                   // code = widget.code!!
-                  Wrap(
-                    spacing: 5,
-                    children: widget.tags
-                        .map((tag) => Chip(
-                              label: Text(tag),
-                              backgroundColor:
-                                  theme.colorScheme.secondaryContainer,
-                              labelStyle: TextStyle(
-                                  color:
-                                      theme.colorScheme.onSecondaryContainer),
-                            ))
-                        .toList(),
-                  ),
-                  Divider(height: 24),
+                  if (widget.tags.isNotEmpty)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: widget.tags
+                          .take(3)
+                          .map((tag) => Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  tag,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color:
+                                        theme.colorScheme.onSecondaryContainer,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+                  Divider(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      InkWell(
-                        onTap: () {
-                          // Logic to handle like button click
-                          // Update the votes count and Firestore if needed
-                          // _handleLike();
-                        },
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.comment_bank_rounded),
-                              onPressed: () => {},
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.comment_bank_rounded,
+                            size: 18,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$_repliesCount',
+                            style: theme.textTheme.labelLarge,
+                          ),
+                          const SizedBox(width: 16),
+                          GestureDetector(
+                            onTap: () {
+                              removesaved(widget.docid);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary
+                                    .withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.bookmark_remove_rounded,
+                                size: 17,
+                                color: theme.colorScheme.primary,
+                              ),
                             ),
-                            SizedBox(width: 4),
-                            Text('${_repliesCount}',
-                                style: theme.textTheme.labelLarge),
-                            SizedBox(width: 24),
-                            IconButton(
-                              icon: Icon(Icons.bookmark_add_outlined),
-                              onPressed: () {
-                                removesaved(widget.docid);
-                              },
-                              // onPressed: _handleLike,
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                       Text(
                         'Posted ${_formatDate(widget.timestamp)}',

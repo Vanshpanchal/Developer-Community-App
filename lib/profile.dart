@@ -26,6 +26,7 @@ import 'screens/ai_repo_analyzer_screen.dart';
 import 'utils/app_theme.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'utils/app_snackbar.dart';
+import 'widgets/app_dialogs.dart';
 
 /// Menu item data model
 class _MenuItemData {
@@ -172,69 +173,14 @@ class _ProfileState extends State<profile>
     await FirebaseAuth.instance.signOut();
   }
 
-  Future<void> _confirmLogout() async {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await AppDialogs.showConfirmation(
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.errorColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.logout_rounded,
-                color: AppTheme.errorColor,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Confirm Logout',
-              style: TextStyle(
-                color: isDark ? Colors.white : const Color(0xFF1E293B),
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to log out?',
-          style: TextStyle(
-            color: isDark ? const Color(0xFFE2E8F0) : Colors.black87,
-            fontSize: 16,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.errorColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
+      context,
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to log out?',
+      confirmText: 'Log Out',
+      cancelText: 'Cancel',
     );
 
     if (confirmed == true) {
@@ -990,7 +936,7 @@ class _ProfileState extends State<profile>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: _confirmLogout,
+          onTap: () => _confirmLogout(context),
           borderRadius: BorderRadius.circular(16),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1343,7 +1289,8 @@ class _ProfileState extends State<profile>
                           Navigator.pop(ctx);
                           try {
                             await ApiKeyManager.instance.saveUserKey(key);
-                            AppSnackbar.success('Gemini key stored securely', title: 'Saved');
+                            AppSnackbar.success('Gemini key stored securely',
+                                title: 'Saved');
                           } catch (e) {
                             AppSnackbar.error(e.toString(), title: 'Error');
                           }

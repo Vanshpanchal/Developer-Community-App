@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/app_validators.dart';
+import 'widgets/app_dialogs.dart';
 
 class login extends StatefulWidget {
   const login({super.key});
@@ -65,13 +66,33 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
       );
       await AnalyticsService().logLogin(method: 'email');
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'invalid-credential' || e.code == 'wrong-password' || e.code == 'user-not-found') {
-        AppSnackbar.error('Invalid email or password. Please try again.', title: 'Login Failed');
+      if (e.code == 'invalid-credential' ||
+          e.code == 'wrong-password' ||
+          e.code == 'user-not-found') {
+        await AppDialogs.showError(
+          context,
+          title: 'Login Failed',
+          message: 'Incorrect email or password. Please try again.',
+        );
+      } else if (e.code == 'too-many-requests') {
+        await AppDialogs.showError(
+          context,
+          title: 'Too Many Attempts',
+          message: 'Please wait a moment before trying to sign in again.',
+        );
       } else {
-        AppSnackbar.error(e.message ?? e.code, title: 'Error');
+        await AppDialogs.showError(
+          context,
+          title: 'Error',
+          message: e.message ?? e.code,
+        );
       }
     } catch (e) {
-      AppSnackbar.error('An unexpected error occurred', title: 'Error');
+      await AppDialogs.showError(
+        context,
+        title: 'Error',
+        message: 'An unexpected error occurred. Please try again.',
+      );
       debugPrint("Login error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -206,49 +227,49 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-          // Email Field
-          _buildInputField(
-            controller: emailController,
-            label: 'Email Address',
-            hint: 'Enter your email',
-            icon: Icons.email_outlined,
-            keyboardType: TextInputType.emailAddress,
-            validator: AppValidators.validateEmail,
-          ),
-          const SizedBox(height: 20),
-          // Password Field
-          _buildInputField(
-            controller: passwordController,
-            label: 'Password',
-            hint: 'Enter your password',
-            icon: Icons.lock_outline,
-            isPassword: true,
-            validator: AppValidators.validatePassword,
-          ),
-          const SizedBox(height: 12),
-          // Forgot Password
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: forgetPassword,
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(
-                'Forgot Password?',
-                style: TextStyle(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
+            // Email Field
+            _buildInputField(
+              controller: emailController,
+              label: 'Email Address',
+              hint: 'Enter your email',
+              icon: Icons.email_outlined,
+              keyboardType: TextInputType.emailAddress,
+              validator: AppValidators.validateEmail,
+            ),
+            const SizedBox(height: 20),
+            // Password Field
+            _buildInputField(
+              controller: passwordController,
+              label: 'Password',
+              hint: 'Enter your password',
+              icon: Icons.lock_outline,
+              isPassword: true,
+              validator: AppValidators.validatePassword,
+            ),
+            const SizedBox(height: 12),
+            // Forgot Password
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: forgetPassword,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 0),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  'Forgot Password?',
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 28),
-          // Login Button
-          _buildLoginButton(theme),
-        ],
+            const SizedBox(height: 28),
+            // Login Button
+            _buildLoginButton(theme),
+          ],
         ),
       ),
     );
@@ -279,7 +300,8 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
           obscureText: isPassword && !_isPasswordVisible,
           keyboardType: keyboardType,
           style: const TextStyle(fontSize: 16),
-          validator: (val) => _isSubmitted && validator != null ? validator(val) : null,
+          validator: (val) =>
+              _isSubmitted && validator != null ? validator(val) : null,
           autovalidateMode: AutovalidateMode.disabled,
           onTap: () {
             if (_isSubmitted) {
@@ -316,8 +338,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
                       size: 22,
                     ),
                     onPressed: () {
-                      setState(
-                          () => _isPasswordVisible = !_isPasswordVisible);
+                      setState(() => _isPasswordVisible = !_isPasswordVisible);
                     },
                   )
                 : null,
@@ -331,15 +352,18 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2),
+              borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary, width: 2),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 1.5),
+              borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.error, width: 1.5),
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: Theme.of(context).colorScheme.error, width: 2),
+              borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.error, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 20,
@@ -391,8 +415,6 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
       ),
     );
   }
-
-
 
   Widget _buildSignUpLink() {
     return Center(

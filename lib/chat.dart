@@ -56,18 +56,26 @@ class _CopyOverlayState extends State<CopyOverlay>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _animation,
-      child: AlertDialog(
-        backgroundColor: Colors.black87,
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline, color: Colors.white),
-            SizedBox(width: 8),
-            Text(
-              'Copied to clipboard',
-              style: TextStyle(color: Colors.white),
-            ),
-          ],
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.check_circle_outline, color: Colors.white),
+              SizedBox(width: 8),
+              Text(
+                'Copied to clipboard',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
         ),
       ),
     );

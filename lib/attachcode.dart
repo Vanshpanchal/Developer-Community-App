@@ -5,6 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'ai_service.dart';
 import 'utils/app_snackbar.dart';
+import 'widgets/app_dialogs.dart';
 
 class attachcode extends StatefulWidget {
   final String docId;
@@ -82,7 +83,7 @@ class _attachcodeState extends State<attachcode> {
   // Function to update the 'code' field in the reply document
   Future<void> _updateCode() async {
     setState(() => _isLoading = true);
-    
+
     try {
       // Access the reply document from the subcollection
       var docRef = FirebaseFirestore.instance
@@ -99,12 +100,11 @@ class _attachcodeState extends State<attachcode> {
 
       // Show success message
       AppSnackbar.success('Code updated successfully');
-      
+
       await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
         Navigator.pop(context);
       }
-      
     } catch (e) {
       // Handle errors
       AppSnackbar.error('Error updating code: $e');
@@ -148,18 +148,11 @@ class _attachcodeState extends State<attachcode> {
   }
 
   void _showMissingKeyDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('API Key Required'),
-        content: const Text(
-            'To use AI reviews, please add your Gemini API key in settings.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close')),
-        ],
-      ),
+    AppDialogs.showInfo(
+      context,
+      title: 'API Key Required',
+      message: 'To use AI reviews, please add your Gemini API key in settings.',
+      actionText: 'Close',
     );
   }
 
@@ -555,16 +548,27 @@ class _attachcodeState extends State<attachcode> {
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : () async {
-                      if (code.trim().isEmpty) {
-                        AppSnackbar.error('Please add some code before attaching');
-                        return;
-                      }
-                      await _updateCode();
-                    },
-                    icon: _isLoading ? const SizedBox.shrink() : const Icon(Icons.attach_file),
+                    onPressed: _isLoading
+                        ? null
+                        : () async {
+                            if (code.trim().isEmpty) {
+                              AppSnackbar.error(
+                                  'Please add some code before attaching');
+                              return;
+                            }
+                            await _updateCode();
+                          },
+                    icon: _isLoading
+                        ? const SizedBox.shrink()
+                        : const Icon(Icons.attach_file),
                     label: _isLoading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5,))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
+                            ))
                         : const Text(
                             'Attach Code',
                             style: TextStyle(

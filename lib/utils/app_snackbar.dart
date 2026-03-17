@@ -54,26 +54,79 @@ class AppSnackbar {
     required Color iconColor,
     Duration duration = const Duration(seconds: 3),
   }) {
-    Get.showSnackbar(GetSnackBar(
-      titleText: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-          fontSize: 16,
+    final overlayContext = Get.overlayContext;
+    if (overlayContext != null &&
+        Overlay.maybeOf(overlayContext, rootOverlay: true) != null) {
+      Get.showSnackbar(GetSnackBar(
+        titleText: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            fontSize: 16,
+          ),
+        ),
+        messageText: Text(
+          message,
+          style: const TextStyle(color: Colors.white),
+        ),
+        icon: Icon(icon, color: iconColor),
+        backgroundColor: Colors.grey[900]!,
+        duration: duration,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+        snackPosition: SnackPosition.TOP,
+      ));
+      return;
+    }
+
+    final context = Get.context;
+    final messenger =
+        context != null ? ScaffoldMessenger.maybeOf(context) : null;
+    if (messenger == null) {
+      debugPrint('Snackbar skipped (no overlay/context): $title - $message');
+      return;
+    }
+
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: duration,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        backgroundColor: Colors.grey[900],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        content: Row(
+          children: [
+            Icon(icon, color: iconColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    message,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      messageText: Text(
-        message,
-        style: const TextStyle(color: Colors.white),
-      ),
-      icon: Icon(icon, color: iconColor),
-      backgroundColor: Colors.grey[900]!,
-      duration: duration,
-      margin: const EdgeInsets.all(16),
-      borderRadius: 12,
-      snackPosition: SnackPosition.TOP,
-    ));
+    );
   }
 
   /// Custom snackbar for advanced use cases

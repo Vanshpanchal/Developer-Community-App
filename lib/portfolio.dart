@@ -20,6 +20,7 @@ import 'ThemeController.dart';
 import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
 import 'portfolio_summary_page.dart';
+import 'widgets/app_dialogs.dart';
 
 class DeveloperPortfolioPage extends StatefulWidget {
   // const DeveloperPortfolioPage({super.key, this.userId});
@@ -206,18 +207,12 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   }
 
   void _showMissingKeyDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('API Key Needed'),
-        content: const Text(
-            'To generate an AI portfolio summary, please add your Gemini API key in settings.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close')),
-        ],
-      ),
+    AppDialogs.showInfo(
+      context,
+      title: 'API Key Needed',
+      message:
+          'To generate an AI portfolio summary, please add your Gemini API key in settings.',
+      actionText: 'Close',
     );
   }
 
