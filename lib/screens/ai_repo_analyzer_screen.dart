@@ -6,7 +6,7 @@ import '../ThemeController.dart';
 import '../utils/app_snackbar.dart';
 
 class AIRepoAnalyzerScreen extends StatefulWidget {
-  const AIRepoAnalyzerScreen({Key? key}) : super(key: key);
+  const AIRepoAnalyzerScreen({super.key});
 
   @override
   State<AIRepoAnalyzerScreen> createState() => _AIRepoAnalyzerScreenState();

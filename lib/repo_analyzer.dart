@@ -5,7 +5,7 @@ import 'ai_service.dart';
 import 'utils/app_snackbar.dart';
 
 class RepoAnalyzerScreen extends StatefulWidget {
-  RepoAnalyzerScreen({super.key});
+  const RepoAnalyzerScreen({super.key});
 
   @override
   State<RepoAnalyzerScreen> createState() => _RepoAnalyzerScreenState();
@@ -240,7 +240,7 @@ class _FileSnippet {
 class _SnippetCard extends StatelessWidget {
   final _FileSnippet snippet;
   final VoidCallback onRemove;
-  _SnippetCard({required this.snippet, required this.onRemove});
+  const _SnippetCard({required this.snippet, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {

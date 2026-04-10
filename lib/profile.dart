@@ -25,7 +25,6 @@ import 'screens/leaderboard_screen.dart';
 import 'screens/ai_repo_analyzer_screen.dart';
 import 'utils/app_theme.dart';
 import 'package:palette_generator/palette_generator.dart';
-import 'utils/app_snackbar.dart';
 import 'widgets/app_dialogs.dart';
 
 /// Menu item data model

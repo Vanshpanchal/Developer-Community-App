@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'models/poll_model.dart';
 import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
+import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
@@ -42,7 +43,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   // ignore: unused_field
   List<QueryDocumentSnapshot> _allDiscussions = [];
   // ignore: unused_field
-  List<QueryDocumentSnapshot> _filteredDiscussions = [];
+  final List<QueryDocumentSnapshot> _filteredDiscussions = [];
 
   var discussionStream = FirebaseFirestore.instance
       .collection('Discussions')
@@ -307,6 +308,10 @@ class _ongoing_discussionState extends State<ongoing_discussion>
 
                           final data =
                               questions[index].data() as Map<String, dynamic>;
+                          final rawPollData = data['poll'];
+                          final pollMap = rawPollData is Map
+                              ? Map<String, dynamic>.from(rawPollData)
+                              : null;
                           return ScrollFadeIn(
                             child: displayCard(
                               title: data['Title'] ?? '',
@@ -319,7 +324,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                               docid: data['docId'] ?? '',
                               replies: [],
                               hasPoll: data['hasPoll'] == true,
-                              pollData: data['poll'] as Map<String, dynamic>?,
+                              pollData: pollMap,
                             ),
                           );
                         },
@@ -578,7 +583,7 @@ class displayCard extends StatefulWidget {
   final Map<String, dynamic>? pollData; // Poll data
   final bool hasPoll; // Whether discussion has a poll
 
-  displayCard({
+  const displayCard({
     super.key,
     required this.title,
     required this.description,
@@ -596,33 +601,15 @@ class displayCard extends StatefulWidget {
 }
 
 class displayCardState extends State<displayCard> {
-  Future<String?> _fetchUserName(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['Username'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
+
 
   bool isLiked = false;
-  bool isFetchingUserName = false;
-  late Future<String?> _userNameFuture;
+  late Future<Map<String, dynamic>> _userDataFuture;
 
   @override
   void initState() {
     super.initState();
-    print(widget.uid);
-    _userNameFuture = _fetchUserName(widget.uid);
-    print("object${_userNameFuture.toString()}");
+    _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
     _fetchRepliesCount();
     // _checkIfLiked();
     // Access the parameters with widget.parameterName
@@ -645,39 +632,7 @@ class displayCardState extends State<displayCard> {
     }
   }
 
-  Future<String?> _fetchUserProfileImage(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['profilePicture'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
 
-  Future<String?> _fetchUserXP(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['XP']?.toString();
-      } else {
-        return '100';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
 
   save(itemId) async {
     try {
@@ -731,12 +686,18 @@ class displayCardState extends State<displayCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // User Info Row
-                Row(
-                  children: [
-                    FutureBuilder<String?>(
-                      future: _fetchUserProfileImage(widget.uid),
-                      builder: (context, snapshot) {
-                        return Container(
+                FutureBuilder<Map<String, dynamic>>(
+                  future: _userDataFuture,
+                  builder: (context, snapshot) {
+                    final userData = snapshot.data ?? {};
+                    final imageUrl = userData['profilePicture'] as String?;
+                    final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+                    final userName = userData['Username']?.toString() ?? 'Loading...';
+                    final userXP = userData['XP']?.toString();
+
+                    return Row(
+                      children: [
+                        Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
@@ -749,70 +710,57 @@ class displayCardState extends State<displayCard> {
                             radius: 18,
                             backgroundColor:
                                 theme.colorScheme.surfaceContainerHighest,
-                            foregroundImage:
-                                snapshot.hasData && snapshot.data!.isNotEmpty
-                                    ? NetworkImage(snapshot.data!)
+                            foregroundImage: hasImage
+                                    ? NetworkImage(imageUrl)
                                     : const NetworkImage(
                                         'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                       ),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FutureBuilder<String?>(
-                            future: _userNameFuture,
-                            builder: (context, snapshot) {
-                              return Text(
-                                snapshot.hasData
-                                    ? snapshot.data!
-                                    : 'Loading...',
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
                                 overflow: TextOverflow.ellipsis,
-                              );
-                            },
+                              ),
+                              Text(
+                                _formatDate(widget.timestamp),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            _formatDate(widget.timestamp),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontSize: 11,
+                        ),
+                        if (userXP != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: AppTheme.primaryGradient,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '$userXP XP',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    FutureBuilder<String?>(
-                      future: _fetchUserXP(widget.uid),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) return const SizedBox.shrink();
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: AppTheme.primaryGradient,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${snapshot.data} XP',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 11,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 // Title

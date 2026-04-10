@@ -91,12 +91,15 @@ class PollService {
     final userId = _currentUserId;
     if (userId == null) return false;
 
+    var voteSucceeded = false;
     try {
       final docRef = _firestore.collection(parentCollection).doc(parentId);
 
-      return await _firestore.runTransaction((transaction) async {
+      voteSucceeded = await _firestore.runTransaction((transaction) async {
         final doc = await transaction.get(docRef);
-        final pollData = doc.data()?['poll'] as Map<String, dynamic>?;
+        final rawPollData = doc.data()?['poll'];
+        final pollData =
+            rawPollData is Map ? Map<String, dynamic>.from(rawPollData) : null;
 
         if (pollData == null) return false;
 
@@ -132,13 +135,17 @@ class PollService {
 
         return true;
       });
+
+      return voteSucceeded;
     } catch (e) {
       debugPrint('Error voting on poll: $e');
       return false;
     } finally {
-      // Award XP for voting (outside transaction)
-      await _gamification.awardXp(XpAction.pollVote);
-      await _gamification.incrementCounter('pollsVoted');
+      // Award XP only when vote was actually applied.
+      if (voteSucceeded) {
+        await _gamification.awardXp(XpAction.pollVote);
+        await _gamification.incrementCounter('pollsVoted');
+      }
     }
   }
 
@@ -157,7 +164,9 @@ class PollService {
 
       return await _firestore.runTransaction((transaction) async {
         final doc = await transaction.get(docRef);
-        final pollData = doc.data()?['poll'] as Map<String, dynamic>?;
+        final rawPollData = doc.data()?['poll'];
+        final pollData =
+            rawPollData is Map ? Map<String, dynamic>.from(rawPollData) : null;
 
         if (pollData == null) return false;
 
@@ -195,7 +204,9 @@ class PollService {
     try {
       final doc =
           await _firestore.collection(parentCollection).doc(parentId).get();
-      final pollData = doc.data()?['poll'] as Map<String, dynamic>?;
+      final rawPollData = doc.data()?['poll'];
+      final pollData =
+          rawPollData is Map ? Map<String, dynamic>.from(rawPollData) : null;
 
       if (pollData == null) return null;
       return Poll.fromMap(pollData);
@@ -216,7 +227,9 @@ class PollService {
     try {
       final docRef = _firestore.collection(parentCollection).doc(parentId);
       final doc = await docRef.get();
-      final pollData = doc.data()?['poll'] as Map<String, dynamic>?;
+      final rawPollData = doc.data()?['poll'];
+      final pollData =
+          rawPollData is Map ? Map<String, dynamic>.from(rawPollData) : null;
 
       if (pollData == null) return false;
 

@@ -1,5 +1,5 @@
 /// Barrel file exporting all gamification-related modules
-library gamification;
+library;
 
 export 'models/gamification_models.dart';
 export 'models/poll_model.dart';

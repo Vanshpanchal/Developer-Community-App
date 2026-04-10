@@ -10,7 +10,7 @@ import 'widgets/app_dialogs.dart';
 class attachcode extends StatefulWidget {
   final String docId;
   final String discussionId;
-  attachcode({super.key, required this.docId, required this.discussionId});
+  const attachcode({super.key, required this.docId, required this.discussionId});
 
   @override
   State<attachcode> createState() => _attachcodeState();

@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'detail_discussion.dart';
+import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
 
@@ -30,7 +31,7 @@ import 'utils/app_snackbar.dart';
 // );
 
 class saved_discussion extends StatefulWidget {
-  saved_discussion({super.key});
+  const saved_discussion({super.key});
 
   @override
   State<saved_discussion> createState() => _saved_discussionState();
@@ -72,7 +73,7 @@ class _saved_discussionState extends State<saved_discussion> {
       if (userData.exists) {
         setState(() {
           username = userData['Username'] ?? 'No name available';
-          imageUrl = userData['profilePicture'] ?? null;
+          imageUrl = userData['profilePicture'];
         });
       } else {
         setState(() {
@@ -84,10 +85,10 @@ class _saved_discussionState extends State<saved_discussion> {
 
   onSearch2(String msg) {
     if (msg.isNotEmpty) {
-      // if(selectedSubject!.isNotEmpty){
       setState(() {
         discussionStream = FirebaseFirestore.instance
             .collection('Discussions')
+            .where('Report', isEqualTo: false)
             .where("Title", isGreaterThanOrEqualTo: msg.capitalizeFirst)
             .where("Title", isLessThan: '${msg.capitalizeFirst}z')
             .snapshots();
@@ -100,7 +101,6 @@ class _saved_discussionState extends State<saved_discussion> {
             .snapshots();
       });
     }
-    // print(exploreStream.toString());
   }
 
   @override
@@ -167,8 +167,17 @@ class _saved_discussionState extends State<saved_discussion> {
             // final questions = snapshot.data!.docs;
             List<String> documentIds =
                 List.from(snapshot.data!['SavedDiscussion'] ?? []);
-            return StreamBuilder(
-              stream: discussionStream,
+            return FutureBuilder<List<DocumentSnapshot>>(
+              future: () async {
+                List<DocumentSnapshot> allDocs = [];
+                for(var i = 0; i < documentIds.length; i += 10) {
+                  var chunk = documentIds.sublist(i, (i + 10 > documentIds.length) ? documentIds.length : i + 10);
+                  final query = await FirebaseFirestore.instance.collection('Discussions')
+                      .where(FieldPath.documentId, whereIn: chunk).get();
+                  allDocs.addAll(query.docs);
+                }
+                return allDocs;
+              }(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return Padding(
@@ -179,14 +188,12 @@ class _saved_discussionState extends State<saved_discussion> {
                 if (snapshot.hasError) {
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return _buildEmptyState(theme, isDark);
                 }
 
-                var docs = snapshot.data!.docs
-                    .where((doc) => documentIds.contains(doc.id))
-                    .toList();
-                if (docs.length == 0) {
+                var docs = snapshot.data!;
+                if (docs.isEmpty) {
                   return _buildEmptyState(theme, isDark);
                 } else {
                   return ListView.builder(
@@ -194,7 +201,8 @@ class _saved_discussionState extends State<saved_discussion> {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
-                      final data = docs[index].data();
+                      final data = docs[index].data() as Map<String, dynamic>?;
+                      if (data == null) return const SizedBox.shrink();
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: displayCard(
@@ -205,7 +213,7 @@ class _saved_discussionState extends State<saved_discussion> {
                               (data['Timestamp'] as Timestamp?)?.toDate() ??
                                   DateTime.now(),
                           uid: data['Uid'] ?? '',
-                          docid: data['docId'] ?? '',
+                          docid: docs[index].id,
                           replies: [],
                         ),
                       );
@@ -269,7 +277,7 @@ class displayCard extends StatefulWidget {
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
 
-  displayCard({
+  const displayCard({
     super.key,
     required this.title,
     required this.description,
@@ -285,35 +293,13 @@ class displayCard extends StatefulWidget {
 }
 
 class displayCardState extends State<displayCard> {
-  Future<String?> _fetchUserName(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['Username'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
-
   bool isLiked = false;
-  bool isFetchingUserName = false;
-  late Future<String?> _userNameFuture;
-  late Future<String?> _userProfileImageFuture;
-  late Future<String?> _userXpFuture;
+  late Future<Map<String, dynamic>> _userDataFuture;
 
   @override
   void initState() {
     super.initState();
-    _userNameFuture = _fetchUserName(widget.uid);
-    _userProfileImageFuture = _fetchUserProfileImage(widget.uid);
-    _userXpFuture = _fetchUserXP(widget.uid);
+    _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
     _fetchRepliesCount();
     // _checkIfLiked();
     // Access the parameters with widget.parameterName
@@ -336,39 +322,7 @@ class displayCardState extends State<displayCard> {
     }
   }
 
-  Future<String?> _fetchUserProfileImage(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['profilePicture'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
 
-  Future<String?> _fetchUserXP(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['XP']?.toString();
-      } else {
-        return '100';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
 
   removesaved(itemId) async {
     try {
@@ -431,70 +385,37 @@ class displayCardState extends State<displayCard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // User Info Row (Profile Picture and Username)
-                  Row(
-                    // mainAxisAlignment: Maina,
-                    children: [
-                      FutureBuilder<String?>(
-                          future: _userProfileImageFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
-                              return const CircleAvatar(
-                                radius: 16,
-                                backgroundColor: Colors.grey,
-                              );
-                            } else if (snapshot.hasError ||
-                                snapshot.data == null ||
-                                snapshot.data!.isEmpty) {
-                              return const CircleAvatar(
-                                radius: 16,
-                                foregroundImage: NetworkImage(
-                                  'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                ),
-                              );
-                            } else {
-                              return CircleAvatar(
-                                radius: 16,
-                                foregroundImage: NetworkImage(snapshot.data!),
-                              );
-                            }
-                          }),
-                      SizedBox(width: 8), // Space between avatar and text
-                      // Fetch and display the user's name
-                      // if (!isFetchingUserName)
-                      FutureBuilder<String?>(
-                        future: _userNameFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Text('Loading...');
-                          } else if (snapshot.hasError) {
-                            return Text('Error fetching user name');
-                          } else if (snapshot.hasData) {
-                            String userName = "~ ${snapshot.data}";
-                            return Text(
-                              userName,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            );
-                          } else {
-                            return Text('User not found');
-                          }
-                        },
-                      ),
-                      Spacer(),
-                      FutureBuilder<String?>(
-                        future: _userXpFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const SizedBox.shrink();
-                          } else if (snapshot.hasError) {
-                            return const SizedBox.shrink();
-                          } else if (snapshot.hasData) {
-                            Object xp = snapshot.data ?? 0;
-                            return Container(
+                  FutureBuilder<Map<String, dynamic>>(
+                    future: _userDataFuture,
+                    builder: (context, snapshot) {
+                      final userData = snapshot.data ?? {};
+                      final imageUrl = userData['profilePicture'] as String?;
+                      final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+                      final userName = userData['Username']?.toString() ?? 'Loading...';
+                      final userXP = userData['XP']?.toString();
+
+                      return Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                            foregroundImage: hasImage
+                                ? NetworkImage(imageUrl)
+                                : const NetworkImage(
+                                    'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                                  ),
+                          ),
+                          const SizedBox(width: 8), // Space between avatar and text
+                          // Fetch and display the user's name
+                          Text(
+                            "~ $userName",
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (userXP != null)
+                            Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 5),
                               decoration: BoxDecoration(
@@ -503,19 +424,16 @@ class displayCardState extends State<displayCard> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Text(
-                                '$xp XP',
+                                '$userXP XP',
                                 style: theme.textTheme.labelMedium?.copyWith(
                                   color: theme.colorScheme.primary,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            );
-                          } else {
-                            return const SizedBox.shrink();
-                          }
-                        },
-                      ),
-                    ],
+                            ),
+                        ],
+                      );
+                    },
                   ),
                   SizedBox(height: 12),
                   // Space between user info and title

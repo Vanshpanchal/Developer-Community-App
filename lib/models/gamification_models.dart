@@ -1,4 +1,5 @@
 /// Gamification models for DevSphere
+library;
 
 import 'package:flutter/material.dart';
 

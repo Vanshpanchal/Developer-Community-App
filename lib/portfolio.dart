@@ -64,7 +64,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
 
   List<Map<String, dynamic>> _discussions = [];
   List<Map<String, dynamic>> _explorePosts = [];
-  List<Map<String, dynamic>> _replies = [];
+  final List<Map<String, dynamic>> _replies = [];
 
   @override
   void initState() {
@@ -141,10 +141,11 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     } catch (e) {
       _error = 'Load failed: $e';
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
         });
+      }
     }
   }
 
@@ -165,7 +166,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       final summary = await AIService().generatePortfolioSummary(
         stats: mergedStats,
         github: _githubStats,
-        userHandle: user?.email,
+        userHandle: _profileEmail ?? user?.email,
       );
       if (summary == AIService.missingKeyMessage) {
         if (mounted) _showMissingKeyDialog();
@@ -177,15 +178,17 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
         _storeHistory(summary);
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _aiSummary = 'AI summary failed: $e';
         });
+      }
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _aiLoading = false;
         });
+      }
     }
   }
 
@@ -324,8 +327,9 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     if (stats['replyCount'] > 10) badges.add(_badge('Helper'));
     final tags = stats['tags'] as Map<String, int>;
     if (tags.values.any((c) => c >= 5)) badges.add(_badge('Tag Specialist'));
-    if (_githubStats != null && (_githubStats?['public_repos'] ?? 0) > 10)
+    if (_githubStats != null && (_githubStats?['public_repos'] ?? 0) > 10) {
       badges.add(_badge('OSS Contributor'));
+    }
     if (badges.isEmpty) badges.add(_badge('Getting Started'));
     return badges;
   }
@@ -1593,37 +1597,42 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
   List<Widget> _buildModernBadges(Map<String, dynamic> stats) {
     final badges = <Map<String, dynamic>>[];
 
-    if (stats['discussionCount'] > 5)
+    if (stats['discussionCount'] > 5) {
       badges.add({
         'label': 'Active Discussant',
         'icon': Icons.forum_rounded,
         'color': AppTheme.primaryColor
       });
-    if (stats['replyCount'] > 10)
+    }
+    if (stats['replyCount'] > 10) {
       badges.add({
         'label': 'Helper',
         'icon': Icons.volunteer_activism_rounded,
         'color': Colors.pink
       });
+    }
     final tags = stats['tags'] as Map<String, int>;
-    if (tags.values.any((c) => c >= 5))
+    if (tags.values.any((c) => c >= 5)) {
       badges.add({
         'label': 'Tag Specialist',
         'icon': Icons.sell_rounded,
         'color': Colors.orange
       });
-    if (_githubStats != null && (_githubStats?['public_repos'] ?? 0) > 10)
+    }
+    if (_githubStats != null && (_githubStats?['public_repos'] ?? 0) > 10) {
       badges.add({
         'label': 'OSS Contributor',
         'icon': Icons.code_rounded,
         'color': AppTheme.successColor
       });
-    if (badges.isEmpty)
+    }
+    if (badges.isEmpty) {
       badges.add({
         'label': 'Getting Started',
         'icon': Icons.rocket_launch_rounded,
         'color': Colors.purple
       });
+    }
 
     return badges.map((badge) {
       return Container(
@@ -2320,7 +2329,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     }
     final text = _aiSummary ?? '';
     final truncated = !expanded && text.length > 650
-        ? text.substring(0, 650) + '\n... (expand to view more)'
+        ? '${text.substring(0, 650)}\n... (expand to view more)'
         : text;
     return MarkdownBody(
       data: truncated,
@@ -2334,7 +2343,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
               left: BorderSide(color: theme.colorScheme.primary, width: 3)),
         ),
         codeblockDecoration: BoxDecoration(
-          color: theme.colorScheme.surfaceVariant.withOpacity(0.6),
+          color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.6),
           borderRadius: BorderRadius.circular(12),
         ),
       ),
@@ -2356,7 +2365,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
           colors: [
-            theme.colorScheme.surfaceVariant.withOpacity(0.5),
+            theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
             theme.colorScheme.primaryContainer.withOpacity(0.25),
           ],
           begin: Alignment.topLeft,
@@ -2501,8 +2510,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
                     child: LinearProgressIndicator(
                       value: pct,
                       minHeight: 10,
-                      backgroundColor:
-                          theme.colorScheme.surfaceVariant.withOpacity(.35),
+                      backgroundColor: theme.colorScheme.surfaceContainerHighest
+                          .withOpacity(.35),
                       valueColor: AlwaysStoppedAnimation(
                         Color((e.key.hashCode & 0xFFFFFF) | 0xFF000000)
                             .withOpacity(.85),
@@ -2523,7 +2532,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
               ],
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }

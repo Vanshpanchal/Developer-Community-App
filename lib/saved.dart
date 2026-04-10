@@ -9,6 +9,8 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'utils/app_theme.dart';
+import 'utils/content_moderation.dart';
+import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
 
@@ -123,8 +125,17 @@ class savedState extends State<saved>
                       return _buildEmptyState();
                     }
 
-                    return StreamBuilder(
-                      stream: exploreStream,
+                    return FutureBuilder<List<DocumentSnapshot>>(
+                      future: () async {
+                        List<DocumentSnapshot> allDocs = [];
+                        for(var i = 0; i < documentIds.length; i += 10) {
+                          var chunk = documentIds.sublist(i, (i + 10 > documentIds.length) ? documentIds.length : i + 10);
+                          final query = await FirebaseFirestore.instance.collection('Explore')
+                              .where(FieldPath.documentId, whereIn: chunk).get();
+                          allDocs.addAll(query.docs);
+                        }
+                        return allDocs;
+                      }(),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -133,24 +144,18 @@ class savedState extends State<saved>
                         if (snapshot.hasError) {
                           return _buildErrorState(snapshot.error.toString());
                         }
-                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
                           return _buildEmptyState();
                         }
 
-                        var docs = snapshot.data!.docs
-                            .where((doc) => documentIds.contains(doc.id))
-                            .toList();
-
-                        if (docs.isEmpty) {
-                          return _buildEmptyState();
-                        }
+                        var docs = snapshot.data!;
 
                         return ListView.builder(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 8),
                           itemCount: docs.length,
                           itemBuilder: (context, index) {
-                            final data = docs[index].data();
+                            final data = docs[index].data() as Map<String, dynamic>;
                             return TweenAnimationBuilder<double>(
                               tween: Tween(begin: 0.0, end: 1.0),
                               duration:
@@ -172,7 +177,7 @@ class savedState extends State<saved>
                                     DateTime.now(),
                                 code: data['code'] ?? '',
                                 uid: data['Uid'] ?? '',
-                                docid: data['docId'] ?? '',
+                                docid: docs[index].id,
                               ),
                             );
                           },
@@ -320,7 +325,7 @@ class QuestionCard extends StatefulWidget {
   final String docid;
   final DateTime timestamp;
 
-  QuestionCard({
+  const QuestionCard({
     super.key,
     required this.title,
     required this.code,
@@ -338,35 +343,20 @@ class QuestionCard extends StatefulWidget {
 }
 
 class _QuestionCardState extends State<QuestionCard> {
-  Future<String?> _fetchUserName(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['Username'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
-
+  bool isSaved = false;
   bool isLiked = false;
-  bool isFetchingUserName = false;
-  late Future<String?> _userNameFuture;
+  late Future<Map<String, dynamic>> _userDataFuture;
 
   @override
   void initState() {
     super.initState();
-    print(widget.uid);
-    _userNameFuture = _fetchUserName(widget.uid);
-    print("object${_userNameFuture.toString()}");
-    _checkIfLiked();
-    // Access the parameters with widget.parameterName
+    _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
+    _checkStatus();
+  }
+
+  Future<void> _checkStatus() async {
+    await _checkIfLiked();
+    await _checkIfSaved();
   }
 
   Future<void> _checkIfLiked() async {
@@ -375,23 +365,39 @@ class _QuestionCardState extends State<QuestionCard> {
           FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
       DocumentSnapshot questionDoc = await questionRef.get();
       if (questionDoc.exists) {
-        // Try to retrieve 'likes' as a List or default to an empty List if it's null or not a list
         var likes = questionDoc['likes'];
         if (likes is List) {
           setState(() {
             isLiked = likes.contains(FirebaseAuth.instance.currentUser
-                ?.uid); // Check if the current user is in the list of likes
+                ?.uid);
           });
         } else {
-          // Handle case when 'likes' is not a List (e.g., it's a Map or another type)
           setState(() {
-            isLiked =
-                false; // Default to not liked if the data is not in expected format
+            isLiked = false;
           });
         }
       }
     } catch (e) {
       print('Error checking like status: $e');
+    }
+  }
+
+  Future<void> _checkIfSaved() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .get();
+      if (userDoc.exists) {
+        List<dynamic> saved = userDoc['Saved'] ?? [];
+        setState(() {
+          isSaved = saved.contains(widget.docid);
+        });
+      }
+    } catch (e) {
+      print('Error checking saved status: $e');
     }
   }
 
@@ -402,76 +408,36 @@ class _QuestionCardState extends State<QuestionCard> {
       DocumentSnapshot questionDoc = await questionRef.get();
 
       if (questionDoc.exists) {
-        // Verify current state from Firestore
         var likes = questionDoc['likes'] as List<dynamic>? ?? [];
         bool actuallyLiked =
             likes.contains(FirebaseAuth.instance.currentUser?.uid);
 
         if (actuallyLiked) {
-          // Dislike: Remove the current user's UID from the likes array
           await questionRef.update({
             'likes': FieldValue.arrayRemove(
                 [FirebaseAuth.instance.currentUser?.uid]),
           });
         } else {
-          // Like: Add the current user's UID to the likes array
           await questionRef.update({
             'likes':
                 FieldValue.arrayUnion([FirebaseAuth.instance.currentUser?.uid]),
           });
         }
 
-        // Fetch the updated document to get the new size of the likes array
         DocumentSnapshot updatedDoc = await questionRef.get();
         List<dynamic> updatedLikes = updatedDoc['likes'] ?? [];
 
-        // Update the likes count based on the array size (ensures count never goes negative)
         await questionRef.update({
           'likescount': updatedLikes.length,
         });
 
         setState(() {
-          isLiked = !actuallyLiked; // Toggle based on actual state
+          isLiked = !actuallyLiked;
         });
       }
     } catch (e) {
       print('Error handling like/dislike: $e');
-      // Re-fetch actual state on error
       await _checkIfLiked();
-    }
-  }
-
-  Future<String?> _fetchUserProfileImage(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['profilePicture'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
-
-  Future<String?> _fetchUserXP(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['XP']?.toString();
-      } else {
-        return '100';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
     }
   }
 
@@ -532,12 +498,18 @@ class _QuestionCardState extends State<QuestionCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // User Info Row
-            Row(
-              children: [
-                FutureBuilder<String?>(
-                  future: _fetchUserProfileImage(widget.uid),
-                  builder: (context, snapshot) {
-                    return Container(
+            FutureBuilder<Map<String, dynamic>>(
+              future: _userDataFuture,
+              builder: (context, snapshot) {
+                final userData = snapshot.data ?? {};
+                final imageUrl = userData['profilePicture'] as String?;
+                final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+                final userName = userData['Username']?.toString() ?? 'Loading...';
+                final userXP = userData['XP']?.toString();
+
+                return Row(
+                  children: [
+                    Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
@@ -549,68 +521,57 @@ class _QuestionCardState extends State<QuestionCard> {
                         radius: 18,
                         backgroundColor:
                             theme.colorScheme.surfaceContainerHighest,
-                        foregroundImage:
-                            snapshot.hasData && snapshot.data!.isNotEmpty
-                                ? NetworkImage(snapshot.data!)
+                        foregroundImage: hasImage
+                                ? NetworkImage(imageUrl)
                                 : const NetworkImage(
                                     'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                                   ),
                       ),
-                    );
-                  },
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FutureBuilder<String?>(
-                        future: _userNameFuture,
-                        builder: (context, snapshot) {
-                          return Text(
-                            snapshot.hasData ? snapshot.data! : 'Loading...',
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userName,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                             overflow: TextOverflow.ellipsis,
-                          );
-                        },
+                          ),
+                          Text(
+                            _formatDate(widget.timestamp),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        _formatDate(widget.timestamp),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 11,
+                    ),
+                    if (userXP != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: AppTheme.primaryGradient,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$userXP XP',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 11,
+                          ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                FutureBuilder<String?>(
-                  future: _fetchUserXP(widget.uid),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const SizedBox.shrink();
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: AppTheme.primaryGradient,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${snapshot.data} XP',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
             // Title

@@ -10,7 +10,7 @@ import 'utils/content_moderation.dart';
 import 'utils/app_validators.dart';
 
 class addpost extends StatefulWidget {
-  addpost({super.key});
+  const addpost({super.key});
 
   @override
   State<addpost> createState() => addpostState();
@@ -797,7 +797,7 @@ class addpostState extends State<addpost> {
                               // Code Tab
                               Container(
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceVariant,
+                                  color: theme.colorScheme.surfaceContainerHighest,
                                   borderRadius: const BorderRadius.vertical(
                                     bottom: Radius.circular(12),
                                   ),

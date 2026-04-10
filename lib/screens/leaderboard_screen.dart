@@ -98,145 +98,137 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   child: ListShimmer(itemCount: 8, showAvatar: true),
                 ),
               )
-            : Column(
-                children: [
-                  // Current user rank card
-                  if (_currentUserRank != null && _currentUserRank! > 0)
-                    Container(
-                      margin: const EdgeInsets.all(16),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: AppTheme.primaryGradient,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.emoji_events,
-                              size: 24,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Your Rank: #$_currentUserRank',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Top 3 podium
-                  if (_entries.length >= 3)
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppTheme.darkCard : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 15,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
+            : RefreshIndicator(
+                onRefresh: () => _loadLeaderboard(forceRefresh: true),
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverToBoxAdapter(
                       child: Column(
                         children: [
-                          const Text(
-                            'Top Champions',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              // 2nd place
-                              _buildPodiumItem(
-                                  _entries[1], 2, 100, Colors.grey),
-                              // 1st place
-                              _buildPodiumItem(
-                                  _entries[0], 1, 130, Colors.amber),
-                              // 3rd place
-                              _buildPodiumItem(
-                                  _entries[2], 3, 80, Colors.brown.shade300),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  const SizedBox(height: 16),
-
-                  // Rest of leaderboard
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppTheme.darkCard : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 15,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              'Rankings',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
+                          // Current user rank card
+                          if (_currentUserRank != null && _currentUserRank! > 0)
+                            Container(
+                              margin: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: AppTheme.primaryGradient,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.emoji_events,
+                                      size: 24,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Your Rank: #$_currentUserRank',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              itemCount:
-                                  _entries.length > 3 ? _entries.length - 3 : 0,
-                              itemBuilder: (context, index) {
-                                final entry = _entries[index + 3];
-                                return _buildLeaderboardTile(entry, isDark);
-                              },
+
+                          // Top 3 podium
+                          if (_entries.length >= 3)
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppTheme.darkCard : Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                children: [
+                                  const Text(
+                                    'Top Champions',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      _buildPodiumItem(_entries[1], 2, 100, Colors.grey),
+                                      _buildPodiumItem(_entries[0], 1, 130, Colors.amber),
+                                      _buildPodiumItem(_entries[2], 3, 80, Colors.brown.shade300),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
+
+                          const SizedBox(height: 16),
+
+                          if (_entries.length > 3)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Rankings',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-      ),
+
+                    // Rest of leaderboard as scrollable sliver list
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            if (index >= _entries.length - 3) return null;
+                            final entry = _entries[index + 3];
+                            return _buildLeaderboardTile(entry, isDark);
+                          },
+                          childCount: _entries.length > 3 ? _entries.length - 3 : 0,
+                        ),
+                      ),
+                    ),
+
+                    const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                  ],
+                ),
+            ),
+        ),
     );
   }
 

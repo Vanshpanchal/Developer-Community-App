@@ -15,6 +15,7 @@ class _ChallengesScreenState extends State<ChallengesScreen>
   final _gamificationService = GamificationService();
   late TabController _tabController;
   bool _loading = false;
+  GamificationStats? _stats;
 
   List<Challenge> _dailyChallenges = [];
   List<Challenge> _weeklyChallenges = [];
@@ -42,7 +43,17 @@ class _ChallengesScreenState extends State<ChallengesScreen>
         setState(() {
           _dailyChallenges = daily;
           _weeklyChallenges = weekly;
+          _stats = null;
           _loading = false;
+        });
+      }
+
+      final stats = await _gamificationService.getGamificationStats(
+        forceRefresh: true,
+      );
+      if (mounted) {
+        setState(() {
+          _stats = stats;
         });
       }
     } catch (e) {
@@ -117,9 +128,7 @@ class _ChallengesScreenState extends State<ChallengesScreen>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final timeLeft = challenge.expiresAt != null
-        ? challenge.expiresAt!.difference(DateTime.now())
-        : null;
+    final timeLeft = challenge.expiresAt?.difference(DateTime.now());
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -130,6 +139,9 @@ class _ChallengesScreenState extends State<ChallengesScreen>
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => _showChallengeDetails(challenge),
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        overlayColor: MaterialStateProperty.all(Colors.transparent),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -242,31 +254,98 @@ class _ChallengesScreenState extends State<ChallengesScreen>
                 ],
               ),
               const SizedBox(height: 12),
-              // Progress bar (placeholder)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: 0.0, // TODO: Implement actual progress
-                  minHeight: 6,
-                  backgroundColor: Colors.grey[200],
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Progress: 0%', // TODO: Implement actual progress
-                style: TextStyle(
-                  fontSize: 12,
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
+              // Progress bar
+              Builder(builder: (context) {
+                final progressData = _calculateProgress(challenge);
+                final progress = progressData.$1;
+                final currentValue = progressData.$2;
+                final targetValue = progressData.$3;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 6,
+                        backgroundColor: Colors.grey[200],
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Progress: ${(progress * 100).toStringAsFixed(0)}% ($currentValue/$targetValue)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ],
           ),
         ),
       ),
     );
+  }
+
+  (double, int, int) _calculateProgress(Challenge challenge) {
+    if (_stats == null || challenge.requirements.isEmpty) {
+      return (0.0, 0, 1);
+    }
+
+    final requirement = challenge.requirements.entries.first;
+    final key = requirement.key;
+    final target = (requirement.value as num?)?.toInt() ?? 1;
+
+    int current = 0;
+    switch (key) {
+      case 'postsToday':
+      case 'postsThisWeek':
+      case 'postsCount':
+        current = _stats!.postsCount;
+        break;
+      case 'discussionsToday':
+      case 'discussionsThisWeek':
+      case 'discussionsCount':
+        current = _stats!.discussionsCount;
+        break;
+      case 'repliesToday':
+      case 'repliesThisWeek':
+      case 'repliesCount':
+        current = _stats!.repliesCount;
+        break;
+      case 'likesGivenToday':
+      case 'likesGivenThisWeek':
+      case 'likesGiven':
+        current = _stats!.likesGiven;
+        break;
+      case 'likesReceived':
+        current = _stats!.likesReceived;
+        break;
+      case 'pollsCreated':
+        current = _stats!.pollsCreated;
+        break;
+      case 'pollsVoted':
+        current = _stats!.pollsVoted;
+        break;
+      case 'streakDays':
+      case 'streak':
+        current = _stats!.streak.currentStreak;
+        break;
+      default:
+        current = 0;
+    }
+
+    final safeTarget = target <= 0 ? 1 : target;
+    final progress = (current / safeTarget).clamp(0.0, 1.0);
+    return (progress, current, safeTarget);
   }
 
   void _showChallengeDetails(Challenge challenge) {

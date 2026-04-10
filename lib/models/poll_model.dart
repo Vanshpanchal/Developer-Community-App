@@ -1,4 +1,5 @@
 /// Poll model for DevSphere discussions
+library;
 
 class PollOption {
   final String id;

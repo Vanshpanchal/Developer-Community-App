@@ -15,7 +15,7 @@ class AIService {
       'No Gemini API key found. Set your key in profile settings to enable AI features.';
 
   final String _modelEndpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
   Future<bool> _ensureApiKey() async {
     final key = await ApiKeyManager.instance.getLocalKey();
@@ -112,10 +112,12 @@ class AIService {
       if (response.statusCode == 401 || response.statusCode == 403) {
         return 'Authentication error (${response.statusCode}). Check that your API key is valid and has access.';
       }
-      if (response.statusCode == 429)
+      if (response.statusCode == 429) {
         return 'Rate limit reached. Please wait and try again.';
-      if (response.statusCode >= 500)
+      }
+      if (response.statusCode >= 500) {
         return 'Service unavailable (${response.statusCode}). Retry later.';
+      }
       return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
     } catch (e, st) {
       if (kDebugMode) debugPrint('Gemini request failed: $e\n$st');
@@ -210,7 +212,7 @@ Keep under 220 words. Use GitHub-Flavored Markdown only.''';
 
   String _truncate(String input, int max) {
     if (input.length <= max) return input;
-    return input.substring(0, max) + '\n...<truncated>';
+    return '${input.substring(0, max)}\n...<truncated>';
   }
 
   String _buildCodeReviewPrompt({required String code, String? context}) {

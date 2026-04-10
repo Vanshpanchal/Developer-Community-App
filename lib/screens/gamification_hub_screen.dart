@@ -64,7 +64,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadStats,
+            onPressed: () => _loadStats(forceRefresh: true),
           ),
         ],
       ),
@@ -73,7 +73,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
           : _stats == null
               ? const Center(child: Text('Failed to load stats'))
               : RefreshIndicator(
-                  onRefresh: _loadStats,
+                  onRefresh: () => _loadStats(forceRefresh: true),
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: Column(
@@ -150,6 +150,9 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        overlayColor: MaterialStateProperty.all(Colors.transparent),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -353,7 +356,7 @@ class _GamificationHubScreenState extends State<GamificationHubScreen> {
                 decoration: BoxDecoration(
                   color: isCurrent
                       ? Theme.of(context).colorScheme.primaryContainer
-                      : theme.colorScheme.surfaceVariant,
+                      : theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
                   border: isCurrent
                       ? Border.all(

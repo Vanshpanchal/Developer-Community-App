@@ -10,7 +10,7 @@ class FirebaseCacheService {
   factory FirebaseCacheService() => _instance;
   FirebaseCacheService._internal();
 
-  final _storage = GetStorage();
+  final _storage = GetStorage('firebase_cache');
   // ignore: unused_field
   final Map<String, Stream<QuerySnapshot>> _activeStreams = {};
   // ignore: unused_field

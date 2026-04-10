@@ -16,7 +16,7 @@ import 'utils/app_snackbar.dart';
 class CopyOverlay extends StatefulWidget {
   final BuildContext context;
 
-  CopyOverlay({super.key, required this.context});
+  const CopyOverlay({super.key, required this.context});
 
   @override
   State<CopyOverlay> createState() => _CopyOverlayState();
@@ -83,7 +83,7 @@ class _CopyOverlayState extends State<CopyOverlay>
 }
 
 class ChatScreen1 extends StatefulWidget {
-  ChatScreen1({super.key});
+  const ChatScreen1({super.key});
 
   @override
   State<ChatScreen1> createState() => _ChatScreenState();
@@ -451,7 +451,7 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final VoidCallback onCopy;
 
-  MessageBubble({
+  const MessageBubble({
     super.key,
     required this.message,
     required this.onCopy,
@@ -465,40 +465,95 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Align(
       alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!message.isUser) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              child: Icon(Icons.smart_toy, size: 18, color: Colors.white),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.85,
+        ),
+        child: Column(
+          crossAxisAlignment:
+              message.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            // Sender Info Row
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4, left: 4, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!message.isUser) ...[
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.smart_toy_rounded,
+                        size: 14,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Assistant',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade700,
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      'You',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    CircleAvatar(
+                      radius: 8,
+                      backgroundColor: AppTheme.secondaryColor.withValues(alpha: 0.1),
+                      child: Icon(
+                        Icons.person,
+                        size: 10,
+                        color: AppTheme.secondaryColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            SizedBox(width: 8),
-          ],
-          Flexible(
-            child: GestureDetector(
-              onLongPress:
-                  !message.isUser ? () => _copyToClipboard(context) : null,
+
+            // Message Body
+            GestureDetector(
+              onLongPress: !message.isUser ? () => _copyToClipboard(context) : null,
               child: Container(
-                margin: EdgeInsets.symmetric(vertical: 4),
-                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: message.isUser
                       ? AppTheme.primaryColor
-                      : Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(20).copyWith(
-                    bottomLeft: message.isUser ? null : Radius.circular(0),
-                    bottomRight: message.isUser ? Radius.circular(0) : null,
+                      : (isDark ? AppTheme.darkCard : Colors.white),
+                  borderRadius: BorderRadius.circular(16).copyWith(
+                    bottomRight: message.isUser ? const Radius.circular(2) : null,
+                    bottomLeft: !message.isUser ? const Radius.circular(2) : null,
                   ),
+                  border: !message.isUser
+                      ? Border.all(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.1)
+                              : Colors.grey.shade200,
+                        )
+                      : null,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 5,
-                      offset: Offset(0, 2),
+                      color: Colors.black.withValues(alpha: isDark ? 0.1 : 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
                     ),
                   ],
                 ),
@@ -506,24 +561,35 @@ class MessageBubble extends StatelessWidget {
                   data: message.text,
                   styleSheet: message.isUser
                       ? MarkdownStyleSheet(
-                          p: Theme.of(context).textTheme.bodyLarge!.copyWith(
-                                color: Colors.white,
-                              ),
+                          p: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white,
+                            height: 1.5,
+                          ),
                         )
-                      : AppMarkdownStyles.getCodeStyle(context),
+                      : MarkdownStyleSheet.fromTheme(theme).copyWith(
+                          p: theme.textTheme.bodyMedium?.copyWith(
+                            height: 1.5,
+                            color: isDark ? Colors.grey.shade200 : Colors.black87,
+                          ),
+                          code: theme.textTheme.bodySmall?.copyWith(
+                            backgroundColor: isDark
+                                ? Colors.black.withValues(alpha: 0.3)
+                                : Colors.grey.shade100,
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                          ),
+                          codeblockDecoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.black.withValues(alpha: 0.3)
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
                 ),
               ),
             ),
-          ),
-          if (message.isUser) ...[
-            SizedBox(width: 8),
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: AppTheme.secondaryColor,
-              child: Icon(Icons.person, size: 18, color: Colors.white),
-            ),
           ],
-        ],
+        ),
       ),
     );
   }

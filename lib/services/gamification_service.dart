@@ -480,7 +480,7 @@ class GamificationService {
       if (rewardXp > 0) {
         final newXp = currentXp + rewardXp;
         transaction.update(userRef, {
-          'XP': newXp.toString(),
+          'XP': newXp,
           'lastXpUpdate': FieldValue.serverTimestamp(),
         });
         transaction.set(userRef.collection('xp_history').doc(), {
@@ -1161,7 +1161,7 @@ class GamificationService {
         final newXp = currentXp + xpToAdd;
 
         transaction.update(userRef, {
-          'XP': newXp.toString(),
+          'XP': newXp,
           'lastXpUpdate': FieldValue.serverTimestamp(),
         });
 
@@ -1211,7 +1211,7 @@ class GamificationService {
         final newXp = currentXp - safeDeduction;
 
         transaction.update(userRef, {
-          'XP': newXp.toString(),
+          'XP': newXp,
           'lastXpUpdate': FieldValue.serverTimestamp(),
         });
 
@@ -1305,7 +1305,7 @@ class GamificationService {
           final nextXp = currentXp + streakBonus;
 
           transaction.update(userRef, {
-            'XP': nextXp.toString(),
+            'XP': nextXp,
             'lastXpUpdate': FieldValue.serverTimestamp(),
           });
 
@@ -1515,38 +1515,24 @@ class GamificationService {
     }
 
     try {
-      // Query all users (XP is stored as string, so we can't orderBy on it directly)
-      // We need to fetch and sort manually to ensure correct numeric ordering
       final querySnapshot = await _firestore
           .collection('User')
-          .limit(500) // Fetch more than needed to ensure we get top users
+          .orderBy('XP', descending: true)
+          .limit(limit)
           .get();
 
-      // Parse and sort by XP as integers
-      final userDataList = querySnapshot.docs.map((doc) {
-        final data = doc.data();
-        data['uid'] = doc.id;
-        data['xpInt'] = int.tryParse(data['XP']?.toString() ?? '0') ?? 0;
-        return data;
-      }).toList();
-
-      // Sort by XP descending (numeric sort)
-      userDataList
-          .sort((a, b) => (b['xpInt'] as int).compareTo(a['xpInt'] as int));
-
-      // Take only the top 'limit' entries
-      final topUsers = userDataList.take(limit).toList();
-
-      // Assign ranks, handling ties (users with same XP get same rank)
       final entries = <LeaderboardEntry>[];
       int currentRank = 1;
       int? previousXp;
 
-      for (int i = 0; i < topUsers.length; i++) {
-        final data = topUsers[i];
-        final xp = data['xpInt'] as int;
+      for (int i = 0; i < querySnapshot.docs.length; i++) {
+        final doc = querySnapshot.docs[i];
+        final data = doc.data();
+        data['uid'] = doc.id;
+        
+        final xp = data['XP'] is int ? data['XP'] as int : (int.tryParse(data['XP']?.toString() ?? '0') ?? 0);
+        data['xpInt'] = xp;
 
-        // If XP is different from previous, update rank to current position
         if (previousXp != null && xp != previousXp) {
           currentRank = i + 1;
         }
@@ -1574,23 +1560,19 @@ class GamificationService {
       final userDoc = await _firestore.collection('User').doc(userId).get();
       if (!userDoc.exists) return -1;
 
-      final userXp =
-          int.tryParse(userDoc.data()?['XP']?.toString() ?? '0') ?? 0;
+      final data = userDoc.data();
+      final rawXp = data?['XP'];
+      final int userXp = rawXp is int
+          ? rawXp
+          : (int.tryParse(rawXp?.toString() ?? '0') ?? 0);
 
-      // Since XP is stored as string, we need to fetch all users and compare numerically
-      // For better performance, we could cache this from the leaderboard call
-      final allUsers = await _firestore.collection('User').get();
+      final higherRankedSnap = await _firestore
+          .collection('User')
+          .where('XP', isGreaterThan: userXp)
+          .count()
+          .get();
 
-      // Count how many users have higher XP (numeric comparison)
-      int higherRankedCount = 0;
-      for (final doc in allUsers.docs) {
-        final otherXp = int.tryParse(doc.data()['XP']?.toString() ?? '0') ?? 0;
-        if (otherXp > userXp) {
-          higherRankedCount++;
-        }
-      }
-
-      return higherRankedCount + 1;
+      return (higherRankedSnap.count ?? 0) + 1;
     } catch (e) {
       debugPrint('Error getting user rank: $e');
       return -1;
@@ -1734,3 +1716,4 @@ class GamificationService {
     }
   }
 }
+

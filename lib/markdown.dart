@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 class markdown extends StatefulWidget {
-   markdown({super.key});
+   const markdown({super.key});
 
   @override
   State<markdown> createState() => _markdownState();

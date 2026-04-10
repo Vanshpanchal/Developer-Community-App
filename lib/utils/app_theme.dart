@@ -224,6 +224,12 @@ class AppTheme {
           TargetPlatform.fuchsia: _AppPageTransitionsBuilder(),
         },
       ),
+      // Remove grey ink splash animation - use subtle primary color ripple
+      // Completely remove click animations/splashes
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      hoverColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
     );
   }
 
@@ -304,6 +310,11 @@ class AppTheme {
           TargetPlatform.fuchsia: _AppPageTransitionsBuilder(),
         },
       ),
+      // Completely remove click animations/splashes
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      hoverColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
     );
   }
 }

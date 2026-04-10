@@ -50,7 +50,7 @@ app.*.map.json
 /android/app/release
 
 # Firebase configuration files
-firebase.json
+# firebase.json
 **/google-services.json
 
 # Keystore and signing credentials (NEVER commit these!)
@@ -69,10 +69,10 @@ app.*.symbols
 app.*.map.json
 
 # Firebase Functions folder
-functions/
+# functions/
 
 # Appwrite function folder
-appwrite-fcm-moderation/
+# appwrite-fcm-moderation/
 
 # Documentation files (ignore all .md except README.md)
 *.md

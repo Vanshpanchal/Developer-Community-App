@@ -14,7 +14,7 @@ import 'utils/content_moderation.dart';
 import 'utils/app_validators.dart';
 
 class add_discussion extends StatefulWidget {
-  add_discussion({super.key});
+  const add_discussion({super.key});
 
   @override
   State<add_discussion> createState() => _add_discussionState();

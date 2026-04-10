@@ -75,7 +75,7 @@ class CachedImage extends StatelessWidget {
 
 /// Optimized cached image provider for CircleAvatar and other ImageProvider widgets
 class CachedImageProvider extends CachedNetworkImageProvider {
-  CachedImageProvider(
+  const CachedImageProvider(
     super.url, {
     super.scale,
     super.headers,

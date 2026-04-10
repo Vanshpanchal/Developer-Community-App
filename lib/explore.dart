@@ -18,13 +18,14 @@ import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
+import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'widgets/scroll_fade_in.dart';
 
 class explore extends StatefulWidget {
-  explore({super.key});
+  const explore({super.key});
 
   @override
   exploreState createState() => exploreState();
@@ -239,8 +240,22 @@ class exploreState extends State<explore>
   }
 
   List<Map<String, dynamic>> _rankPosts(List<Map<String, dynamic>> posts) {
-    final rankedPosts = posts
-        .where((post) => post['contentStatus']?.toString() != 'blocked')
+    // Deduplicate by 'id' or 'docId'
+    final seenIds = <String>{};
+    final uniquePosts = <Map<String, dynamic>>[];
+    
+    for (final post in posts) {
+      final id = post['id'] ?? post['docId'];
+      if (id != null && !seenIds.contains(id)) {
+        seenIds.add(id);
+        uniquePosts.add(post);
+      }
+    }
+
+    final rankedPosts = uniquePosts
+        .where((post) => 
+            post['contentStatus']?.toString() != 'blocked' && 
+            post['Report'] != true)
         .toList();
 
     rankedPosts.sort((a, b) {
@@ -394,9 +409,14 @@ class exploreState extends State<explore>
                       itemCount: questions.length + (_isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == questions.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
+                          return const SizedBox(
+                            height: 60,
+                            child: Center(
+                              child: Opacity(
+                                opacity: 0.5,
+                                child: Text('•', style: TextStyle(fontSize: 24)),
+                              ),
+                            ),
                           );
                         }
 
@@ -758,27 +778,9 @@ class QuestionCard extends StatefulWidget {
 }
 
 class _QuestionCardState extends State<QuestionCard> {
-  Future<String?> _fetchUserName(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['Username'];
-      } else {
-        return 'Unknown User';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
-
   bool isSaved = false;
   bool isLiked = false;
-  bool isFetchingUserName = false;
-  late Future<String?> _userNameFuture;
+  late Future<Map<String, dynamic>> _userDataFuture;
   bool _showComplexity = false;
   String? _complexityResult;
   bool _complexityLoading = false;
@@ -789,7 +791,7 @@ class _QuestionCardState extends State<QuestionCard> {
   @override
   void initState() {
     super.initState();
-    _userNameFuture = _fetchUserName(widget.uid);
+    _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
     _checkIfLiked();
     _checkStatus();
   }
@@ -952,39 +954,6 @@ class _QuestionCardState extends State<QuestionCard> {
     }
   }
 
-  Future<String?> _fetchUserProfileImage(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['profilePicture'];
-      } else {
-        return null;
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return null;
-    }
-  }
-
-  Future<String?> _fetchUserXP(String uid) async {
-    try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['XP']?.toString();
-      } else {
-        return '100';
-      }
-    } catch (e) {
-      print('Error fetching user data: $e');
-      return 'Error';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1268,25 +1237,31 @@ class _QuestionCardState extends State<QuestionCard> {
   }
 
   Widget _buildUserInfoRow(ThemeData theme) {
-    return Row(
-      children: [
-        // Profile Image
-        GestureDetector(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
-              ),
-            );
-          },
-          child: FutureBuilder<String?>(
-            future: _fetchUserProfileImage(widget.uid),
-            builder: (context, snapshot) {
-              final hasImage = snapshot.hasData &&
-                  snapshot.data != null &&
-                  snapshot.data!.isNotEmpty;
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _userDataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(height: 48);
+        }
+        
+        final userData = snapshot.data ?? {};
+        final imageUrl = userData['profilePicture'] as String?;
+        final hasImage = imageUrl != null && imageUrl.isNotEmpty;
+        final userName = userData['Username']?.toString() ?? 'Unknown';
+        final userXP = userData['XP']?.toString() ?? '100';
 
-              return Container(
+        return Row(
+          children: [
+            // Profile Image
+            GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
+                  ),
+                );
+              },
+              child: Container(
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -1296,53 +1271,36 @@ class _QuestionCardState extends State<QuestionCard> {
                   radius: 20,
                   backgroundColor: theme.scaffoldBackgroundColor,
                   backgroundImage: hasImage
-                      ? NetworkImage(snapshot.data!)
+                      ? NetworkImage(imageUrl)
                       : const NetworkImage(
                           'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
                         ),
                 ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
+              ),
+            ),
+            const SizedBox(width: 12),
 
-        // Username
-        Expanded(
-          child: GestureDetector(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
-                ),
-              );
-            },
-            child: FutureBuilder<String?>(
-              future: _userNameFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildShimmerText();
-                } else if (snapshot.hasData) {
-                  return Text(
-                    snapshot.data ?? 'Unknown',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+            // Username
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
                     ),
                   );
-                } else {
-                  return const Text('User not found');
-                }
-              },
+                },
+                child: Text(
+                  userName,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
 
-        // XP Badge
-        FutureBuilder<String?>(
-          future: _fetchUserXP(widget.uid),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) return const SizedBox.shrink();
-            return Container(
+            // XP Badge
+            Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 10,
                 vertical: 4,
@@ -1352,17 +1310,17 @@ class _QuestionCardState extends State<QuestionCard> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '${snapshot.data} XP',
+                '$userXP XP',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
                   fontSize: 11,
                 ),
               ),
-            );
-          },
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 

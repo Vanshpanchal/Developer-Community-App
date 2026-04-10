@@ -46,7 +46,12 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
         return;
       }
 
-      await FirebaseFirestore.instance.collection('User').doc(user.uid).set({
+      await FirebaseFirestore.instance
+          .collection('User')
+          .doc(user.uid)
+          .collection('private')
+          .doc('tokens')
+          .set({
         'fcmToken': token,
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),

@@ -12,18 +12,22 @@ import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
+import 'models/poll_model.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
+import 'widgets/poll_widgets.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
 import 'widgets/app_dialogs.dart';
 import 'widgets/scroll_fade_in.dart';
+import 'services/user_cache_service.dart';
 
 class detail_discussion extends StatefulWidget {
   final String docId;
   final String creatorId;
 
-  detail_discussion({Key? key, required this.docId, required this.creatorId});
+  const detail_discussion(
+      {super.key, Key? keys, required this.docId, required this.creatorId});
 
   @override
   State<detail_discussion> createState() => _detail_discussionState();
@@ -37,8 +41,9 @@ class _detail_discussionState extends State<detail_discussion> {
   bool _summaryLoading = false;
   // ignore: unused_field
   String? _threadSummary;
-  final _gamificationService = GamificationService();
+   final _gamificationService = GamificationService();
   bool _isLoading = false;
+  bool _isTopSectionCollapsed = true;
   bool _nestedReplyLoading = false;
   late final Stream<DocumentSnapshot> _discussionStream;
   late final Stream<QuerySnapshot> _repliesStream;
@@ -91,9 +96,9 @@ class _detail_discussionState extends State<detail_discussion> {
         // Update XP (add or subtract points)
         int updatedXP = currentXP - points;
 
-        // Save the updated XP back to Firestore as a String
+        // Save the updated XP back to Firestore as an int
         await FirebaseFirestore.instance.collection('User').doc(uid).update({
-          'XP': updatedXP.toString(),
+          'XP': updatedXP,
           'lastXpUpdate': FieldValue.serverTimestamp(),
         });
 
@@ -120,13 +125,8 @@ class _detail_discussionState extends State<detail_discussion> {
 
   Future<String?> _fetchUserXP(String uid) async {
     try {
-      DocumentSnapshot userDoc =
-          await FirebaseFirestore.instance.collection('User').doc(uid).get();
-      if (userDoc.exists) {
-        return userDoc['XP']?.toString();
-      } else {
-        return '100';
-      }
+      final userData = await UserCacheService.instance.getUserData(uid);
+      return userData['XP']?.toString() ?? '100';
     } catch (e) {
       print('Error fetching user data: $e');
       return 'Error';
@@ -135,16 +135,11 @@ class _detail_discussionState extends State<detail_discussion> {
 
   Future<String?> _fetchUserProfileImage(String uid) async {
     try {
-      DocumentSnapshot userDoc =
-          await FirebaseFirestore.instance.collection('User').doc(uid).get();
-      if (userDoc.exists) {
-        return userDoc['profilePicture'];
-      } else {
-        return 'Unknown User';
-      }
+      final userData = await UserCacheService.instance.getUserData(uid);
+      return userData['profilePicture'] as String?;
     } catch (e) {
       print('Error fetching user data: $e');
-      return 'Error';
+      return null;
     }
   }
 
@@ -401,6 +396,30 @@ class _detail_discussionState extends State<detail_discussion> {
     }
   }
 
+  Future<void> _reportDiscussion() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('Discussions')
+          .doc(widget.docId)
+          .update({
+        'Report': true,
+        'reportedAt': FieldValue.serverTimestamp(),
+        'reportedBy': user?.uid,
+      });
+      AppSnackbar.success(
+          'Discussion reported. Our moderators will review it.');
+    } catch (e) {
+      AppSnackbar.error('Failed to report discussion: $e');
+    }
+  }
+
+  Future<void> _notifyAcceptedReplyAuthor(
+      Map<String, dynamic> replyData) async {
+    // Push notifications disabled - no server-side function available.
+    // To re-enable, deploy an Appwrite Function or backend that can call FCM.
+    return;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -436,6 +455,26 @@ class _detail_discussionState extends State<detail_discussion> {
           color: isDark ? Colors.white : Colors.black87,
         ),
         actions: [
+          IconButton(
+            tooltip: 'Report Discussion',
+            icon: Icon(
+              Icons.flag_outlined,
+              color: isDark ? Colors.grey.shade200 : Colors.black87,
+            ),
+            onPressed: () async {
+              final confirm = await AppDialogs.showConfirmation(
+                context,
+                title: 'Report Discussion',
+                message:
+                    'Do you want to report this discussion for moderator review?',
+                confirmText: 'Report',
+                cancelText: 'Cancel',
+              );
+              if (confirm == true) {
+                await _reportDiscussion();
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Summarize Thread',
             icon: _summaryLoading
@@ -504,10 +543,11 @@ class _detail_discussionState extends State<detail_discussion> {
                         AppSnackbar.error('Summary failed: $e');
                       }
                     } finally {
-                      if (mounted)
+                      if (mounted) {
                         setState(() {
                           _summaryLoading = false;
                         });
+                      }
                     }
                   },
           ),
@@ -560,6 +600,12 @@ class _detail_discussionState extends State<detail_discussion> {
                   var discussionData = snapshot.data!;
                   final discussionMap =
                       discussionData.data() as Map<String, dynamic>? ?? {};
+                  final rawPoll = discussionMap['poll'];
+                  final pollMap = rawPoll is Map
+                      ? Map<String, dynamic>.from(rawPoll)
+                      : null;
+                  final hasPoll =
+                      discussionMap['hasPoll'] == true && pollMap != null;
 
                   if (_isUnsafeContent(discussionMap)) {
                     return Center(
@@ -607,89 +653,164 @@ class _detail_discussionState extends State<detail_discussion> {
 
                   return CustomScrollView(
                     slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate([
-                            ScrollFadeIn(
-                              child: display_discussion(
-                                title: discussionData['Title'] ?? '',
-                                description:
-                                    discussionData['Description'] ?? '',
-                                tags: List<String>.from(
-                                    discussionData['Tags'] ?? []),
-                                timestamp:
-                                    (discussionData['Timestamp'] as Timestamp?)
-                                            ?.toDate() ??
-                                        DateTime.now(),
-                                uid: discussionData['Uid'] ?? '',
-                                docid: widget.docId,
-                                replies: [],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            // ── Reddit-style replies divider ──
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 8),
-                              child: Row(
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Icon(
-                                    Icons.forum_outlined,
-                                    size: 18,
-                                    color: isDark
-                                        ? Colors.grey.shade400
-                                        : Colors.grey.shade600,
-                                  ),
-                                  const SizedBox(width: 8),
                                   Text(
-                                    'Discussion',
+                                    _isTopSectionCollapsed ? 'Discussion Overview' : 'Main Discussion',
                                     style: TextStyle(
-                                      fontSize: 14,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w700,
-                                      color: isDark
-                                          ? Colors.grey.shade300
-                                          : Colors.grey.shade700,
-                                      letterSpacing: 0.3,
+                                      color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
+                                      letterSpacing: 0.5,
                                     ),
                                   ),
                                   const Spacer(),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: isDark
-                                          ? Colors.grey.shade800
-                                          : Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(12),
+                                  TextButton.icon(
+                                    onPressed: () => setState(() => _isTopSectionCollapsed = !_isTopSectionCollapsed),
+                                    icon: Icon(
+                                      _isTopSectionCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+                                      size: 16,
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
+                                    label: Text(
+                                      _isTopSectionCollapsed ? 'Show context' : 'Collapse',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                    style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              AnimatedCrossFade(
+                                duration: const Duration(milliseconds: 300),
+                                crossFadeState: _isTopSectionCollapsed 
+                                    ? CrossFadeState.showFirst 
+                                    : CrossFadeState.showSecond,
+                                firstChild: GestureDetector(
+                                  onTap: () => setState(() => _isTopSectionCollapsed = false),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? AppTheme.darkCard.withValues(alpha: 0.5) : Colors.grey.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Icon(Icons.sort_rounded,
-                                            size: 14,
-                                            color: isDark
-                                                ? Colors.grey.shade400
-                                                : Colors.grey.shade600),
-                                        const SizedBox(width: 4),
                                         Text(
-                                          'Oldest',
+                                          discussionData['Title'] ?? '',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            fontSize: 11,
+                                            fontSize: 15,
                                             fontWeight: FontWeight.w600,
-                                            color: isDark
-                                                ? Colors.grey.shade400
-                                                : Colors.grey.shade600,
+                                            color: isDark ? Colors.grey.shade200 : Colors.grey.shade800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          discussionData['Description'] ?? '',
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                ],
+                                ),
+                                secondChild: Column(
+                                  children: [
+                                    ScrollFadeIn(
+                                      child: display_discussion(
+                                        title: discussionData['Title'] ?? '',
+                                        description:
+                                            discussionData['Description'] ?? '',
+                                        tags: List<String>.from(
+                                            discussionData['Tags'] ?? []),
+                                        timestamp:
+                                            (discussionData['Timestamp'] as Timestamp?)
+                                                    ?.toDate() ??
+                                                DateTime.now(),
+                                        uid: discussionData['Uid'] ?? '',
+                                        docid: widget.docId,
+                                        replies: [],
+                                      ),
+                                    ),
+                                    if (hasPoll) ...[
+                                      const SizedBox(height: 8),
+                                      PollDisplayWidget(
+                                        poll: Poll.fromMap(pollMap),
+                                        parentId: widget.docId,
+                                        parentCollection: 'Discussions',
+                                        onVoted: () {
+                                          if (mounted) setState(() {});
+                                        },
+                                        canDelete: false,
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 0),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            const SizedBox(height: 12),
+                            // ── Reddit-style replies divider ──
+                            // ── Simple Discussion Header ──
+                            Row(
+                              children: [
+                                Text(
+                                  'COMMENTS',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Divider(
+                                    color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+                                    thickness: 1,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.sort_rounded,
+                                  size: 14,
+                                  color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Oldest',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 12),
                           ]),
                         ),
                       ),
@@ -1532,6 +1653,8 @@ class _detail_discussionState extends State<detail_discussion> {
                                                                       updateXP(
                                                                           replyData[
                                                                               'uid']);
+                                                                      await _notifyAcceptedReplyAuthor(
+                                                                          replyData);
                                                                       AppSnackbar
                                                                           .success(
                                                                               'Reply accepted!');
@@ -1990,8 +2113,15 @@ class _detail_discussionState extends State<detail_discussion> {
                             color: isDark ? Colors.white : Colors.black87,
                           ),
                           decoration: InputDecoration(
-                            hintText: 'Write a reply...',
+                            hintText: 'Add your opinion...',
                             hintStyle: TextStyle(
+                              color: isDark
+                                  ? Colors.grey.shade400
+                                  : Colors.grey.shade500,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 18,
                               color: isDark
                                   ? Colors.grey.shade400
                                   : Colors.grey.shade500,
@@ -2022,6 +2152,10 @@ class _detail_discussionState extends State<detail_discussion> {
                         color: Colors.transparent,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(24),
+                          splashColor: Colors.transparent,
+                          highlightColor: Colors.transparent,
+                          overlayColor:
+                              MaterialStateProperty.all(Colors.transparent),
                           onTap: _isLoading
                               ? null
                               : () {
@@ -2222,7 +2356,7 @@ class display_discussion extends StatefulWidget {
   final DateTime timestamp;
   final List<String> replies; // Added to store replies as a list of reply IDs
 
-  display_discussion({
+  const display_discussion({
     super.key,
     required this.title,
     required this.description,
@@ -2240,15 +2374,8 @@ class display_discussion extends StatefulWidget {
 class display_discussionCardState extends State<display_discussion> {
   Future<String?> _fetchUserName(String uid) async {
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['Username'];
-      } else {
-        return 'Unknown User';
-      }
+      final userData = await UserCacheService.instance.getUserData(uid);
+      return userData['Username'] as String? ?? 'Unknown User';
     } catch (e) {
       print('Error fetching user data: $e');
       return 'Error';
@@ -2260,6 +2387,7 @@ class display_discussionCardState extends State<display_discussion> {
   late Future<String?> _userNameFuture;
   late Future<String?> _userProfileImageFuture;
   late Future<String?> _userXpFuture;
+  bool _showFullTitle = false;
   bool _showFullDescription = false;
 
   void _openFullContentSheet(ThemeData theme) {
@@ -2347,35 +2475,21 @@ class display_discussionCardState extends State<display_discussion> {
 
   Future<String?> _fetchUserProfileImage(String uid) async {
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['profilePicture'];
-      } else {
-        return 'Unknown User';
-      }
+      final userData = await UserCacheService.instance.getUserData(uid);
+      return userData['profilePicture'] as String?;
     } catch (e) {
       print('Error fetching user data: $e');
-      return 'Error';
+      return null;
     }
   }
 
   Future<String?> _fetchUserXP(String uid) async {
     try {
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
-          .collection('User')
-          .doc(widget.uid)
-          .get();
-      if (userDoc.exists) {
-        return userDoc['XP']?.toString();
-      } else {
-        return '100';
-      }
+      final userData = await UserCacheService.instance.getUserData(uid);
+      return userData['XP']?.toString() ?? '100';
     } catch (e) {
       print('Error fetching user data: $e');
-      return 'Error';
+      return '100';
     }
   }
 
@@ -2395,179 +2509,224 @@ class display_discussionCardState extends State<display_discussion> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    return Card(
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      decoration: BoxDecoration(
+        color: isDark ? AppTheme.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.07)
+              : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
         child: InkWell(
-            onTap: () {
-              // Logic to handle card click, for example, navigating to a discussion detail screen
-              // Get.to(detail_discussion(docId: widget.docid));
-            },
-            onLongPress: () {
-              _openFullContentSheet(theme);
-            },
-            child: Padding(
-              padding: EdgeInsets.all(10.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // User Info Row (Profile Picture and Username)
-                  Row(
-                    // mainAxisAlignment: Maina,
-                    children: [
-                      FutureBuilder<String?>(
-                          future: _userProfileImageFuture,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState ==
-                                ConnectionState.waiting) {
+          borderRadius: BorderRadius.circular(16),
+          onLongPress: () => _openFullContentSheet(theme),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── User Info Row ──
+                Row(
+                  children: [
+                    // Avatar
+                    FutureBuilder<String?>(
+                      future: _userProfileImageFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return CircleAvatar(
+                            radius: 18,
+                            backgroundColor: isDark
+                                ? Colors.grey.shade700
+                                : Colors.grey.shade200,
+                          );
+                        }
+                        final url = snapshot.data;
+                        if (url == null || url.isEmpty) {
+                          return FutureBuilder<String?>(
+                            future: _userNameFuture,
+                            builder: (ctx, nameSnap) {
+                              final initial = ((nameSnap.data ?? '?').isNotEmpty)
+                                  ? (nameSnap.data ?? '?')[0].toUpperCase()
+                                  : '?';
                               return CircleAvatar(
-                                backgroundColor: Colors.grey,
-                              );
-                            } else if (snapshot.hasError ||
-                                snapshot.data == null ||
-                                snapshot.data!.isEmpty) {
-                              print(snapshot.error);
-                              return CircleAvatar(
-                                foregroundImage: NetworkImage(
-                                  'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
+                                radius: 18,
+                                backgroundColor: AppTheme.primaryColor
+                                    .withValues(alpha: 0.15),
+                                child: Text(
+                                  initial,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.primaryColor,
+                                  ),
                                 ),
                               );
-                            } else {
-                              return CircleAvatar(
-                                foregroundImage: NetworkImage(snapshot.data!),
-                              );
-                            }
-                          }),
-                      SizedBox(width: 2), // Space between avatar and text
-                      // Fetch and display the user's name
-                      // if (!isFetchingUserName)
-                      FutureBuilder<String?>(
+                            },
+                          );
+                        }
+                        return CircleAvatar(
+                          radius: 18,
+                          backgroundImage: NetworkImage(url),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 10),
+                    // Username
+                    Expanded(
+                      child: FutureBuilder<String?>(
                         future: _userNameFuture,
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Text('Loading...');
-                          } else if (snapshot.hasError) {
-                            return Text('Error fetching user name');
-                          } else if (snapshot.hasData) {
-                            String userName = "~ ${snapshot.data}";
-                            return Text(userName);
-                          } else {
-                            return Text('User not found');
-                          }
+                          final name = snapshot.data ?? '…';
+                          return Text(
+                            name,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          );
                         },
                       ),
-                      Spacer(),
-                      FutureBuilder<String?>(
-                        future: _userXpFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Text('XP: Loading...');
-                          } else if (snapshot.hasError) {
-                            return Text('Error fetching XP');
-                          } else if (snapshot.hasData) {
-                            Object xp = snapshot.data ?? 0;
-                            return Container(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.lightBlueAccent, // Light blue
-                                    Colors.blue, // Regular blue
-                                    Colors.blueAccent, // Darker blue
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(30),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 10,
-                                    offset: Offset(4, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'XP: $xp',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          } else {
-                            return Text('XP: 0');
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 6),
-                  // Space between user info and title
-                  Text(
-                    widget.title,
-                    style: theme.textTheme.titleMedium?.copyWith(height: 1.3),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 0),
-                  RichText(
-                    text: TextSpan(
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        height: 1.6,
-                        fontSize: 15,
-                        color: isDark ? Colors.grey.shade200 : Colors.black87,
-                      ),
-                      children: _buildDescription(widget.description, theme),
                     ),
-                    maxLines: _showFullDescription ? 14 : 4,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (widget.description.trim().length > 220)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Wrap(
-                        spacing: 8,
-                        children: [
-                          TextButton(
-                            onPressed: () => setState(() =>
-                                _showFullDescription = !_showFullDescription),
-                            child: Text(
-                              _showFullDescription ? 'Show less' : 'Show more',
+                    // XP Badge
+                    FutureBuilder<String?>(
+                      future: _userXpFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox(width: 50, height: 24);
+                        }
+                        final xp = snapshot.data ?? '0';
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            gradient: AppTheme.primaryGradient,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.primaryColor
+                                    .withValues(alpha: 0.25),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            '$xp XP',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
                             ),
                           ),
-                          OutlinedButton(
-                            onPressed: () => _openFullContentSheet(theme),
-                            child: const Text('View full content'),
-                          ),
-                        ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                // ── Title ──
+                Text(
+                  widget.title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    height: 1.3,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                  ),
+                  maxLines: _showFullTitle ? null : 2,
+                  overflow:
+                      _showFullTitle ? TextOverflow.visible : TextOverflow.ellipsis,
+                ),
+                if (widget.title.trim().length > 80)
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _showFullTitle = !_showFullTitle),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _showFullTitle ? 'Show less' : 'Read more',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
                     ),
-                  //  SizedBox(height: 8),
-                  // code = widget.code!!
-                  // Wrap(
-                  //   spacing: 5,
-                  //   children: widget.tags
-                  //       .map((tag) => Chip(
-                  //     label: Text(tag),
-                  //     backgroundColor:
-                  //     theme.colorScheme.secondaryContainer,
-                  //     labelStyle: TextStyle(
-                  //         color:
-                  //         theme.colorScheme.onSecondaryContainer),
-                  //   ))
-                  //       .toList(),
-                  // ),
-                ],
-              ),
-            )));
+                  ),
+
+                const SizedBox(height: 6),
+
+                // ── Description ──
+                RichText(
+                  text: TextSpan(
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      height: 1.6,
+                      fontSize: 14,
+                      color: isDark
+                          ? Colors.grey.shade300
+                          : const Color(0xFF475569),
+                    ),
+                    children: _buildDescription(widget.description, theme),
+                  ),
+                  maxLines: _showFullDescription ? null : 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (widget.description.trim().length > 220)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => setState(() =>
+                              _showFullDescription = !_showFullDescription),
+                          child: Text(
+                            _showFullDescription ? 'Show less' : 'Read more',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        GestureDetector(
+                          onTap: () => _openFullContentSheet(theme),
+                          child: Text(
+                            'View full',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.secondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ignore: unused_element
@@ -2641,7 +2800,7 @@ void _launchURL(String url) async {
 
 class _ThreadSummarySheet extends StatefulWidget {
   final String summary;
-  _ThreadSummarySheet({required this.summary});
+  const _ThreadSummarySheet({required this.summary});
 
   @override
   State<_ThreadSummarySheet> createState() => _ThreadSummarySheetState();
