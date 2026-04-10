@@ -102,6 +102,7 @@ class _add_discussionState extends State<add_discussion> {
 
       // Award XP for creating discussion
       await _gamificationService.awardXp(XpAction.createDiscussion);
+      await _gamificationService.incrementCounter('discussionsCount');
       await _gamificationService.recordActivity();
 
       // Award XP for poll if created
@@ -469,7 +470,8 @@ class _add_discussionState extends State<add_discussion> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _titleController,
-                  validator: (v) => _isSubmitted ? AppValidators.validateTitle(v) : null,
+                  validator: (v) =>
+                      _isSubmitted ? AppValidators.validateTitle(v) : null,
                   autovalidateMode: AutovalidateMode.disabled,
                   onTap: () {
                     if (_isSubmitted) {
@@ -534,7 +536,9 @@ class _add_discussionState extends State<add_discussion> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descriptionController,
-                  validator: (v) => _isSubmitted ? AppValidators.validateDescription(v) : null,
+                  validator: (v) => _isSubmitted
+                      ? AppValidators.validateDescription(v)
+                      : null,
                   autovalidateMode: AutovalidateMode.disabled,
                   onTap: () {
                     if (_isSubmitted) {

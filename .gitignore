@@ -68,6 +68,12 @@ build/debug-info/
 app.*.symbols
 app.*.map.json
 
+# Firebase Functions folder
+functions/
+
+# Appwrite function folder
+appwrite-fcm-moderation/
+
 # Documentation files (ignore all .md except README.md)
 *.md
 !/README.md

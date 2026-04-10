@@ -14,6 +14,36 @@ class GamificationService {
 
   String? get _currentUserId => _auth.currentUser?.uid;
 
+  static const Duration _xpThrottleWindow = Duration(seconds: 15);
+
+  static const Map<XpAction, int> _maxXpEventsPerDay = {
+    XpAction.giveLike: 120,
+    XpAction.receiveLike: 250,
+    XpAction.postReply: 80,
+    XpAction.createPost: 20,
+    XpAction.createDiscussion: 15,
+    XpAction.pollVote: 50,
+    XpAction.pollCreated: 10,
+    XpAction.dailyLogin: 1,
+    XpAction.streakBonus: 1,
+    XpAction.helpfulAnswer: 20,
+    XpAction.firstPost: 1,
+    XpAction.completeChallenge: 20,
+    XpAction.earnBadge: 50,
+  };
+
+  static const Map<XpAction, Map<String, int>> _challengeProgressByAction = {
+    XpAction.createPost: {'postsToday': 1, 'postsThisWeek': 1},
+    XpAction.createDiscussion: {
+      'discussionsToday': 1,
+      'discussionsThisWeek': 1,
+    },
+    XpAction.postReply: {'repliesToday': 1, 'repliesThisWeek': 1},
+    XpAction.giveLike: {'likesToday': 1},
+    XpAction.receiveLike: {'likesReceivedThisWeek': 1},
+    XpAction.pollVote: {'pollsVotedToday': 1},
+  };
+
   // ==================== BADGES ====================
 
   /// All available badges in the system
@@ -247,6 +277,276 @@ class GamificationService {
     } catch (e) {
       debugPrint('Error getting user level: $e');
       return UserLevel.beginner;
+    }
+  }
+
+  DateTime _startOfDay(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
+  String _buildDateId(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  String _buildWeekId(DateTime date) {
+    final dayOfYear = date.difference(DateTime(date.year, 1, 1)).inDays + 1;
+    final weekNum = ((dayOfYear - date.weekday + 10) / 7).floor();
+    return '${date.year}-W${weekNum.toString().padLeft(2, '0')}';
+  }
+
+  int _stableSeed(String input) {
+    int hash = 0;
+    for (final code in input.codeUnits) {
+      hash = ((hash * 31) + code) & 0x7fffffff;
+    }
+    return hash;
+  }
+
+  Future<double> _challengeDifficultyMultiplier(UserLevel level) async {
+    final streak = await getStreak();
+    final levelBase = switch (level) {
+      UserLevel.beginner => 0.95,
+      UserLevel.intermediate => 1.00,
+      UserLevel.advanced => 1.08,
+      UserLevel.expert => 1.16,
+      UserLevel.master => 1.24,
+      UserLevel.legend => 1.32,
+    };
+    final streakFactor = (streak.currentStreak / 120).clamp(0.0, 0.20);
+    return (levelBase + streakFactor).clamp(0.90, 1.45);
+  }
+
+  Challenge _scaledChallenge(
+    Challenge template, {
+    required String suffix,
+    required DateTime expiry,
+    required double multiplier,
+  }) {
+    final adjustedRequirements = <String, dynamic>{};
+    template.requirements.forEach((key, value) {
+      if (value is int) {
+        adjustedRequirements[key] = (value * multiplier).round().clamp(1, 9999);
+      } else {
+        adjustedRequirements[key] = value;
+      }
+    });
+
+    final adjustedXp = (template.xpReward * multiplier).round().clamp(
+        (template.xpReward * 0.8).round(), (template.xpReward * 1.8).round());
+
+    return Challenge(
+      id: '${template.id}_$suffix',
+      title: template.title,
+      description: template.description,
+      type: template.type,
+      xpReward: adjustedXp,
+      requirements: adjustedRequirements,
+      expiresAt: expiry,
+      badgeReward: template.badgeReward,
+    );
+  }
+
+  List<Challenge> _pickDeterministicChallenges({
+    required List<Challenge> templates,
+    required int count,
+    required String seed,
+  }) {
+    final sorted = [...templates]..sort((a, b) {
+        final left = _stableSeed('$seed:${a.id}');
+        final right = _stableSeed('$seed:${b.id}');
+        return left.compareTo(right);
+      });
+    return sorted.take(count).toList();
+  }
+
+  Future<void> _updateChallengeProgress(
+    String userId, {
+    Map<String, int> increments = const {},
+    int? streakDays,
+  }) async {
+    final now = DateTime.now();
+    final dateId = _buildDateId(now);
+    final weekId = _buildWeekId(now);
+
+    final dailyRef = _firestore
+        .collection('DailyChallenges')
+        .doc(dateId)
+        .collection('UserChallenges')
+        .doc(userId);
+    final weeklyRef = _firestore
+        .collection('WeeklyChallenges')
+        .doc(weekId)
+        .collection('UserChallenges')
+        .doc(userId);
+
+    await _applyChallengeProgressToDoc(
+      userId: userId,
+      challengeDocRef: dailyRef,
+      increments: increments,
+      streakDays: streakDays,
+    );
+    await _applyChallengeProgressToDoc(
+      userId: userId,
+      challengeDocRef: weeklyRef,
+      increments: increments,
+      streakDays: streakDays,
+    );
+  }
+
+  bool _isChallengeCompleted(Challenge challenge, Map<String, int> progress) {
+    for (final entry in challenge.requirements.entries) {
+      final requiredValue = entry.value;
+      if (requiredValue is! int) continue;
+      final current = progress[entry.key] ?? 0;
+      if (current < requiredValue) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _applyChallengeProgressToDoc({
+    required String userId,
+    required DocumentReference<Map<String, dynamic>> challengeDocRef,
+    required Map<String, int> increments,
+    int? streakDays,
+  }) async {
+    if (increments.isEmpty && streakDays == null) return;
+
+    final snapshot = await challengeDocRef.get();
+    if (!snapshot.exists) return;
+
+    final data = snapshot.data() ?? <String, dynamic>{};
+    final challenges = (data['challenges'] as List<dynamic>? ?? const [])
+        .map((item) => Challenge.fromMap(Map<String, dynamic>.from(item)))
+        .toList();
+    if (challenges.isEmpty) return;
+
+    final existingProgressRaw =
+        Map<String, dynamic>.from(data['progress'] ?? {});
+    final progress = <String, int>{
+      for (final e in existingProgressRaw.entries)
+        e.key: int.tryParse(e.value.toString()) ?? 0,
+    };
+
+    for (final entry in increments.entries) {
+      progress[entry.key] = (progress[entry.key] ?? 0) + entry.value;
+    }
+    if (streakDays != null) {
+      progress['streakDays'] = (progress['streakDays'] ?? 0) < streakDays
+          ? streakDays
+          : (progress['streakDays'] ?? 0);
+    }
+
+    final completedIds =
+        (data['completedChallengeIds'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .toSet();
+    final rewardedIds =
+        (data['rewardedChallengeIds'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .toSet();
+
+    final newlyCompleted = <Challenge>[];
+    final newlyRewardable = <Challenge>[];
+
+    for (final challenge in challenges) {
+      if (!_isChallengeCompleted(challenge, progress)) continue;
+      if (!completedIds.contains(challenge.id)) {
+        completedIds.add(challenge.id);
+        newlyCompleted.add(challenge);
+      }
+      if (!rewardedIds.contains(challenge.id)) {
+        rewardedIds.add(challenge.id);
+        newlyRewardable.add(challenge);
+      }
+    }
+
+    final rewardXp =
+        newlyRewardable.fold<int>(0, (sum, item) => sum + item.xpReward);
+
+    await _firestore.runTransaction((transaction) async {
+      final userRef = _firestore.collection('User').doc(userId);
+      final userDoc = await transaction.get(userRef);
+      final currentXp =
+          int.tryParse(userDoc.data()?['XP']?.toString() ?? '0') ?? 0;
+
+      final updateDoc = {
+        'progress': progress,
+        'completedChallengeIds': completedIds.toList(),
+        'rewardedChallengeIds': rewardedIds.toList(),
+        'lastProgressAt': FieldValue.serverTimestamp(),
+      };
+      transaction.set(challengeDocRef, updateDoc, SetOptions(merge: true));
+
+      if (rewardXp > 0) {
+        final newXp = currentXp + rewardXp;
+        transaction.update(userRef, {
+          'XP': newXp.toString(),
+          'lastXpUpdate': FieldValue.serverTimestamp(),
+        });
+        transaction.set(userRef.collection('xp_history').doc(), {
+          'action': XpAction.completeChallenge.name,
+          'xp': rewardXp,
+          'timestamp': FieldValue.serverTimestamp(),
+          'description':
+              'Completed ${newlyRewardable.length} challenge(s): ${newlyRewardable.map((c) => c.id).join(', ')}',
+        });
+      }
+    });
+
+    if (newlyCompleted.isNotEmpty) {
+      await _checkBadgesAndMilestones(userId);
+    }
+  }
+
+  Future<bool> _isXpAwardAllowed(String userId, XpAction action) async {
+    final todayId = _buildDateId(DateTime.now());
+    final throttleRef = _firestore
+        .collection('User')
+        .doc(userId)
+        .collection('gamification')
+        .doc('xp_control_$todayId');
+
+    try {
+      final updated = await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(throttleRef);
+        final data = snapshot.data() ?? <String, dynamic>{};
+        final actionKey = action.name;
+        final counts = Map<String, dynamic>.from(data['counts'] ?? {});
+        final lastAwardRaw =
+            Map<String, dynamic>.from(data['lastAwardAt'] ?? {});
+
+        final currentCount =
+            int.tryParse(counts[actionKey]?.toString() ?? '0') ?? 0;
+        final cap = _maxXpEventsPerDay[action] ?? 500;
+        if (currentCount >= cap) {
+          return false;
+        }
+
+        final now = DateTime.now();
+        final lastAwardAt =
+            DateTime.tryParse(lastAwardRaw[actionKey]?.toString() ?? '');
+        if (lastAwardAt != null &&
+            now.difference(lastAwardAt) < _xpThrottleWindow) {
+          return false;
+        }
+
+        counts[actionKey] = currentCount + 1;
+        lastAwardRaw[actionKey] = now.toIso8601String();
+
+        transaction.set(
+            throttleRef,
+            {
+              'counts': counts,
+              'lastAwardAt': lastAwardRaw,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true));
+        return true;
+      });
+      return updated;
+    } catch (e) {
+      debugPrint('XP throttle check failed, allowing action: $e');
+      return true;
     }
   }
 
@@ -689,7 +989,7 @@ class GamificationService {
   /// Get or Generate daily challenges based on user level
   Future<List<Challenge>> getDailyChallenges() async {
     final today = DateTime.now();
-    final dateId = "${today.year}-${today.month}-${today.day}";
+    final dateId = _buildDateId(today);
     final expiry = DateTime(today.year, today.month, today.day, 23, 59, 59);
 
     // Get user level to generate appropriate challenges
@@ -713,24 +1013,32 @@ class GamificationService {
         if (list != null && list.isNotEmpty) return list;
       }
 
-      // Generate level-appropriate challenges if not exists
+      // Generate level-appropriate dynamic challenges if not exists
       final templates = _generateDailyChallengesForLevel(userLevel);
-      final challenges = (templates..shuffle()).take(3).map((t) {
-        return Challenge(
-            id: "${t.id}_$dateId",
-            title: t.title,
-            description: t.description,
-            type: t.type,
-            xpReward: t.xpReward,
-            requirements: t.requirements,
-            expiresAt: expiry);
-      }).toList();
+      final difficulty = await _challengeDifficultyMultiplier(userLevel);
+      final picked = _pickDeterministicChallenges(
+        templates: templates,
+        count: 3,
+        seed: 'daily:$userId:$dateId:${userLevel.name}',
+      );
+      final challenges = picked
+          .map((template) => _scaledChallenge(
+                template,
+                suffix: dateId,
+                expiry: expiry,
+                multiplier: difficulty,
+              ))
+          .toList();
 
       await docRef.set({
         'date': dateId,
         'userId': userId,
         'userLevel': userLevel.name,
+        'difficultyMultiplier': difficulty,
         'challenges': challenges.map((c) => c.toMap()).toList(),
+        'progress': <String, int>{},
+        'completedChallengeIds': <String>[],
+        'rewardedChallengeIds': <String>[],
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -754,10 +1062,7 @@ class GamificationService {
   /// Get or Generate weekly challenges based on user level
   Future<List<Challenge>> getWeeklyChallenges() async {
     final now = DateTime.now();
-    // Calculate week number (ISO 8601-ish)
-    final days = now.difference(DateTime(now.year, 1, 1)).inDays;
-    final weekNum = ((days + DateTime(now.year, 1, 1).weekday) / 7).ceil();
-    final weekId = "${now.year}-W$weekNum";
+    final weekId = _buildWeekId(now);
 
     final endOfWeek = now.add(Duration(days: 7 - now.weekday));
     final expiry =
@@ -784,24 +1089,32 @@ class GamificationService {
         if (list != null && list.isNotEmpty) return list;
       }
 
-      // Generate level-appropriate challenges if not exists
+      // Generate level-appropriate dynamic challenges if not exists
       final templates = _generateWeeklyChallengesForLevel(userLevel);
-      final challenges = (templates..shuffle()).take(3).map((t) {
-        return Challenge(
-            id: "${t.id}_$weekId",
-            title: t.title,
-            description: t.description,
-            type: t.type,
-            xpReward: t.xpReward,
-            requirements: t.requirements,
-            expiresAt: expiry);
-      }).toList();
+      final difficulty = await _challengeDifficultyMultiplier(userLevel);
+      final picked = _pickDeterministicChallenges(
+        templates: templates,
+        count: 3,
+        seed: 'weekly:$userId:$weekId:${userLevel.name}',
+      );
+      final challenges = picked
+          .map((template) => _scaledChallenge(
+                template,
+                suffix: weekId,
+                expiry: expiry,
+                multiplier: difficulty,
+              ))
+          .toList();
 
       await docRef.set({
         'weekId': weekId,
         'userId': userId,
         'userLevel': userLevel.name,
+        'difficultyMultiplier': difficulty,
         'challenges': challenges.map((c) => c.toMap()).toList(),
+        'progress': <String, int>{},
+        'completedChallengeIds': <String>[],
+        'rewardedChallengeIds': <String>[],
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -833,6 +1146,11 @@ class GamificationService {
     final xpToAdd = customXp ?? action.defaultXp;
     if (xpToAdd <= 0) return;
 
+    final allowed = await _isXpAwardAllowed(userId, action);
+    if (!allowed) {
+      return;
+    }
+
     try {
       final userRef = _firestore.collection('User').doc(userId);
 
@@ -859,10 +1177,59 @@ class GamificationService {
         );
       });
 
+      final progressIncrements = _challengeProgressByAction[action];
+      if (progressIncrements != null && progressIncrements.isNotEmpty) {
+        await _updateChallengeProgress(userId, increments: progressIncrements);
+      }
+
       // Check for level up and badges
       await _checkBadgesAndMilestones(userId);
     } catch (e) {
       debugPrint('Error awarding XP: $e');
+    }
+  }
+
+  /// Safely deduct XP from user (never below zero) and record an audit trail.
+  Future<int> deductXp({
+    required int amount,
+    required String reason,
+    String? targetUserId,
+  }) async {
+    final userId = targetUserId ?? _currentUserId;
+    if (userId == null || amount <= 0) return 0;
+
+    try {
+      final userRef = _firestore.collection('User').doc(userId);
+
+      final deducted =
+          await _firestore.runTransaction<int>((transaction) async {
+        final userDoc = await transaction.get(userRef);
+        final currentXp =
+            int.tryParse(userDoc.data()?['XP']?.toString() ?? '0') ?? 0;
+
+        final safeDeduction = amount > currentXp ? currentXp : amount;
+        final newXp = currentXp - safeDeduction;
+
+        transaction.update(userRef, {
+          'XP': newXp.toString(),
+          'lastXpUpdate': FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(userRef.collection('xp_history').doc(), {
+          'action': 'xp_deduction',
+          'xp': -safeDeduction,
+          'timestamp': FieldValue.serverTimestamp(),
+          'description': reason,
+        });
+
+        return safeDeduction;
+      });
+
+      await _checkBadgesAndMilestones(userId);
+      return deducted;
+    } catch (e) {
+      debugPrint('Error deducting XP: $e');
+      return 0;
     }
   }
 
@@ -877,10 +1244,10 @@ class GamificationService {
       final userRef = _firestore.collection('User').doc(userId);
       final streakRef = userRef.collection('gamification').doc('streak');
 
-      return await _firestore.runTransaction((transaction) async {
+      final updated = await _firestore.runTransaction((transaction) async {
         final streakDoc = await transaction.get(streakRef);
         final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
+        final today = _startOfDay(now);
 
         DailyStreak currentStreak;
         if (streakDoc.exists) {
@@ -899,7 +1266,7 @@ class GamificationService {
 
         if (currentStreak.lastActivityDate != null) {
           final lastDate = currentStreak.lastActivityDate!;
-          final lastDay = DateTime(lastDate.year, lastDate.month, lastDate.day);
+          final lastDay = _startOfDay(lastDate);
           final diff = today.difference(lastDay).inDays;
 
           if (diff == 1) {
@@ -920,7 +1287,7 @@ class GamificationService {
           currentStreak: newStreak,
           longestStreak: longestStreak,
           lastActivityDate: now,
-          activityHistory: [...currentStreak.activityHistory.take(30), now],
+          activityHistory: [...currentStreak.activityHistory.take(89), now],
         );
 
         transaction.set(streakRef, updatedStreak.toMap());
@@ -932,13 +1299,29 @@ class GamificationService {
           if (newStreak % 7 == 0) streakBonus += 50; // Weekly bonus
           if (newStreak % 30 == 0) streakBonus += 200; // Monthly bonus
 
+          final userDoc = await transaction.get(userRef);
+          final currentXp =
+              int.tryParse(userDoc.data()?['XP']?.toString() ?? '0') ?? 0;
+          final nextXp = currentXp + streakBonus;
+
           transaction.update(userRef, {
-            'XP': FieldValue.increment(streakBonus),
+            'XP': nextXp.toString(),
+            'lastXpUpdate': FieldValue.serverTimestamp(),
+          });
+
+          transaction.set(userRef.collection('xp_history').doc(), {
+            'action': XpAction.streakBonus.name,
+            'xp': streakBonus,
+            'timestamp': FieldValue.serverTimestamp(),
+            'description': 'Streak day $newStreak bonus',
           });
         }
 
         return updatedStreak;
       });
+
+      await _updateChallengeProgress(userId, streakDays: updated.currentStreak);
+      return updated;
     } catch (e) {
       debugPrint('Error recording activity: $e');
       return DailyStreak.empty();
@@ -1311,6 +1694,41 @@ class GamificationService {
       await _firestore.collection('User').doc(userId).update({
         field: FieldValue.increment(value),
       });
+
+      if (value > 0) {
+        final increments = <String, int>{};
+        switch (field) {
+          case 'postsCount':
+            increments['postsToday'] = value;
+            increments['postsThisWeek'] = value;
+            break;
+          case 'discussionsCount':
+            increments['discussionsToday'] = value;
+            increments['discussionsThisWeek'] = value;
+            break;
+          case 'repliesCount':
+            increments['repliesToday'] = value;
+            increments['repliesThisWeek'] = value;
+            break;
+          case 'likesGiven':
+            increments['likesToday'] = value;
+            break;
+          case 'likesReceived':
+            increments['likesReceivedThisWeek'] = value;
+            break;
+          case 'pollsVoted':
+            increments['pollsVotedToday'] = value;
+            break;
+          default:
+            break;
+        }
+
+        if (increments.isNotEmpty) {
+          await _updateChallengeProgress(userId, increments: increments);
+        }
+      }
+
+      await _checkBadgesAndMilestones(userId);
     } catch (e) {
       debugPrint('Error incrementing counter: $e');
     }

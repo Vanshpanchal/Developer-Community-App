@@ -92,6 +92,7 @@ class addpostState extends State<addpost> {
 
       // Award XP for creating post
       await _gamificationService.awardXp(XpAction.createPost);
+      await _gamificationService.incrementCounter('postsCount');
       await _gamificationService.recordActivity();
 
       AppSnackbar.success("Success! +${XpAction.createPost.defaultXp} XP",
@@ -491,7 +492,8 @@ class addpostState extends State<addpost> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _titleController,
-                  validator: (v) => _isSubmitted ? AppValidators.validateTitle(v) : null,
+                  validator: (v) =>
+                      _isSubmitted ? AppValidators.validateTitle(v) : null,
                   autovalidateMode: AutovalidateMode.disabled,
                   onTap: () {
                     if (_isSubmitted) {
@@ -556,7 +558,9 @@ class addpostState extends State<addpost> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descriptionController,
-                  validator: (v) => _isSubmitted ? AppValidators.validateDescription(v) : null,
+                  validator: (v) => _isSubmitted
+                      ? AppValidators.validateDescription(v)
+                      : null,
                   autovalidateMode: AutovalidateMode.disabled,
                   onTap: () {
                     if (_isSubmitted) {

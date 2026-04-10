@@ -19,7 +19,6 @@
 
 ## 🖼️ Application Previews
 
-
 ![1](previews/DevSphere-1.png)
 ![2](previews/DevSphere-2.png)
 
@@ -27,36 +26,54 @@
 
 ## 🔧 Tech Stack
 
-| Layer         | Technology                |
-| ------------- | ------------------------- |
-| Frontend      | Flutter (Dart)            |
-| Backend       | Firebase (Auth, Firestore, Storage) |
-| AI Integration| Google Gemini API         |
-| UI Framework  | Material Design           |
+| Layer          | Technology                          |
+| -------------- | ----------------------------------- |
+| Frontend       | Flutter (Dart)                      |
+| Backend        | Firebase (Auth, Firestore, Storage) |
+| AI Integration | Google Gemini API                   |
+| UI Framework   | Material Design                     |
 
 ---
 
 ## 🚀 Getting Started
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/your-username/devsphere.git
 cd devsphere
 ```
 
 ### 2. Install Dependencies
+
 ```bash
 flutter pub get
 ```
 
 ### 3. Set Up Firebase
+
 - Add your `google-services.json` (Android) and `GoogleService-Info.plist` (iOS) in the respective directories.
 - Configure Firestore rules, Authentication, and Storage.
 
 ### 4. Run the App
+
 ```bash
 flutter run
 ```
+
+### 5. Deploy Cloud Functions (Moderation + FCM)
+
+```bash
+cd functions
+npm install
+firebase functions:secrets:set GEMINI_API_KEY
+firebase functions:secrets:set INTERNAL_FCM_API_KEY
+firebase deploy --only functions
+```
+
+- `dailyModerateCommunityContent` runs daily and moderates only that day's posts/discussions.
+- `sendFcmNotification` sends push notifications via Firebase Admin SDK.
+- `sendFcmHttp` and `sendFcmBroadcastHttp` provide external API endpoints for single-send and all-user broadcast jobs.
 
 ---
 

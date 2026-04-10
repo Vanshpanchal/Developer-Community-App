@@ -47,6 +47,11 @@ class _detail_discussionState extends State<detail_discussion> {
   final ValueNotifier<String?> _activeReplyUserName =
       ValueNotifier<String?>(null);
 
+  bool _isUnsafeContent(Map<String, dynamic> data) {
+    final contentStatus = data['contentStatus']?.toString().toLowerCase();
+    return data['Report'] == true || contentStatus == 'blocked';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -332,6 +337,8 @@ class _detail_discussionState extends State<detail_discussion> {
       _activeReplyUserName.value = null;
       AppSnackbar.success('Reply added!');
       await _gamificationService.awardXp(XpAction.postReply);
+      await _gamificationService.incrementCounter('repliesCount');
+      await _gamificationService.recordActivity();
     } catch (e) {
       AppSnackbar.error('Failed: $e');
     } finally {
@@ -551,6 +558,52 @@ class _detail_discussionState extends State<detail_discussion> {
                   }
 
                   var discussionData = snapshot.data!;
+                  final discussionMap =
+                      discussionData.data() as Map<String, dynamic>? ?? {};
+
+                  if (_isUnsafeContent(discussionMap)) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.visibility_off_outlined,
+                              size: 48,
+                              color: isDark
+                                  ? Colors.grey.shade500
+                                  : Colors.grey.shade600,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'This content is not available.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: isDark
+                                    ? Colors.grey.shade300
+                                    : Colors.grey.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'It was hidden by community safety moderation.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark
+                                    ? Colors.grey.shade500
+                                    : Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
 
                   return CustomScrollView(
                     slivers: [
@@ -718,7 +771,66 @@ class _detail_discussionState extends State<detail_discussion> {
                             );
                           }
 
-                          final replies = repliesSnapshot.data!.docs;
+                          final replies =
+                              repliesSnapshot.data!.docs.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            return !_isUnsafeContent(data);
+                          }).toList();
+
+                          if (replies.isEmpty) {
+                            return SliverToBoxAdapter(
+                              child: Container(
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 40, horizontal: 24),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? AppTheme.darkCard.withValues(alpha: 0.5)
+                                      : Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade200,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.forum_outlined,
+                                      size: 40,
+                                      color: isDark
+                                          ? Colors.grey.shade600
+                                          : Colors.grey.shade400,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Be the first to reply',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? Colors.grey.shade400
+                                            : Colors.grey.shade600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Share your thoughts on this discussion',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: isDark
+                                            ? Colors.grey.shade600
+                                            : Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
 
                           return SliverPadding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
