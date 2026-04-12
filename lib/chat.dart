@@ -96,8 +96,6 @@ class _ChatScreenState extends State<ChatScreen1> {
   bool _isLoading = false;
   bool _isTyping = false;
   String? _apiKey; // dynamically loaded user key
-  static const String _apiUrl =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 
   @override
   void initState() {
@@ -117,9 +115,13 @@ class _ChatScreenState extends State<ChatScreen1> {
   Future<String> getGeminiResponse(String prompt) async {
     final hasKey = await _ensureApiKey();
     if (!hasKey) return AIService.missingKeyMessage;
+    
     try {
+      final modelName = await AIService().getSelectedModel();
+      final apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent';
+      
       final response = await http.post(
-        Uri.parse('$_apiUrl?key=$_apiKey'),
+        Uri.parse('$apiUrl?key=$_apiKey'),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({
           'contents': [

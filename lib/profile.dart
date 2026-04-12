@@ -12,14 +12,18 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'utils/avatar_manager.dart';
+import 'ai_service.dart';
 import 'utils/app_snackbar.dart';
 import 'services/firebase_cache_service.dart';
+import 'services/user_cache_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'messagemodel.dart';
 
 import 'chat.dart';
 import 'portfolio.dart';
 import 'api_key_manager.dart';
+import 'services/secrets_service.dart';
 import 'screens/gamification_hub_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/ai_repo_analyzer_screen.dart';
@@ -86,12 +90,22 @@ class _ProfileState extends State<profile>
         maximumColorCount: 20,
       );
       if (mounted) {
-        setState(() {
-          _dominantColor = generator.dominantColor?.color;
-        });
-        // Cache the color
-        if (_dominantColor != null) {
-          box.write('profileColor', _dominantColor!.value);
+        final color = generator.dominantColor?.color;
+        setState(() => _dominantColor = color);
+
+        if (color != null) {
+          // Cache locally
+          box.write('profileColor', color.value);
+
+          // Persist to Firestore so header gradient is correct on every device
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid != null) {
+            FirebaseFirestore.instance
+                .collection('User')
+                .doc(uid)
+                .update({'profileDominantColor': color.value})
+                .catchError((_) {});
+          }
         }
       }
       return _dominantColor;
@@ -150,7 +164,7 @@ class _ProfileState extends State<profile>
   signout() async {
     // Clear all cached data
     try {
-      // 1. Clear Firestore Cache (GetStorage)
+      // 1. Clear Firestore Cache (Collection caches)
       final cacheService = FirebaseCacheService();
       await cacheService.clearAllCache();
 
@@ -163,10 +177,16 @@ class _ProfileState extends State<profile>
       } else {
         await Hive.openBox<Message>('chat_messages').then((box) => box.clear());
       }
+      
+      // 4. Clear GetStorage (Avatars, Theme, Selected Models, Local Preferences)
+      await GetStorage().erase();
+      
+      // 5. Clear UserCacheService (Explore/Community user metadata cache)
+      UserCacheService.instance.clearAll();
 
-      debugPrint("🧹 All local data cleared successfully");
+      debugPrint("🧹 All local cache data cleared successfully from A to Z.");
     } catch (e) {
-      debugPrint("⚠️ Error clearing data: $e");
+      debugPrint("⚠️ Error clearing cache data: $e");
     }
 
     await FirebaseAuth.instance.signOut();
@@ -286,74 +306,89 @@ class _ProfileState extends State<profile>
   }
 
   String? imageUrl;
-  final imagepicker = ImagePicker();
   bool isLoading = false;
 
-  pickImage() async {
-    XFile? res = await imagepicker.pickImage(source: ImageSource.gallery);
-    if (res != null) {
-      uploadProfilePic(File(res.path));
-    }
+  void pickImage() {
+    AvatarManager.showAvatarPicker(context, (url) {
+      // 1. Update the local UI immediately
+      setState(() {
+        imageUrl = url;
+        _dominantColor = null;
+      });
+
+      // 2. Clear stale colour cache so _updatePalette re-generates
+      final box = GetStorage();
+      box.remove('profileColor');
+
+      // 3. Patch GetStorage userData so other screens that read the cache
+      //    (e.g. portfolio, saved discussions) see the new picture instantly
+      final existing = box.read<Map>('userData') ?? {};
+      box.write('userData', {...existing, 'imageUrl': url});
+
+      // 4. Invalidate + patch UserCacheService in-memory cache so explore /
+      //    discussion screens pick up the new profilePicture on next build
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        UserCacheService.instance
+          ..patch(uid, {'profilePicture': url})
+          ..invalidate(uid); // force fresh fetch next time
+      }
+
+      // 5. Re-generate dominant colour from the new image
+      _updatePalette();
+    });
   }
 
-  uploadProfilePic(File file) async {
-    try {
-      String cloudName = 'dr0c1jgbe';
-      String uploadPreset = 'profile_uploads';
-
-      var url =
-          Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
-      var request = http.MultipartRequest('POST', url);
-      request.fields['upload_preset'] = uploadPreset;
-      request.files.add(await http.MultipartFile.fromPath('file', file.path));
-
-      var response = await request.send();
-      if (response.statusCode == 200) {
-        var responseData = await http.Response.fromStream(response);
-        var jsonData = json.decode(responseData.body);
-        String imageUrl = jsonData['secure_url'];
-
-        // Invalidate cached color when image changes
-        final box = GetStorage();
-        box.remove('profileColor');
-
-        setState(() {
-          this.imageUrl = imageUrl;
-          _dominantColor = null; // Reset current color
-        });
-
-        // Wait for palette update and get dominant color
-        Color? dominantColor = await _updatePalette();
-
-        // Update Firestore with both image URL and dominant color
-        Map<String, dynamic> updateData = {'profilePicture': imageUrl};
-        if (dominantColor != null) {
-          updateData['profileDominantColor'] = dominantColor.value;
-        }
-
-        await FirebaseFirestore.instance
-            .collection('User')
-            .doc(FirebaseAuth.instance.currentUser!.uid)
-            .update(updateData);
-
-        if (mounted) {
-          AppSnackbar.success(
-            'Profile picture updated',
-            title: 'Success',
-          );
-        }
-      } else {
-        print('Failed to upload image to Cloudinary');
-      }
-    } catch (e) {
-      print('Error uploading to Cloudinary: $e');
-      if (mounted) {
-        AppSnackbar.error(
-          'Failed to upload image',
-          title: 'Error',
-        );
-      }
-    }
+  void _setGeminiModel() {
+    final aiService = AIService();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Select AI Model',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            FutureBuilder<List<String>>(
+              future: aiService.getAvailableModels(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final models = snapshot.data ?? [];
+                if (models.isEmpty) {
+                  return const Text('No models available');
+                }
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: models.map((model) => ListTile(
+                    title: Text(model),
+                    trailing: aiService.cachedSelectedModel == model
+                        ? const Icon(Icons.check_circle, color: AppTheme.primaryColor)
+                        : null,
+                    onTap: () {
+                      aiService.setModel(model);
+                      Navigator.pop(context);
+                      AppSnackbar.success('Model set to $model');
+                    },
+                  )).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
   }
 
   loadimage() async {}
@@ -445,6 +480,13 @@ class _ProfileState extends State<profile>
                           subtitle: 'Configure your API access',
                           color: Colors.teal,
                           onTap: _setGeminiKey,
+                        ),
+                        _MenuItemData(
+                          icon: Icons.settings_suggest_rounded,
+                          title: 'Select AI Model',
+                          subtitle: 'Current: ${AIService().cachedSelectedModel}',
+                          color: Colors.blue,
+                          onTap: _setGeminiModel,
                         ),
                       ]),
                       const SizedBox(height: 16),
@@ -1288,8 +1330,28 @@ class _ProfileState extends State<profile>
                           Navigator.pop(ctx);
                           try {
                             await ApiKeyManager.instance.saveUserKey(key);
-                            AppSnackbar.success('Gemini key stored securely',
-                                title: 'Saved');
+                            
+                            // Check if the user has a selected model in Firebase
+                            final remoteModel = await SecretsService.instance.loadSelectedModel();
+                            if (remoteModel == null || remoteModel.isEmpty) {
+                              // If no model is set in the profile, show dialog asking them to select one
+                              if (context.mounted) {
+                                AppDialogs.showConfirmation(
+                                  context,
+                                  title: 'API Key Saved',
+                                  message: 'API key saved successfully! Please select an AI model from your profile to use in the app.',
+                                  confirmText: 'Select Model',
+                                  cancelText: 'Later'
+                                ).then((shouldSelect) {
+                                  if (shouldSelect == true) {
+                                    _setGeminiModel();
+                                  }
+                                });
+                              }
+                            } else {
+                              AppSnackbar.success('Gemini key stored securely',
+                                  title: 'Saved');
+                            }
                           } catch (e) {
                             AppSnackbar.error(e.toString(), title: 'Error');
                           }

@@ -13,9 +13,11 @@ import 'package:lottie/lottie.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'Authservice.dart';
+import 'ai_service.dart';
 import 'messagemodel.dart';
 import 'services/firebase_cache_service.dart';
 import 'services/encryption_service.dart';
+import 'services/migration_service.dart';
 import 'utils/app_theme.dart';
 import 'services/analytics_service.dart';
 import 'ThemeController.dart';
@@ -34,8 +36,15 @@ void main() async {
   ));
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Migration: Ensure all users have integer XP for correct leaderboard sorting
+  MigrationService.migrateXpToInteger();
+  
   await GetStorage.init();
   await Hive.initFlutter();
+
+  // Sync user's selected AI model from Firestore (best-effort, non-blocking)
+  AIService().syncModelFromFirebase().catchError((_) {});
 
   // Initialize encryption service for secure data handling
   try {
@@ -234,7 +243,7 @@ class _SplashScreenState extends State<SplashScreen>
                     const SizedBox(height: 12),
                     // Tagline
                     Text(
-                      'Connect • Code • Collaborate',
+                      'Connect • Help • Collaborate',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,

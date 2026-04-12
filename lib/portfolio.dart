@@ -1243,7 +1243,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'user@gmail.com',
+                      _profileEmail ?? 'user@gmail.com',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: isDark ? Colors.grey[400] : Colors.grey[600],
                       ),

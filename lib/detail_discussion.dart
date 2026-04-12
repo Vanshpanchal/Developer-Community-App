@@ -369,9 +369,9 @@ class _detail_discussionState extends State<detail_discussion> {
         // Add 50 to the current XP
         int updatedXP = currentXP + 50;
 
-        // Save the updated XP back to Firestore as a String
+        // Save the updated XP back to Firestore as an int
         await FirebaseFirestore.instance.collection('User').doc(uid).update({
-          'XP': updatedXP.toString(),
+          'XP': updatedXP,
           'lastXpUpdate': FieldValue.serverTimestamp(),
         });
 
@@ -2074,117 +2074,102 @@ class _detail_discussionState extends State<detail_discussion> {
               ),
             ),
             // Modern reply input section
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 15),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-                decoration: BoxDecoration(
-                  color: isDark ? AppTheme.darkCard : Colors.white,
-                  border: Border(
-                    top: BorderSide(
-                      color:
-                          isDark ? Colors.grey.shade700 : Colors.grey.shade200,
-                      width: 1,
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _replyController,
+                        decoration: InputDecoration(
+                          hintText: 'Add your opinion...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        maxLines: null,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) {
+                          if (_replyController.text.trim().isNotEmpty) {
+                            addReply();
+                          }
+                        },
+                      ),
                     ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    // Modern text field
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? AppTheme.darkSurface
-                              : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: isDark
-                                ? Colors.grey.shade600
-                                : Colors.grey.shade300,
-                            width: 1,
-                          ),
-                        ),
-                        child: TextField(
-                          controller: _replyController,
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: isDark ? Colors.white : Colors.black87,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'Add your opinion...',
-                            hintStyle: TextStyle(
-                              color: isDark
-                                  ? Colors.grey.shade400
-                                  : Colors.grey.shade500,
-                            ),
-                            prefixIcon: Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              size: 18,
-                              color: isDark
-                                  ? Colors.grey.shade400
-                                  : Colors.grey.shade500,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 14,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: AppTheme.primaryGradient,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Theme.of(context).colorScheme.primary,
+                          Theme.of(context).colorScheme.secondary,
                         ],
                       ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(24),
-                          splashColor: Colors.transparent,
-                          highlightColor: Colors.transparent,
-                          overlayColor:
-                              MaterialStateProperty.all(Colors.transparent),
-                          onTap: _isLoading
-                              ? null
-                              : () {
-                                  if (_replyController.text.trim().isNotEmpty) {
-                                    addReply();
-                                  }
-                                },
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.send_rounded,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: _isLoading
+                            ? null
+                            : () {
+                                if (_replyController.text.trim().isNotEmpty) {
+                                  addReply();
+                                }
+                              },
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
                                     color: Colors.white,
-                                    size: 20,
+                                    strokeWidth: 2,
                                   ),
-                          ),
+                                )
+                              : const Icon(
+                                  Icons.send_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],

@@ -50,4 +50,24 @@ class UserCacheService {
       _cache[uid] = data;
     }
   }
+
+  /// Removes the cached entry for [uid] so the next call fetches fresh data.
+  void invalidate(String uid) {
+    _cache.remove(uid);
+    _pendingFetches.remove(uid);
+  }
+
+  /// Clears the entire user cache map.
+  void clearAll() {
+    _cache.clear();
+    _pendingFetches.clear();
+  }
+
+  /// Patches a specific field in the in-memory cache without a network call.
+  /// Useful for immediate UI reflection after a local write.
+  void patch(String uid, Map<String, dynamic> patch) {
+    if (_cache.containsKey(uid)) {
+      _cache[uid] = {..._cache[uid]!, ...patch};
+    }
+  }
 }

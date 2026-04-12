@@ -749,6 +749,31 @@ class exploreState extends State<explore>
   }
 }
 
+class UserInfoShimmer extends StatelessWidget {
+  const UserInfoShimmer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const ShimmerLoading(width: 40, height: 40, borderRadius: 20),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            ShimmerLoading(width: 100, height: 14),
+            SizedBox(height: 6),
+            ShimmerLoading(width: 60, height: 12),
+          ],
+        ),
+        const Spacer(),
+        const ShimmerLoading(width: 50, height: 20, borderRadius: 10),
+      ],
+    );
+  }
+}
+
 class QuestionCard extends StatefulWidget {
   final String title;
   final String description;
@@ -1241,7 +1266,7 @@ class _QuestionCardState extends State<QuestionCard> {
       future: _userDataFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(height: 48);
+          return const UserInfoShimmer();
         }
         
         final userData = snapshot.data ?? {};
@@ -1482,13 +1507,10 @@ class _QuestionCardState extends State<QuestionCard> {
 
   Widget _buildAnalyzeButton(ThemeData theme) {
     if (_complexityLoading) {
-      return SizedBox(
+      return const ShimmerLoading(
         width: 14,
         height: 14,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: theme.colorScheme.primary,
-        ),
+        borderRadius: 7,
       );
     }
 

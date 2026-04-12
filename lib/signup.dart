@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/app_validators.dart';
+import 'utils/avatar_manager.dart';
 
 import 'login.dart';
 
@@ -27,6 +28,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
   bool _isLoading = false;
   bool _isSubmitted = false;
   bool _acceptedTerms = false;
+  String _selectedAvatarUrl = AvatarManager.avatars[0];
   final _formKey = GlobalKey<FormState>();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -76,8 +78,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
     setState(() => _isLoading = true);
 
     try {
-      const defaultProfile =
-          "https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg";
+      final defaultProfile = _selectedAvatarUrl;
 
       UserCredential userCredential =
           await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -262,7 +263,10 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-          // Username Field
+            // Avatar Selection
+            _buildAvatarSelection(),
+            const SizedBox(height: 24),
+            // Username Field
           _buildInputField(
             controller: usernameController,
             label: 'Username',
@@ -605,6 +609,48 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAvatarSelection() {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () {
+            AvatarManager.showAvatarPicker(context, (url) {
+              setState(() {
+                _selectedAvatarUrl = url;
+              });
+            });
+          },
+          child: Stack(
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundColor: Colors.grey.withValues(alpha: 0.1),
+                backgroundImage: NetworkImage(_selectedAvatarUrl),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.blue,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.edit, size: 14, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Choose your Avatar',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+      ],
     );
   }
 }

@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'api_key_manager.dart';
 import 'package:http/http.dart' as http;
+import 'package:get_storage/get_storage.dart';
+import 'services/secrets_service.dart';
 
 /// Centralized AI helper for code review, summaries, portfolio, complexity, and repo analysis.
 class AIService {
@@ -14,8 +16,63 @@ class AIService {
   static const String missingKeyMessage =
       'No Gemini API key found. Set your key in profile settings to enable AI features.';
 
-  final String _modelEndpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+  /// Synchronous local cache of selected model. Use this for instant UI state reading.
+  String get cachedSelectedModel {
+    final box = GetStorage();
+    return box.read('gemini_model') ?? 'gemini-1.5-flash';
+  }
+
+  /// Ultimate asynchronous getter fetching exactly the model the authenticated user selected in Firebase.
+  /// Falls back to local cache or first available model.
+  Future<String> getSelectedModel() async {
+    final remoteModel = await SecretsService.instance.loadSelectedModel();
+    if (remoteModel != null && remoteModel.isNotEmpty) {
+      GetStorage().write('gemini_model', remoteModel);
+      return remoteModel;
+    }
+    
+    final localModel = GetStorage().read<String>('gemini_model');
+    if (localModel != null && localModel.isNotEmpty) {
+      return localModel;
+    }
+    
+    final available = await getAvailableModels();
+    return available.isNotEmpty ? available.first : 'gemini-1.5-flash';
+  }
+
+  /// Loads selected model from Firebase User doc and caches locally.
+  Future<void> syncModelFromFirebase() async {
+    // Sync user's selected model
+    final remoteModel = await SecretsService.instance.loadSelectedModel();
+    if (remoteModel != null && remoteModel.isNotEmpty) {
+      final box = GetStorage();
+      await box.write('gemini_model', remoteModel);
+    }
+  }
+
+  /// Sets the model locally AND persists to Firebase User doc.
+  Future<void> setModel(String model) async {
+    final box = GetStorage();
+    await box.write('gemini_model', model);
+    await SecretsService.instance.saveSelectedModel(model);
+  }
+
+  /// Fetches available models from Firestore secrets.
+  Future<List<String>> getAvailableModels() async {
+    final remoteModels = await SecretsService.instance.getAvailableModels();
+    
+      debugPrint("Available models: $remoteModels");
+    if (remoteModels != null && remoteModels.isNotEmpty) {
+      debugPrint("Available models: $remoteModels");
+      return remoteModels;
+    }
+    return [
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-1.0-pro',
+      'gemini-pro-vision',
+    ];
+  }
 
   Future<bool> _ensureApiKey() async {
     final key = await ApiKeyManager.instance.getLocalKey();
@@ -81,7 +138,11 @@ class AIService {
     try {
       final apiKey = await _getApiKey();
       if (apiKey == null || apiKey.trim().isEmpty) return missingKeyMessage;
-      final uri = Uri.parse('$_modelEndpoint?key=$apiKey');
+      
+      final model = await getSelectedModel();
+      final endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent';
+      
+      final uri = Uri.parse('$endpoint?key=$apiKey');
       final response = await http.post(
         uri,
         headers: const {'Content-Type': 'application/json'},

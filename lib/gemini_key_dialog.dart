@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_key_manager.dart';
 import 'widgets/app_dialogs.dart';
+import 'services/secrets_service.dart';
 
 /// Shows a dialog that lets the user input & save a Gemini API key.
 /// Returns true if a key was saved successfully.
@@ -147,11 +148,24 @@ Future<bool?> showGeminiKeyInputDialog(BuildContext context) {
                                       try {
                                         await ApiKeyManager.instance
                                             .saveUserKey(controller.text);
+                                            
+                                        // Also verify if they have a model selected
+                                        final remoteModel = await SecretsService.instance.loadSelectedModel();
                                         if (ctx.mounted) {
                                           Navigator.of(
                                             ctx,
                                             rootNavigator: true,
                                           ).pop(true);
+                                          
+                                          if (remoteModel == null || remoteModel.isEmpty) {
+                                            AppDialogs.showConfirmation(
+                                              ctx,
+                                              title: 'Key Saved',
+                                              message: 'API key saved successfully! Please ensure you select an AI model from your profile settings.',
+                                              confirmText: 'Got It',
+                                              cancelText: 'Close',
+                                            );
+                                          }
                                         }
                                       } catch (e) {
                                         setState(() {
