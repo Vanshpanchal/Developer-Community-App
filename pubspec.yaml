@@ -84,6 +84,11 @@ dev_dependencies:
           # rules and activating additional ones.
           flutter_lints: ^5.0.0
           asset_tree_shaker: ^1.1.2
+
+dependency_overrides:
+          page_transition:
+                    path: third_party/page_transition
+
 flutter_launcher_icons:
           android: true
           ios: true
