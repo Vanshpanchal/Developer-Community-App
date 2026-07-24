@@ -1,5 +1,5 @@
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:flutter/foundation.dart';
+import 'package:developer_community_app/utils/app_logger.dart';
 
 class AnalyticsService {
   static final AnalyticsService _instance = AnalyticsService._internal();
@@ -17,25 +17,25 @@ class AnalyticsService {
   }) async {
     try {
       await _analytics.logEvent(name: name, parameters: parameters);
-      debugPrint('📊 Analytics Event: $name, Params: $parameters');
+      AppLogger.debug('Analytics Event: $name, Params: $parameters');
     } catch (e) {
-      debugPrint('⚠️ Analytics Error: $e');
+      AppLogger.warning('Analytics Error: $e');
     }
   }
 
   Future<void> logLogin({String? method}) async {
     await _analytics.logLogin(loginMethod: method);
-    debugPrint('📊 Analytics Event: Login ($method)');
+    AppLogger.debug('Analytics Event: Login ($method)');
   }
 
   Future<void> logSignUp({required String method}) async {
     await _analytics.logSignUp(signUpMethod: method);
-    debugPrint('📊 Analytics Event: SignUp ($method)');
+    AppLogger.debug('Analytics Event: SignUp ($method)');
   }
 
   Future<void> logScreenView({required String screenName}) async {
     await _analytics.logScreenView(screenName: screenName);
-    debugPrint('📊 Analytics Screen: $screenName');
+    AppLogger.debug('Analytics Screen: $screenName');
   }
 
   Future<void> setUserProperty({
@@ -44,8 +44,8 @@ class AnalyticsService {
   }) async {
     await _analytics.setUserProperty(name: name, value: value);
   }
-    
+
   Future<void> setUserId({required String id}) async {
-      await _analytics.setUserId(id: id);
+    await _analytics.setUserId(id: id);
   }
 }

@@ -6,31 +6,35 @@ class AppLogger {
   AppLogger._();
 
   /// Log debug information (only in debug mode)
-  static void debug(String message) {
+  static void debug(String message, [String? tag]) {
     if (kDebugMode) {
-      debugPrint('[DEBUG] $message');
+      final tagStr = tag != null ? '[$tag] ' : '';
+      debugPrint('[DEBUG] $tagStr$message');
     }
   }
 
   /// Log info (only in debug mode)
-  static void info(String message) {
+  static void info(String message, [String? tag]) {
     if (kDebugMode) {
-      debugPrint('[INFO] $message');
+      final tagStr = tag != null ? '[$tag] ' : '';
+      debugPrint('[INFO] $tagStr$message');
     }
   }
 
   /// Log warning (only in debug mode)
-  static void warning(String message) {
+  static void warning(String message, [String? tag]) {
     if (kDebugMode) {
-      debugPrint('[WARN] $message');
+      final tagStr = tag != null ? '[$tag] ' : '';
+      debugPrint('[WARN] $tagStr$message');
     }
   }
 
   /// Log error - in production, this could be sent to Crashlytics
   /// For now, only logs in debug mode
-  static void error(String message, [Object? error, StackTrace? stackTrace]) {
+  static void error(String message, [Object? error, StackTrace? stackTrace, String? tag]) {
     if (kDebugMode) {
-      debugPrint('[ERROR] $message');
+      final tagStr = tag != null ? '[$tag] ' : '';
+      debugPrint('[ERROR] $tagStr$message');
       if (error != null) {
         debugPrint('  Error: $error');
       }

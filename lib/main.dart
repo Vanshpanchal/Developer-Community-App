@@ -23,6 +23,7 @@ import 'services/analytics_service.dart';
 import 'ThemeController.dart';
 import 'utils/app_logger.dart';
 import 'utils/secure_hive_helper.dart';
+import 'core/update/presentation/widgets/android_update_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -97,6 +98,12 @@ class MyApp extends StatelessWidget {
       navigatorObservers: [
         analyticsService.getAnalyticsObserver(),
       ],
+      builder: (context, child) {
+        return AndroidUpdateGate(
+          navigatorKey: Get.key,
+          child: child ?? const SplashScreen(),
+        );
+      },
       home: const SplashScreen(),
     );
   }
