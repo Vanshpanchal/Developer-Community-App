@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:get_storage/get_storage.dart';
 import 'dart:convert';
+import '../utils/app_logger.dart';
 
 /// Firebase Cache Service
 /// Provides intelligent caching for Firestore data with automatic refresh on updates
@@ -17,32 +18,32 @@ class FirebaseCacheService {
   final Map<String, DateTime> _lastFetchTimes = {};
 
   // Cache duration in minutes
-  static const int CACHE_DURATION_MINUTES = 5;
-  static const String CACHE_PREFIX = 'cache_';
-  static const String TIMESTAMP_PREFIX = 'timestamp_';
+  static const int cacheDurationMinutes = 5;
+  static const String cachePrefix = 'cache_';
+  static const String timestampPrefix = 'timestamp_';
 
   /// Cache a collection from Firestore
   Future<void> cacheCollection(
       String collectionName, List<Map<String, dynamic>> data) async {
     try {
-      final cacheKey = '$CACHE_PREFIX$collectionName';
-      final timestampKey = '$TIMESTAMP_PREFIX$collectionName';
+      final cacheKey = '$cachePrefix$collectionName';
+      final timestampKey = '$timestampPrefix$collectionName';
 
       final processedData = _processDataForCache(data);
       await _storage.write(cacheKey, jsonEncode(processedData));
       await _storage.write(timestampKey, DateTime.now().toIso8601String());
 
-      print('✅ Cached $collectionName with ${data.length} items');
+      AppLogger.debug('Cached $collectionName with ${data.length} items', 'FirebaseCacheService');
     } catch (e) {
-      print('❌ Error caching $collectionName: $e');
+      AppLogger.warning('Error caching $collectionName: $e', 'FirebaseCacheService');
     }
   }
 
   /// Get cached data for a collection
   List<Map<String, dynamic>>? getCachedCollection(String collectionName) {
     try {
-      final cacheKey = '$CACHE_PREFIX$collectionName';
-      final timestampKey = '$TIMESTAMP_PREFIX$collectionName';
+      final cacheKey = '$cachePrefix$collectionName';
+      final timestampKey = '$timestampPrefix$collectionName';
 
       final cachedData = _storage.read(cacheKey);
       final timestampStr = _storage.read(timestampKey);
@@ -56,8 +57,8 @@ class FirebaseCacheService {
       final now = DateTime.now();
       final difference = now.difference(timestamp).inMinutes;
 
-      if (difference > CACHE_DURATION_MINUTES) {
-        print('⏰ Cache expired for $collectionName');
+      if (difference > cacheDurationMinutes) {
+        AppLogger.debug('Cache expired for $collectionName', 'FirebaseCacheService');
         return null;
       }
 
@@ -65,7 +66,7 @@ class FirebaseCacheService {
       final processedData = _processDataFromCache(decodedData) as List;
       return processedData.map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (e) {
-      print('❌ Error reading cache for $collectionName: $e');
+      AppLogger.warning('Error reading cache for $collectionName: $e', 'FirebaseCacheService');
       return null;
     }
   }
@@ -134,7 +135,7 @@ class FirebaseCacheService {
     // Try to get from cache first
     final cached = getCachedCollection(cacheKey);
     if (cached != null) {
-      print('📦 Retrieved from cache: $cacheKey');
+      AppLogger.debug('Retrieved from cache: $cacheKey', 'FirebaseCacheService');
 
       // Fetch fresh data in background
       _fetchAndUpdateCache(
@@ -150,7 +151,7 @@ class FirebaseCacheService {
     }
 
     // Fetch from Firestore
-    print('🌐 Fetching from Firestore: $cacheKey');
+    AppLogger.debug('Fetching from Firestore: $cacheKey', 'FirebaseCacheService');
     return await _fetchFromFirestore(
       collectionName: collectionName,
       cacheKey: cacheKey,
@@ -202,7 +203,7 @@ class FirebaseCacheService {
 
       return data;
     } catch (e) {
-      print('❌ Error fetching from Firestore: $e');
+      AppLogger.warning('Error fetching from Firestore: $e', 'FirebaseCacheService');
       return [];
     }
   }
@@ -225,8 +226,7 @@ class FirebaseCacheService {
       limit: limit,
     );
 
-    // The caching is already done in _fetchFromFirestore
-    print('🔄 Updated cache for $cacheKey');
+    AppLogger.debug('Updated cache for $cacheKey', 'FirebaseCacheService');
   }
 
   /// Listen to collection changes with caching
@@ -296,24 +296,24 @@ class FirebaseCacheService {
 
   /// Clear cache for a specific collection
   Future<void> clearCache(String collectionName) async {
-    final cacheKey = '$CACHE_PREFIX$collectionName';
-    final timestampKey = '$TIMESTAMP_PREFIX$collectionName';
+    final cacheKey = '$cachePrefix$collectionName';
+    final timestampKey = '$timestampPrefix$collectionName';
 
     await _storage.remove(cacheKey);
     await _storage.remove(timestampKey);
 
-    print('🗑️ Cleared cache for $collectionName');
+    AppLogger.debug('Cleared cache for $collectionName', 'FirebaseCacheService');
   }
 
   /// Clear all cache
   Future<void> clearAllCache() async {
     await _storage.erase();
-    print('🗑️ Cleared all cache');
+    AppLogger.debug('Cleared all cache', 'FirebaseCacheService');
   }
 
   /// Check if cache exists and is valid
   bool isCacheValid(String collectionName) {
-    final timestampKey = '$TIMESTAMP_PREFIX$collectionName';
+    final timestampKey = '$timestampPrefix$collectionName';
     final timestampStr = _storage.read(timestampKey);
 
     if (timestampStr == null) return false;
@@ -322,12 +322,12 @@ class FirebaseCacheService {
     final now = DateTime.now();
     final difference = now.difference(timestamp).inMinutes;
 
-    return difference <= CACHE_DURATION_MINUTES;
+    return difference <= cacheDurationMinutes;
   }
 
   /// Get cache age in minutes
   int? getCacheAge(String collectionName) {
-    final timestampKey = '$TIMESTAMP_PREFIX$collectionName';
+    final timestampKey = '$timestampPrefix$collectionName';
     final timestampStr = _storage.read(timestampKey);
 
     if (timestampStr == null) return null;
@@ -339,12 +339,12 @@ class FirebaseCacheService {
 
   /// Prefetch and cache multiple collections
   Future<void> prefetchCollections(List<String> collectionNames) async {
-    print('🚀 Prefetching ${collectionNames.length} collections...');
+    AppLogger.debug('Prefetching ${collectionNames.length} collections...', 'FirebaseCacheService');
 
     for (final collectionName in collectionNames) {
       await getOrFetchCollection(collectionName: collectionName);
     }
 
-    print('✅ Prefetch completed');
+    AppLogger.debug('Prefetch completed', 'FirebaseCacheService');
   }
 }

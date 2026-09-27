@@ -19,6 +19,16 @@ class _RepoAnalyzerScreenState extends State<RepoAnalyzerScreen> {
   String? _result;
   String? _error;
 
+  @override
+  void dispose() {
+    _repoUrlCtrl.dispose();
+    _readmeCtrl.dispose();
+    for (final s in _snippets) {
+      s.dispose();
+    }
+    super.dispose();
+  }
+
   void _addSnippet() {
     setState(() {
       _snippets.add(_FileSnippet());
@@ -64,16 +74,6 @@ class _RepoAnalyzerScreenState extends State<RepoAnalyzerScreen> {
         _loading = false;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _repoUrlCtrl.dispose();
-    _readmeCtrl.dispose();
-    for (final s in _snippets) {
-      s.dispose();
-    }
-    super.dispose();
   }
 
   @override

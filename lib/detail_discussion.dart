@@ -83,24 +83,11 @@ class _detail_discussionState extends State<detail_discussion> {
 
   Future<void> updateXP2(String uid, int points) async {
     try {
-      // Fetch the current XP value as a String
-      final userDoc =
-          await FirebaseFirestore.instance.collection('User').doc(uid).get();
-
-      if (userDoc.exists) {
-        // Get the current XP value (could be int or String)
-        String currentXPString =
-            userDoc.data()?['XP']?.toString() ?? '0'; // Convert to String
-        int currentXP = int.tryParse(currentXPString) ?? 0; // Parse to int
-
-        // Update XP (add or subtract points)
-        int updatedXP = currentXP - points;
-
-        // Save the updated XP back to Firestore as an int
-        await FirebaseFirestore.instance.collection('User').doc(uid).update({
-          'XP': updatedXP,
-          'lastXpUpdate': FieldValue.serverTimestamp(),
-        });
+      // Save the updated XP back to Firestore atomically
+      await FirebaseFirestore.instance.collection('User').doc(uid).update({
+        'XP': FieldValue.increment(-points),
+        'lastXpUpdate': FieldValue.serverTimestamp(),
+      });
 
         // Log XP history for sync
         await FirebaseFirestore.instance
@@ -113,13 +100,8 @@ class _detail_discussionState extends State<detail_discussion> {
           'timestamp': FieldValue.serverTimestamp(),
           'description': 'Accepted answer deleted',
         });
-
-        print('XP updated successfully to $updatedXP!');
-      } else {
-        print('User document not found.');
-      }
     } catch (e) {
-      print('Error updating XP: $e');
+      debugPrint('Error updating XP: $e');
     }
   }
 
@@ -355,44 +337,25 @@ class _detail_discussionState extends State<detail_discussion> {
 
   Future<void> updateXP(String uid) async {
     try {
-      // Fetch the current XP value as a String
-      final userDoc =
-          await FirebaseFirestore.instance.collection('User').doc(uid).get();
+      // Save the updated XP back to Firestore atomically
+      await FirebaseFirestore.instance.collection('User').doc(uid).update({
+        'XP': FieldValue.increment(50),
+        'lastXpUpdate': FieldValue.serverTimestamp(),
+      });
 
-      if (userDoc.exists) {
-        // Get the current XP value (could be int or String)
-        String currentXPString =
-            userDoc.data()?['XP']?.toString() ?? '0'; // Convert to String
-        int currentXP = int.tryParse(currentXPString) ??
-            0; // Convert to int, default to 0 if parsing fails
-
-        // Add 50 to the current XP
-        int updatedXP = currentXP + 50;
-
-        // Save the updated XP back to Firestore as an int
-        await FirebaseFirestore.instance.collection('User').doc(uid).update({
-          'XP': updatedXP,
-          'lastXpUpdate': FieldValue.serverTimestamp(),
-        });
-
-        // Log XP history for sync
-        await FirebaseFirestore.instance
-            .collection('User')
-            .doc(uid)
-            .collection('xp_history')
-            .add({
-          'action': 'helpfulAnswer',
-          'xp': 50,
-          'timestamp': FieldValue.serverTimestamp(),
-          'description': 'Answer marked as helpful',
-        });
-
-        print('XP updated successfully to $updatedXP!');
-      } else {
-        print('User document not found.');
-      }
+      // Log XP history for sync
+      await FirebaseFirestore.instance
+          .collection('User')
+          .doc(uid)
+          .collection('xp_history')
+          .add({
+        'action': 'helpfulAnswer',
+        'xp': 50,
+        'timestamp': FieldValue.serverTimestamp(),
+        'description': 'Answer marked as helpful',
+      });
     } catch (e) {
-      print('Error updating XP: $e');
+      debugPrint('Error updating XP: $e');
     }
   }
 
@@ -2074,102 +2037,115 @@ class _detail_discussionState extends State<detail_discussion> {
               ),
             ),
             // Modern reply input section
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outline
-                              .withValues(alpha: 0.2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          maxHeight: 120,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outline
+                                .withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: TextField(
+                          controller: _replyController,
+                          maxLines: null,
+                          minLines: 1,
+                          keyboardType: TextInputType.multiline,
+                          scrollPhysics: const BouncingScrollPhysics(),
+                          decoration: InputDecoration(
+                            hintText: 'Add your opinion...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) {
+                            if (_replyController.text.trim().isNotEmpty) {
+                              addReply();
+                            }
+                          },
                         ),
                       ),
-                      child: TextField(
-                        controller: _replyController,
-                        decoration: InputDecoration(
-                          hintText: 'Add your opinion...',
-                          border: OutlineInputBorder(
+                    ),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Theme.of(context).colorScheme.primary,
+                              Theme.of(context).colorScheme.secondary,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
                             borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
+                            onTap: _isLoading
+                                ? null
+                                : () {
+                                    if (_replyController.text.trim().isNotEmpty) {
+                                      addReply();
+                                    }
+                                  },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.send_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                            ),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                        maxLines: null,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) {
-                          if (_replyController.text.trim().isNotEmpty) {
-                            addReply();
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Theme.of(context).colorScheme.primary,
-                          Theme.of(context).colorScheme.secondary,
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: _isLoading
-                            ? null
-                            : () {
-                                if (_replyController.text.trim().isNotEmpty) {
-                                  addReply();
-                                }
-                              },
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.send_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

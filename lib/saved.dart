@@ -5,14 +5,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'utils/app_theme.dart';
-import 'utils/content_moderation.dart';
 import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/app_logger.dart';
 
 class saved extends StatefulWidget {
   const saved({super.key});
@@ -22,7 +21,7 @@ class saved extends StatefulWidget {
 }
 
 class savedState extends State<saved>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   final user = FirebaseAuth.instance.currentUser;
   String username = '';
   String imageUrl = '';
@@ -339,7 +338,7 @@ class QuestionCard extends StatefulWidget {
   });
 
   @override
-  _QuestionCardState createState() => _QuestionCardState();
+  State<QuestionCard> createState() => _QuestionCardState();
 }
 
 class _QuestionCardState extends State<QuestionCard> {
@@ -378,7 +377,7 @@ class _QuestionCardState extends State<QuestionCard> {
         }
       }
     } catch (e) {
-      print('Error checking like status: $e');
+      AppLogger.e('Error checking like status', error: e);
     }
   }
 
@@ -397,7 +396,7 @@ class _QuestionCardState extends State<QuestionCard> {
         });
       }
     } catch (e) {
-      print('Error checking saved status: $e');
+      AppLogger.e('Error checking saved status', error: e);
     }
   }
 
@@ -436,7 +435,7 @@ class _QuestionCardState extends State<QuestionCard> {
         });
       }
     } catch (e) {
-      print('Error handling like/dislike: $e');
+      AppLogger.e('Error handling like/dislike', error: e);
       await _checkIfLiked();
     }
   }

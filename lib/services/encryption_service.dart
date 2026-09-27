@@ -10,7 +10,7 @@ import '../utils/app_logger.dart';
 /// Service to handle encryption/decryption of sensitive data
 ///
 /// Features:
-/// - AES-256 encryption for sensitive fields
+/// - AES-256-CBC encryption with unique cryptographically random IV per encryption
 /// - Secure key management using Flutter Secure Storage
 /// - Hive database encryption
 /// - Field-level encryption for Firestore data
@@ -24,7 +24,7 @@ class EncryptionService {
   static const String _hiveKeyName = 'hive_encryption_key';
 
   enc.Encrypter? _encrypter;
-  enc.IV? _iv;
+  enc.Key? _key;
   bool _initialized = false;
 
   /// Initialize the encryption service
@@ -43,23 +43,8 @@ class EncryptionService {
         await _secureStorage.write(key: _encryptionKeyName, value: keyString);
       }
 
-      final key = enc.Key(base64.decode(keyString));
-
-      // Generate or retrieve IV (Initialization Vector)
-      // For production, you might want to use different IVs per encryption
-      // For simplicity, we're using a fixed IV stored securely
-      String? ivString =
-          await _secureStorage.read(key: '${_encryptionKeyName}_iv');
-
-      if (ivString == null) {
-        final iv = enc.IV.fromSecureRandom(16);
-        ivString = base64.encode(iv.bytes);
-        await _secureStorage.write(
-            key: '${_encryptionKeyName}_iv', value: ivString);
-      }
-
-      _iv = enc.IV(base64.decode(ivString));
-      _encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
+      _key = enc.Key(base64.decode(keyString));
+      _encrypter = enc.Encrypter(enc.AES(_key!, mode: enc.AESMode.cbc));
       _initialized = true;
     } catch (e) {
       AppLogger.error('Encryption initialization error', e);
@@ -88,10 +73,10 @@ class EncryptionService {
     }
   }
 
-  /// Encrypt a string value
-  /// Returns base64 encoded encrypted string
+  /// Encrypt a string value with a fresh random 16-byte IV prepended to output
+  /// Returns base64 encoded string containing [IV (16 bytes) + Ciphertext]
   String encryptString(String plainText) {
-    if (!_initialized) {
+    if (!_initialized || _encrypter == null) {
       throw StateError(
           'EncryptionService not initialized. Call initialize() first.');
     }
@@ -99,18 +84,25 @@ class EncryptionService {
     if (plainText.isEmpty) return '';
 
     try {
-      final encrypted = _encrypter!.encrypt(plainText, iv: _iv);
-      return encrypted.base64;
+      final iv = enc.IV.fromSecureRandom(16);
+      final encrypted = _encrypter!.encrypt(plainText, iv: iv);
+
+      // Prepend 16-byte IV to ciphertext bytes
+      final combined = Uint8List(16 + encrypted.bytes.length);
+      combined.setRange(0, 16, iv.bytes);
+      combined.setRange(16, combined.length, encrypted.bytes);
+
+      return base64.encode(combined);
     } catch (e) {
-      AppLogger.warning('Encryption error: $e');
-      return plainText; // Fallback to plaintext in case of error
+      AppLogger.error('Encryption error: $e');
+      rethrow;
     }
   }
 
-  /// Decrypt a base64 encoded encrypted string
+  /// Decrypt a base64 encoded string containing [IV (16 bytes) + Ciphertext]
   /// Returns original plaintext
   String decryptString(String encryptedBase64) {
-    if (!_initialized) {
+    if (!_initialized || _encrypter == null) {
       throw StateError(
           'EncryptionService not initialized. Call initialize() first.');
     }
@@ -118,16 +110,24 @@ class EncryptionService {
     if (encryptedBase64.isEmpty) return '';
 
     try {
-      final decrypted = _encrypter!.decrypt64(encryptedBase64, iv: _iv);
-      return decrypted;
+      final combined = base64.decode(encryptedBase64);
+      if (combined.length <= 16) {
+        throw ArgumentError('Invalid encrypted payload: too short');
+      }
+
+      final ivBytes = combined.sublist(0, 16);
+      final cipherBytes = combined.sublist(16);
+      final iv = enc.IV(Uint8List.fromList(ivBytes));
+      final encrypted = enc.Encrypted(Uint8List.fromList(cipherBytes));
+
+      return _encrypter!.decrypt(encrypted, iv: iv);
     } catch (e) {
-      AppLogger.warning('Decryption error: $e');
-      return encryptedBase64; // Return as-is if decryption fails
+      AppLogger.error('Decryption error: $e');
+      rethrow;
     }
   }
 
   /// Encrypt sensitive fields in a Map before saving to Firestore
-  /// Only encrypts specified fields
   Map<String, dynamic> encryptFields(
     Map<String, dynamic> data,
     List<String> fieldsToEncrypt,
@@ -139,7 +139,6 @@ class EncryptionService {
         final value = encryptedData[field] as String;
         if (value.isNotEmpty) {
           encryptedData[field] = encryptString(value);
-          // Add metadata to indicate this field is encrypted
           encryptedData['${field}_encrypted'] = true;
         }
       }
@@ -156,7 +155,6 @@ class EncryptionService {
     final decryptedData = Map<String, dynamic>.from(data);
 
     for (final field in fieldsToDecrypt) {
-      // Check if field is marked as encrypted
       if (decryptedData['${field}_encrypted'] == true &&
           decryptedData.containsKey(field) &&
           decryptedData[field] is String) {
@@ -170,7 +168,7 @@ class EncryptionService {
     return decryptedData;
   }
 
-  /// Hash a value using SHA-256 (for verification, not encryption)
+  /// Hash a value using SHA-256
   String hash(String value) {
     final bytes = utf8.encode(value);
     final digest = sha256.convert(bytes);
@@ -184,15 +182,13 @@ class EncryptionService {
     return base64.encode(values);
   }
 
-  /// Clear all encryption keys (use with caution!)
-  /// This will make previously encrypted data unrecoverable
+  /// Clear all encryption keys
   Future<void> clearKeys() async {
     await _secureStorage.delete(key: _encryptionKeyName);
-    await _secureStorage.delete(key: '${_encryptionKeyName}_iv');
     await _secureStorage.delete(key: _hiveKeyName);
     _initialized = false;
     _encrypter = null;
-    _iv = null;
+    _key = null;
   }
 
   /// Check if encryption is initialized
@@ -264,7 +260,14 @@ class HiveAesCipher implements HiveCipher {
 
   @override
   int calculateKeyCrc() {
-    // Calculate CRC32 of the key for Hive internal validation
-    return _key.fold(0, (prev, element) => prev ^ element);
+    // 32-bit polynomial CRC for key checksum
+    int crc = 0xFFFFFFFF;
+    for (final byte in _key) {
+      crc ^= byte;
+      for (int i = 0; i < 8; i++) {
+        crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+      }
+    }
+    return ~crc & 0xFFFFFFFF;
   }
 }

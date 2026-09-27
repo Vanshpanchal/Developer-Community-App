@@ -11,15 +11,12 @@ class markdown extends StatefulWidget {
 
 class _markdownState extends State<markdown> {
   final TextEditingController _controller = TextEditingController();
-  bool isPreviewMode = false;
-
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(

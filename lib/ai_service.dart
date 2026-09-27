@@ -134,28 +134,40 @@ class AIService {
     return _generate(prompt);
   }
 
+  /// General text generation method for chat or arbitrary prompts
+  Future<String> generateText(String prompt) async {
+    return _generate(prompt);
+  }
+
   Future<String> _generate(String prompt) async {
     try {
       final apiKey = await _getApiKey();
       if (apiKey == null || apiKey.trim().isEmpty) return missingKeyMessage;
-      
+
       final model = await getSelectedModel();
-      final endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent';
-      
-      final uri = Uri.parse('$endpoint?key=$apiKey');
-      final response = await http.post(
-        uri,
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
-                {'text': prompt}
+      final endpoint =
+          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent';
+
+      final uri = Uri.parse(endpoint);
+      final response = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: jsonEncode({
+              'contents': [
+                {
+                  'parts': [
+                    {'text': prompt}
+                  ]
+                }
               ]
-            }
-          ]
-        }),
-      );
+            }),
+          )
+          .timeout(const Duration(seconds: 25));
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final candidates = data['candidates'];
@@ -180,9 +192,11 @@ class AIService {
         return 'Service unavailable (${response.statusCode}). Retry later.';
       }
       return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
+    } on TimeoutException {
+      return 'Request timed out. Please check your network connection and try again.';
     } catch (e, st) {
       if (kDebugMode) debugPrint('Gemini request failed: $e\n$st');
-      return 'Error: $e';
+      return 'Connection error. Please try again.';
     }
   }
 

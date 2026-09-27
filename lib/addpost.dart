@@ -28,6 +28,14 @@ class addpostState extends State<addpost> {
   bool _isSubmitted = false;
   final _formKey = GlobalKey<FormState>();
 
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _markdownController.dispose();
+    super.dispose();
+  }
+
   String? selectedSubject;
   Future<void> sharepost() async {
     setState(() => _isSubmitted = true);

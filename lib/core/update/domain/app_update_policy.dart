@@ -13,7 +13,7 @@ class AppUpdatePolicy {
   // ── NEW: Play Store constants ──────────────────────────────────────
 
   /// Google Play Store package ID for this app.
-  static const String playStoreAppId = 'com.adrenalinq.organizer';
+  static const String playStoreAppId = 'com.vanshdevstudio.devsphere';
 
   /// Play Store listing URL (web fallback).
   static const String playStoreUrl =

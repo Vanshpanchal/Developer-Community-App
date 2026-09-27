@@ -6,6 +6,9 @@
     <!-- Camera permission for profile picture -->
     <uses-permission android:name="android.permission.CAMERA"/>
     
+    <!-- Notification permission for Android 13+ (API 33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    
     <application
         android:label="DevSphere"
         android:name="${applicationName}"

@@ -43,6 +43,12 @@ class _saved_discussionState extends State<saved_discussion> {
   String imageUrl = '';
   TextEditingController search_controller = TextEditingController();
 
+  @override
+  void dispose() {
+    search_controller.dispose();
+    super.dispose();
+  }
+
   var discussionStream = FirebaseFirestore.instance
       .collection('Discussions')
       .where('Report', isEqualTo: false)

@@ -31,6 +31,15 @@ class _attachcodeState extends State<attachcode> {
   final TextEditingController _tagController = TextEditingController();
   final List<String> _tags = [];
 
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _markdownController.dispose();
+    _tagController.dispose();
+    super.dispose();
+  }
+
   // ignore: unused_element
   void _addTag() {
     final tag = _tagController.text.toUpperCase().trim();

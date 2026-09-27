@@ -14,7 +14,7 @@ class AvatarGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // _GenderFilterBar(),
+        _GenderFilterBar(),
         Expanded(child: _AvatarGridBody()),
       ],
     );

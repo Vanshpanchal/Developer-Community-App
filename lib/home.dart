@@ -3,6 +3,7 @@ import 'package:developer_community_app/explore.dart';
 import 'package:developer_community_app/profile.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -79,47 +80,69 @@ class _homepageState extends State<home> {
   }
 
   @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final controller = Get.put(navigatorcontroller(userRole: userRole));
+    final controller = Get.find<navigatorcontroller>();
 
-    return Scaffold(
-
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(), // Disabled swipe
-        children: _screens,
-        onPageChanged: (index) {
+    return PopScope(
+      canPop: _selectedIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_selectedIndex != 0) {
+          // If not on Explore tab, navigate back to Explore tab
           setState(() {
-            _selectedIndex = index;
-            controller.selectedindex.value = index;
+            _selectedIndex = 0;
+            controller.selectedindex.value = 0;
           });
-        },
-      ),
-      bottomNavigationBar: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 20,
-                  offset: const Offset(0, -5),
-                ),
-              ],
-            ),
-            child: NavigationBar(
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: (index) {
-                setState(() {
-                  _selectedIndex = index;
-                  controller.selectedindex.value = index;
-                });
-                _pageController.jumpToPage(index);
-              },
-              destinations: controller.navigationDestinations,
-              height: 70,
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            ),
+          _pageController.jumpToPage(0);
+        } else {
+          // If on Explore tab, exit the app
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(), // Disabled swipe
+          children: _screens,
+          onPageChanged: (index) {
+            setState(() {
+              _selectedIndex = index;
+              controller.selectedindex.value = index;
+            });
+          },
+        ),
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
           ),
+          child: NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (index) {
+              setState(() {
+                _selectedIndex = index;
+                controller.selectedindex.value = index;
+              });
+              _pageController.jumpToPage(index);
+            },
+            destinations: controller.navigationDestinations,
+            height: 70,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+          ),
+        ),
+      ),
     );
   }
 }

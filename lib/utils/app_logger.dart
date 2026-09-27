@@ -45,4 +45,11 @@ class AppLogger {
     // TODO: In production, send to Firebase Crashlytics
     // FirebaseCrashlytics.instance.recordError(error, stackTrace, reason: message);
   }
+
+  /// Aliases for convenience
+  static void d(String message, [String? tag]) => debug(message, tag);
+  static void i(String message, [String? tag]) => info(message, tag);
+  static void w(String message, [String? tag]) => warning(message, tag);
+  static void e(String message, {Object? error, StackTrace? stackTrace, String? tag}) =>
+      AppLogger.error(message, error, stackTrace, tag);
 }

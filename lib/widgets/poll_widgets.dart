@@ -67,12 +67,13 @@ class _CreatePollWidgetState extends State<CreatePollWidget> {
     );
 
     if (date != null) {
+      if (!mounted) return;
       final time = await showTimePicker(
         context: context,
         initialTime: TimeOfDay.fromDateTime(now),
       );
 
-      if (time != null) {
+      if (time != null && mounted) {
         setState(() {
           _endsAt = DateTime(
             date.year,

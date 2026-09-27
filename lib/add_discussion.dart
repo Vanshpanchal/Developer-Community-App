@@ -35,6 +35,13 @@ class _add_discussionState extends State<add_discussion> {
   bool _isSubmitted = false;
   final _formKey = GlobalKey<FormState>();
 
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
   String? selectedSubject;
   Future<void> shareDiscussion() async {
     setState(() => _isSubmitted = true);

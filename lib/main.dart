@@ -28,11 +28,12 @@ import 'core/update/presentation/widgets/android_update_gate.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Set system UI overlay style
+  // Set system UI overlay style with transparent system bars for edge-to-edge compatibility
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.dark,
-    systemNavigationBarColor: Colors.white,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
     systemNavigationBarIconBrightness: Brightness.dark,
   ));
 
@@ -42,6 +43,7 @@ void main() async {
   MigrationService.migrateXpToInteger();
   
   await GetStorage.init();
+  await GetStorage.init('firebase_cache');
   await Hive.initFlutter();
 
   // Sync user's selected AI model from Firestore (best-effort, non-blocking)

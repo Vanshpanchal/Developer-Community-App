@@ -1,22 +1,17 @@
-import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'messagemodel.dart';
 import 'ai_service.dart';
-import 'api_key_manager.dart';
 import 'utils/app_theme.dart';
-import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
 
 class CopyOverlay extends StatefulWidget {
-  final BuildContext context;
+  final BuildContext? context;
 
-  const CopyOverlay({super.key, required this.context});
+  const CopyOverlay({super.key, this.context});
 
   @override
   State<CopyOverlay> createState() => _CopyOverlayState();
@@ -31,7 +26,7 @@ class _CopyOverlayState extends State<CopyOverlay>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
     _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -41,8 +36,14 @@ class _CopyOverlayState extends State<CopyOverlay>
         reverseCurve: Curves.easeIn,
       ),
     );
-    _controller.forward().then((_) => _controller.reverse()).then((_) {
-      Navigator.of(context).pop();
+    _controller.forward().then((_) {
+      if (mounted) {
+        return _controller.reverse();
+      }
+    }).then((_) {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     });
   }
 
@@ -95,7 +96,6 @@ class _ChatScreenState extends State<ChatScreen1> {
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
   bool _isTyping = false;
-  String? _apiKey; // dynamically loaded user key
 
   @override
   void initState() {
@@ -106,61 +106,15 @@ class _ChatScreenState extends State<ChatScreen1> {
     });
   }
 
-  Future<bool> _ensureApiKey() async {
-    // Fetch the saved API key from secure storage (set in profile)
-    _apiKey = await ApiKeyManager.instance.getLocalKey();
-    return _apiKey != null && _apiKey!.trim().isNotEmpty;
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<String> getGeminiResponse(String prompt) async {
-    final hasKey = await _ensureApiKey();
-    if (!hasKey) return AIService.missingKeyMessage;
-    
-    try {
-      final modelName = await AIService().getSelectedModel();
-      final apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent';
-      
-      final response = await http.post(
-        Uri.parse('$apiUrl?key=$_apiKey'),
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
-                {'text': prompt}
-              ]
-            }
-          ]
-        }),
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final candidates = data['candidates'];
-        if (candidates is List && candidates.isNotEmpty) {
-          final content = candidates[0]['content'];
-          if (content is Map &&
-              content['parts'] is List &&
-              content['parts'].isNotEmpty) {
-            final text = content['parts'][0]['text'];
-            if (text is String) return text;
-          }
-        }
-        return 'No response generated.';
-      }
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        return 'Authentication error (${response.statusCode}). Check your API key.';
-      }
-      if (response.statusCode == 429) {
-        print(response.body);
-        return 'Rate limit reached. Please retry later.';
-      }
-      if (response.statusCode >= 500) {
-        return 'Service temporarily unavailable (${response.statusCode}).';
-      }
-      return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
-    } catch (e) {
-      return 'Error: $e';
-    }
+    return AIService().generateText(prompt);
   }
 
   void _showCopiedSnackBar() {
@@ -172,10 +126,12 @@ class _ChatScreenState extends State<ChatScreen1> {
 
     final userMessage = Message(text: _controller.text, isUser: true);
     await _messageBox.add(userMessage);
-    setState(() {
-      _isLoading = true;
-      _isTyping = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _isTyping = true;
+      });
+    }
     _controller.clear();
     _scrollToBottom();
 
@@ -183,10 +139,12 @@ class _ChatScreenState extends State<ChatScreen1> {
     final botMessage = Message(text: botResponse, isUser: false);
     await _messageBox.add(botMessage);
 
-    setState(() {
-      _isLoading = false;
-      _isTyping = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _isTyping = false;
+      });
+    }
     _scrollToBottom();
   }
 
@@ -243,16 +201,16 @@ class _ChatScreenState extends State<ChatScreen1> {
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withOpacity(0.8),
-                  borderRadius: BorderRadius.only(
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                  borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(20),
                     bottomRight: Radius.circular(20),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
-                      offset: Offset(0, 2),
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
@@ -359,73 +317,84 @@ class _ChatScreenState extends State<ChatScreen1> {
               Container(
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withOpacity(0.8),
-                  borderRadius: BorderRadius.only(
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                  borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
-                      offset: Offset(0, -2),
+                      offset: const Offset(0, -2),
                     ),
                   ],
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Expanded(
                       child: Container(
+                        constraints: const BoxConstraints(
+                          maxHeight: 120,
+                        ),
                         decoration: BoxDecoration(
                           color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(24),
+                          borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: Theme.of(context)
                                 .colorScheme
                                 .outline
-                                .withOpacity(0.2),
+                                .withValues(alpha: 0.2),
                           ),
                         ),
                         child: TextField(
                           controller: _controller,
+                          maxLines: null,
+                          minLines: 1,
+                          keyboardType: TextInputType.multiline,
+                          scrollPhysics: const BouncingScrollPhysics(),
                           decoration: InputDecoration(
                             hintText: 'Type a message...',
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
+                              borderRadius: BorderRadius.circular(20),
                               borderSide: BorderSide.none,
                             ),
-                            contentPadding: EdgeInsets.symmetric(
+                            contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16,
-                              vertical: 12,
+                              vertical: 10,
                             ),
+                            isDense: true,
                           ),
-                          maxLines: null,
-                          textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _sendMessage(),
                         ),
                       ),
                     ),
-                    SizedBox(width: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Theme.of(context).colorScheme.primary,
-                            Theme.of(context).colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Theme.of(context).colorScheme.primary,
+                              Theme.of(context).colorScheme.secondary,
+                            ],
+                          ),
                           borderRadius: BorderRadius.circular(24),
-                          onTap: _sendMessage,
-                          child: Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Icon(
-                              Icons.send_rounded,
-                              color: Colors.white,
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(24),
+                            onTap: _sendMessage,
+                            child: const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
@@ -439,13 +408,6 @@ class _ChatScreenState extends State<ChatScreen1> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
-    super.dispose();
   }
 }
 

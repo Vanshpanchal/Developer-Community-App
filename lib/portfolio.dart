@@ -73,6 +73,12 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
     _loadHistory();
   }
 
+  @override
+  void dispose() {
+    _editController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {

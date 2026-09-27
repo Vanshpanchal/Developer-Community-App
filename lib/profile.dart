@@ -100,11 +100,8 @@ class _ProfileState extends State<profile>
           // Persist to Firestore so header gradient is correct on every device
           final uid = FirebaseAuth.instance.currentUser?.uid;
           if (uid != null) {
-            FirebaseFirestore.instance
-                .collection('User')
-                .doc(uid)
-                .update({'profileDominantColor': color.value})
-                .catchError((_) {});
+            FirebaseFirestore.instance.collection('User').doc(uid).update(
+                {'profileDominantColor': color.value}).catchError((_) {});
           }
         }
       }
@@ -177,10 +174,10 @@ class _ProfileState extends State<profile>
       } else {
         await Hive.openBox<Message>('chat_messages').then((box) => box.clear());
       }
-      
+
       // 4. Clear GetStorage (Avatars, Theme, Selected Models, Local Preferences)
       await GetStorage().erase();
-      
+
       // 5. Clear UserCacheService (Explore/Community user metadata cache)
       UserCacheService.instance.clearAll();
 
@@ -194,7 +191,6 @@ class _ProfileState extends State<profile>
 
   Future<void> _confirmLogout(BuildContext context) async {
     final confirmed = await AppDialogs.showConfirmation(
-
       context,
       title: 'Confirm Logout',
       message: 'Are you sure you want to log out?',
@@ -370,17 +366,20 @@ class _ProfileState extends State<profile>
                 }
                 return Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: models.map((model) => ListTile(
-                    title: Text(model),
-                    trailing: aiService.cachedSelectedModel == model
-                        ? const Icon(Icons.check_circle, color: AppTheme.primaryColor)
-                        : null,
-                    onTap: () {
-                      aiService.setModel(model);
-                      Navigator.pop(context);
-                      AppSnackbar.success('Model set to $model');
-                    },
-                  )).toList(),
+                  children: models
+                      .map((model) => ListTile(
+                            title: Text(model),
+                            trailing: aiService.cachedSelectedModel == model
+                                ? const Icon(Icons.check_circle,
+                                    color: AppTheme.primaryColor)
+                                : null,
+                            onTap: () {
+                              aiService.setModel(model);
+                              Navigator.pop(context);
+                              AppSnackbar.success('Model set to $model');
+                            },
+                          ))
+                      .toList(),
                 );
               },
             ),
@@ -484,7 +483,8 @@ class _ProfileState extends State<profile>
                         _MenuItemData(
                           icon: Icons.settings_suggest_rounded,
                           title: 'Select AI Model',
-                          subtitle: 'Current: ${AIService().cachedSelectedModel}',
+                          subtitle:
+                              'Current: ${AIService().cachedSelectedModel}',
                           color: Colors.blue,
                           onTap: _setGeminiModel,
                         ),
@@ -1288,8 +1288,6 @@ class _ProfileState extends State<profile>
                   autofocus: true,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Enter a key';
-                    if (!v.startsWith('AI')) return 'Key format looks unusual';
-                    if (v.trim().length < 20) return 'Key too short';
                     return null;
                   },
                 ),
@@ -1330,19 +1328,20 @@ class _ProfileState extends State<profile>
                           Navigator.pop(ctx);
                           try {
                             await ApiKeyManager.instance.saveUserKey(key);
-                            
+
                             // Check if the user has a selected model in Firebase
-                            final remoteModel = await SecretsService.instance.loadSelectedModel();
+                            final remoteModel = await SecretsService.instance
+                                .loadSelectedModel();
                             if (remoteModel == null || remoteModel.isEmpty) {
                               // If no model is set in the profile, show dialog asking them to select one
                               if (context.mounted) {
-                                AppDialogs.showConfirmation(
-                                  context,
-                                  title: 'API Key Saved',
-                                  message: 'API key saved successfully! Please select an AI model from your profile to use in the app.',
-                                  confirmText: 'Select Model',
-                                  cancelText: 'Later'
-                                ).then((shouldSelect) {
+                                AppDialogs.showConfirmation(context,
+                                        title: 'API Key Saved',
+                                        message:
+                                            'API key saved successfully! Please select an AI model from your profile to use in the app.',
+                                        confirmText: 'Select Model',
+                                        cancelText: 'Later')
+                                    .then((shouldSelect) {
                                   if (shouldSelect == true) {
                                     _setGeminiModel();
                                   }

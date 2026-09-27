@@ -37,7 +37,7 @@ class _AndroidUpdateGateState extends State<AndroidUpdateGate> with WidgetsBindi
       String.fromEnvironment('SIMULATE_UPDATE') == 'true';
 
   bool get shouldCheckAndroidUpdates =>
-      (_isSimulatedUpdateEnabled || (kReleaseMode && Platform.isAndroid));
+      (_isSimulatedUpdateEnabled || (!kIsWeb && kReleaseMode && Platform.isAndroid));
 
   @override
   void initState() {
@@ -84,14 +84,25 @@ class _AndroidUpdateGateState extends State<AndroidUpdateGate> with WidgetsBindi
   }
 
   Future<bool> _openPlayStore() async {
-    // Try deep link first (opens Play Store app directly)
-    final marketUri = Uri.parse(AppUpdatePolicy.playStoreMarketUrl);
-    if (await canLaunchUrl(marketUri)) {
-      return await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+    try {
+      // Try deep link first (opens Play Store app directly)
+      final marketUri = Uri.parse(AppUpdatePolicy.playStoreMarketUrl);
+      if (await canLaunchUrl(marketUri)) {
+        return await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      AppLogger.error('Failed to open market URL: $e', null, null, 'InAppUpdate');
     }
-    // Fallback to web URL
-    final webUri = Uri.parse(AppUpdatePolicy.playStoreUrl);
-    return await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    try {
+      // Fallback to web URL
+      final webUri = Uri.parse(AppUpdatePolicy.playStoreUrl);
+      if (await canLaunchUrl(webUri)) {
+        return await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      AppLogger.error('Failed to open web URL: $e', null, null, 'InAppUpdate');
+    }
+    return false;
   }
 
   void _requireUpdate({required String message}) {
@@ -106,6 +117,8 @@ class _AndroidUpdateGateState extends State<AndroidUpdateGate> with WidgetsBindi
       await service.performImmediateUpdate();
     } catch (e) {
       AppLogger.error('Failed to perform immediate update: $e', null, null, 'InAppUpdate');
+      // Fallback to opening Play Store if in-app update fails or cannot be started
+      await _openPlayStore();
     }
   }
 
