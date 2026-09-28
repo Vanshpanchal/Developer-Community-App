@@ -8,13 +8,14 @@ import '../ThemeController.dart';
 
 class AppTheme {
   // Brand Colors - Original Blue Theme
-  static const Color primaryColor = Color(0xFF2196F3); // Blue
+  // Contrast-safe with white text (WCAG AA). See ThemeController.defaultColor.
+  static const Color primaryColor = Color(0xFF1565C0); // Blue 800
   static const Color secondaryColor = Color(0xFF1976D2); // Dark Blue
   static const Color accentColor = Color(0xFF03A9F4); // Light Blue
   static const Color successColor = Color(0xFF4CAF50); // Green
   static const Color warningColor = Color(0xFFFF9800); // Orange
   static const Color errorColor = Color(0xFFF44336); // Red
-  static const Color infoColor = Color(0xFF2196F3); // Blue
+  static const Color infoColor = Color(0xFF1565C0); // Blue 800
 
   // Neutral Colors
   static const Color darkBg = Color(0xFF121212);
@@ -22,8 +23,9 @@ class AppTheme {
   static const Color darkSurface = Color(0xFF2D2D2D);
 
   // Gradients - Blue based
+  // Both stops keep white text at or above 4.5:1.
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF42A5F5), Color(0xFF1976D2)],
+    colors: [Color(0xFF1976D2), Color(0xFF0D47A1)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

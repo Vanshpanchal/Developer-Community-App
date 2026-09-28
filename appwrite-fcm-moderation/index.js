@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const admin = require('firebase-admin');
 
 let firebaseInitialized = false;
@@ -62,6 +63,14 @@ function routeKey(req) {
     return `${method} ${path}`;
 }
 
+/** Constant-time comparison so key checks don't leak timing information. */
+function keysMatch(provided, expected) {
+    if (!expected || typeof provided !== 'string') return false;
+    const a = crypto.createHash('sha256').update(provided).digest();
+    const b = crypto.createHash('sha256').update(expected).digest();
+    return crypto.timingSafeEqual(a, b);
+}
+
 function getApiKey(req, body) {
     const headers = req?.headers || {};
     const lowerHeaders = Object.fromEntries(
@@ -75,7 +84,8 @@ function getApiKey(req, body) {
     if (auth && auth.startsWith('Bearer ')) return auth.slice(7).trim();
     if (auth && auth.trim()) return auth.trim();
 
-    if (typeof body?.apiKey === 'string') return body.apiKey.trim();
+    // Keys are accepted only in headers, never in the body (bodies are more
+    // likely to be logged).
     return '';
 }
 
@@ -135,9 +145,15 @@ async function fetchAllUserTokens(maxUsers = 10000) {
         const snap = await query.get();
         if (snap.empty) break;
 
-        for (const doc of snap.docs) {
+        // The app stores tokens in the owner-only User/{uid}/private/tokens
+        // doc; legacy fields on the profile itself are still honoured.
+        const privateDocs = await db.getAll(
+            ...snap.docs.map((doc) => doc.ref.collection('private').doc('tokens')),
+        );
+        for (const [index, doc] of snap.docs.entries()) {
             scanned += 1;
             for (const token of collectUserTokens(doc.data())) all.add(token);
+            for (const token of collectUserTokens(privateDocs[index].data())) all.add(token);
             if (scanned >= maxUsers) break;
         }
 
@@ -372,10 +388,10 @@ function buildSubmissionPayload(data) {
 
 async function moderateTodayCollection(collectionName) {
     const db = admin.firestore();
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    // Rolling 24-hour window ending now. The old "today 00:00 → tomorrow"
+    // window only covered two hours when the job ran at 02:00 UTC.
+    const end = new Date();
+    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
     const snap = await db
         .collection(collectionName)
@@ -417,7 +433,7 @@ module.exports = async ({ req, res, log, error }) => {
         const expectedApiKey = env('INTERNAL_API_KEY');
         const requestApiKey = getApiKey(req, body);
 
-        if (!expectedApiKey || requestApiKey !== expectedApiKey) {
+        if (!keysMatch(requestApiKey, expectedApiKey)) {
             return unauthorized(res);
         }
 

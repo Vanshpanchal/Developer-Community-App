@@ -4,6 +4,7 @@ import 'package:developer_community_app/utils/content_moderation.dart';
 import 'package:developer_community_app/models/avatar_config.dart';
 import 'package:developer_community_app/models/poll_model.dart';
 import 'package:developer_community_app/core/update/domain/app_update_policy.dart';
+import 'package:developer_community_app/utils/date_format.dart';
 
 void main() {
   group('AppValidators Unit Tests', () {
@@ -12,11 +13,16 @@ void main() {
       expect(AppValidators.validateEmail('invalid-email'), 'Please enter a valid email');
       expect(AppValidators.validateEmail('test@example.com'), isNull);
       expect(AppValidators.validateEmail('developer.community@domain.co.in'), isNull);
+      expect(AppValidators.validateEmail('name+tag@gmail.com'), isNull);
+      expect(AppValidators.validateEmail('dev@studio.technology'), isNull);
+      expect(AppValidators.validateEmail('no-at-sign.com'), 'Please enter a valid email');
     });
 
     test('validatePassword validates length requirements', () {
       expect(AppValidators.validatePassword(''), 'Password is required');
-      expect(AppValidators.validatePassword('12345'), 'Password must be at least 6 characters');
+      expect(AppValidators.validatePassword('1234567'), 'Password must be at least 8 characters');
+      expect(AppValidators.validateLoginPassword('123456'), isNull);
+      expect(AppValidators.validateLoginPassword(''), 'Password is required');
       expect(AppValidators.validatePassword('securePassword123'), isNull);
     });
 
@@ -131,6 +137,19 @@ void main() {
       expect(AppUpdatePolicy.playStoreAppId, 'com.vanshdevstudio.devsphere');
       expect(AppUpdatePolicy.playStoreUrl, contains('com.vanshdevstudio.devsphere'));
       expect(AppUpdatePolicy.playStoreMarketUrl, 'market://details?id=com.vanshdevstudio.devsphere');
+    });
+  });
+
+  group('formatRelativeDate', () {
+    final now = DateTime(2026, 9, 28, 12);
+    test('recent times are relative, never "0m ago"', () {
+      expect(formatRelativeDate(now.subtract(const Duration(seconds: 20)), now: now), 'just now');
+      expect(formatRelativeDate(now.subtract(const Duration(minutes: 5)), now: now), '5m ago');
+      expect(formatRelativeDate(now.subtract(const Duration(hours: 3)), now: now), '3h ago');
+      expect(formatRelativeDate(now.subtract(const Duration(days: 2)), now: now), '2d ago');
+    });
+    test('older dates use a locale-aware format', () {
+      expect(formatRelativeDate(DateTime(2026, 1, 5), now: now, locale: 'en_US'), 'Jan 5, 2026');
     });
   });
 }

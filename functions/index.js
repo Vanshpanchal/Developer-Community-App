@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const admin = require('firebase-admin');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
@@ -5,6 +6,15 @@ const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 
 admin.initializeApp();
+
+/** Constant-time comparison so key checks don't leak timing information. */
+function keysMatch(provided, expected) {
+    if (!expected || typeof provided !== 'string') return false;
+    const a = crypto.createHash('sha256').update(provided).digest();
+    const b = crypto.createHash('sha256').update(expected).digest();
+    return crypto.timingSafeEqual(a, b);
+}
+
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const internalFcmApiKey = defineSecret('INTERNAL_FCM_API_KEY');
@@ -140,9 +150,17 @@ async function fetchAllUserTokens({ maxUsers = 10000 }) {
         const snapshot = await query.get();
         if (snapshot.empty) break;
 
-        for (const doc of snapshot.docs) {
+        // The app stores tokens in the owner-only User/{uid}/private/tokens
+        // doc; legacy fields on the profile itself are still honoured.
+        const privateDocs = await db.getAll(
+            ...snapshot.docs.map((doc) => doc.ref.collection('private').doc('tokens')),
+        );
+        for (const [index, doc] of snapshot.docs.entries()) {
             scannedUsers += 1;
-            const tokens = collectUserTokens(doc.data());
+            const tokens = [
+                ...collectUserTokens(doc.data()),
+                ...collectUserTokens(privateDocs[index].data()),
+            ];
             for (const token of tokens) tokenSet.add(token);
             if (scannedUsers >= maxUsers) break;
         }
@@ -453,11 +471,10 @@ function buildSubmissionPayloadFromDoc(data) {
 async function moderateCollectionForToday(collectionName, apiKey) {
     const db = admin.firestore();
 
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    // Rolling 24-hour window ending now. The old "today 00:00 → tomorrow"
+    // window only covered two hours when the job ran at 02:00 UTC.
+    const end = new Date();
+    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
     const snapshot = await db
         .collection(collectionName)
@@ -586,7 +603,8 @@ exports.sendFcmHttp = onRequest(
         region: 'us-central1',
         timeoutSeconds: 60,
         memory: '256MiB',
-        cors: true,
+        // Server-to-server endpoint: no browser origins allowed.
+        cors: false,
         secrets: [internalFcmApiKey],
     },
     async (req, res) => {
@@ -596,7 +614,7 @@ exports.sendFcmHttp = onRequest(
 
         const expectedApiKey = (internalFcmApiKey.value() || '').trim();
         const requestApiKey = getApiKeyFromRequest(req);
-        if (!expectedApiKey || requestApiKey !== expectedApiKey) {
+        if (!keysMatch(requestApiKey, expectedApiKey)) {
             return writeJson(res, 401, { success: false, message: 'Unauthorized' });
         }
 
@@ -640,7 +658,8 @@ exports.sendFcmBroadcastHttp = onRequest(
         region: 'us-central1',
         timeoutSeconds: 300,
         memory: '512MiB',
-        cors: true,
+        // Server-to-server endpoint: no browser origins allowed.
+        cors: false,
         secrets: [internalFcmApiKey],
     },
     async (req, res) => {
@@ -650,7 +669,7 @@ exports.sendFcmBroadcastHttp = onRequest(
 
         const expectedApiKey = (internalFcmApiKey.value() || '').trim();
         const requestApiKey = getApiKeyFromRequest(req);
-        if (!expectedApiKey || requestApiKey !== expectedApiKey) {
+        if (!keysMatch(requestApiKey, expectedApiKey)) {
             return writeJson(res, 401, { success: false, message: 'Unauthorized' });
         }
 

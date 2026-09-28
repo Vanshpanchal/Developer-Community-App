@@ -1,15 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'detail_discussion.dart';
 import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/app_logger.dart';
+import 'widgets/linkified_text.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'utils/user_messages.dart';
+import 'utils/date_format.dart';
 
 // if (snapshot.connectionState == ConnectionState.waiting) {
 // return Center(child: CircularProgressIndicator());
@@ -75,7 +78,6 @@ class _saved_discussionState extends State<saved_discussion> {
           .collection('User')
           .doc(user?.uid)
           .get();
-      print(userData);
       if (userData.exists) {
         setState(() {
           username = userData['Username'] ?? 'No name available';
@@ -192,7 +194,16 @@ class _saved_discussionState extends State<saved_discussion> {
                   );
                 }
                 if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        userMessageFor(snapshot.error!,
+                            fallback: "Couldn't load saved discussions."),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
                 }
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return _buildEmptyState(theme, isDark);
@@ -324,7 +335,7 @@ class displayCardState extends State<displayCard> {
         _repliesCount = repliesSnapshot.size; // Set replies count
       });
     } catch (e) {
-      print('Error fetching replies count: $e');
+      AppLogger.warning('Error fetching replies count: $e');
     }
   }
 
@@ -406,10 +417,8 @@ class displayCardState extends State<displayCard> {
                             radius: 16,
                             backgroundColor: theme.colorScheme.surfaceContainerHighest,
                             foregroundImage: hasImage
-                                ? NetworkImage(imageUrl)
-                                : const NetworkImage(
-                                    'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                  ),
+                                ? CachedNetworkImageProvider(imageUrl)
+                                : const AssetImage('assets/images/default_avatar.png'),
                           ),
                           const SizedBox(width: 8), // Space between avatar and text
                           // Fetch and display the user's name
@@ -452,13 +461,11 @@ class displayCardState extends State<displayCard> {
                     ),
                   ),
                   SizedBox(height: 8),
-                  RichText(
-                    text: TextSpan(
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        height: 1.5,
-                        color: isDark ? Colors.grey.shade300 : Colors.black87,
-                      ),
-                      children: _buildDescription(widget.description, theme),
+                  LinkifiedText(
+                    widget.description,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                      color: isDark ? Colors.grey.shade300 : Colors.black87,
                     ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -539,73 +546,10 @@ class displayCardState extends State<displayCard> {
             )));
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        return '${difference.inMinutes}m ago';
-      }
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
+  String _formatDate(DateTime date) => formatRelativeDate(date);
 }
 
-List<TextSpan> _buildDescription(String description, ThemeData theme) {
-  final urlRegex = RegExp(r'(https?://[^\s]+)'); // Matches URLs
-  final matches = urlRegex.allMatches(description);
 
-  if (matches.isEmpty) {
-    return [TextSpan(text: description)];
-  }
-
-  int lastMatchEnd = 0;
-  List<TextSpan> spans = [];
-
-  for (final match in matches) {
-    // Add text before the URL
-    if (match.start > lastMatchEnd) {
-      spans.add(
-          TextSpan(text: description.substring(lastMatchEnd, match.start)));
-    }
-
-    // Add the URL as a clickable link
-    final url = description.substring(match.start, match.end);
-    spans.add(
-      TextSpan(
-        text: url,
-        style: TextStyle(
-          color: theme.colorScheme.primary,
-          decoration: TextDecoration.underline,
-        ),
-        recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
-      ),
-    );
-
-    lastMatchEnd = match.end;
-  }
-
-  // Add remaining text after the last URL
-  if (lastMatchEnd < description.length) {
-    spans.add(TextSpan(text: description.substring(lastMatchEnd)));
-  }
-
-  return spans;
-}
-
-void _launchURL(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  } else {
-    debugPrint('Could not launch $url');
-  }
-}
 
 class SearchController extends GetxController {
   var searchText = ''.obs;

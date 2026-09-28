@@ -8,10 +8,6 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>DevSphere</string>
-	<key>NSCameraUsageDescription</key>
-	<string>DevSphere needs camera access to take profile pictures.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>DevSphere needs photo library access to select profile pictures and code snippets.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

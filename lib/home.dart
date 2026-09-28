@@ -1,16 +1,9 @@
 import 'package:developer_community_app/Ongoing_discussion.dart';
 import 'package:developer_community_app/explore.dart';
 import 'package:developer_community_app/profile.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:get_storage/get_storage.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'messagemodel.dart';
-import 'services/firebase_cache_service.dart';
-import 'services/user_cache_service.dart';
-import 'api_key_manager.dart';
 
 import 'saved.dart';
 
@@ -22,50 +15,6 @@ class home extends StatefulWidget {
 }
 
 class _homepageState extends State<home> {
-  final user = FirebaseAuth.instance.currentUser;
-  String userRole = 'User';
-
-  signout() async {
-    // Clear all cached data
-    try {
-      // 1. Clear Firestore Cache (Collection caches)
-      final cacheService = FirebaseCacheService();
-      await cacheService.clearAllCache();
-
-      // 2. Clear API Key (Secure Storage)
-      await ApiKeyManager.instance.clearKey();
-
-      // 3. Clear Chat History (Hive)
-      if (Hive.isBoxOpen('chat_messages')) {
-        await Hive.box<Message>('chat_messages').clear();
-      } else {
-        await Hive.openBox<Message>('chat_messages').then((box) => box.clear());
-      }
-      
-      // 4. Clear GetStorage (Avatars, Theme, Selected Models, Local Preferences)
-      await GetStorage().erase();
-      
-      // 5. Clear UserCacheService (Explore/Community user metadata cache)
-      UserCacheService.instance.clearAll();
-
-      debugPrint("🧹 All local cache data cleared successfully from A to Z.");
-    } catch (e) {
-      debugPrint("⚠️ Error clearing cache data: $e");
-    }
-
-    await FirebaseAuth.instance.signOut();
-  }
-
-  void determineUserRole() {
-    final adminEmails = ['acc.studies.123@gmail.com', 'superadmin@example.com'];
-
-    if (user != null && adminEmails.contains(user!.email)) {
-      setState(() {
-        userRole = '_';
-      });
-    }
-  }
-
   int _selectedIndex = 0;
   final PageController _pageController = PageController();
   late List<Widget> _screens;
@@ -73,8 +22,9 @@ class _homepageState extends State<home> {
   @override
   void initState() {
     super.initState();
-    determineUserRole();
-    final controller = Get.put(navigatorcontroller(userRole: userRole));
+    final controller = Get.put(navigatorcontroller());
+    // The tab controller can outlive a sign-out; always start on Explore.
+    controller.selectedindex.value = 0;
     _selectedIndex = controller.selectedindex.value;
     _screens = controller.screens;
   }
@@ -149,27 +99,13 @@ class _homepageState extends State<home> {
 
 class navigatorcontroller extends GetxController {
   final Rx<int> selectedindex = 0.obs;
-  final String userRole;
 
-  navigatorcontroller({required this.userRole});
-
-  List<Widget> get screens {
-    if (userRole == 'admin') {
-      return [
+  List<Widget> get screens => [
         explore(),
         ongoing_discussion(),
         saved(),
         profile(),
       ];
-    } else {
-      return [
-        explore(),
-        ongoing_discussion(),
-        saved(),
-        profile(),
-      ];
-    }
-  }
 
   List<NavigationDestination> get navigationDestinations {
     return const [

@@ -1,23 +1,20 @@
-import 'package:animated_splash_screen/animated_splash_screen.dart';
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:developer_community_app/firebase_options.dart';
 import 'package:developer_community_app/wrapper.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
-import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'Authservice.dart';
 import 'ai_service.dart';
 import 'messagemodel.dart';
-import 'services/firebase_cache_service.dart';
-import 'services/encryption_service.dart';
-import 'services/migration_service.dart';
 import 'utils/app_theme.dart';
 import 'services/analytics_service.dart';
 import 'ThemeController.dart';
@@ -25,59 +22,120 @@ import 'utils/app_logger.dart';
 import 'utils/secure_hive_helper.dart';
 import 'core/update/presentation/widgets/android_update_gate.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Set system UI overlay style with transparent system bars for edge-to-edge compatibility
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.dark,
-    systemNavigationBarColor: Colors.transparent,
-    systemNavigationBarDividerColor: Colors.transparent,
-    systemNavigationBarIconBrightness: Brightness.dark,
-  ));
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      AppLogger.error('Uncaught Flutter error', details.exception, details.stack);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      AppLogger.error('Uncaught platform error', error, stack);
+      return true;
+    };
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
-  // Migration: Ensure all users have integer XP for correct leaderboard sorting
-  MigrationService.migrateXpToInteger();
-  
-  await GetStorage.init();
-  await GetStorage.init('firebase_cache');
-  await Hive.initFlutter();
+    // Set system UI overlay style with transparent system bars for edge-to-edge compatibility
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ));
 
-  // Sync user's selected AI model from Firestore (best-effort, non-blocking)
-  AIService().syncModelFromFirebase().catchError((_) {});
+    try {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    } catch (e, st) {
+      AppLogger.error('Firebase initialization failed', e, st);
+      runApp(const _StartupErrorApp());
+      return;
+    }
 
-  // Initialize encryption service for secure data handling
-  try {
-    await EncryptionService().initialize();
-    AppLogger.debug('🔐 Encryption service initialized');
-  } catch (e) {
-    AppLogger.error('⚠️ Encryption init error', e);
-  }
+    // Independent local storage initialisation runs in parallel.
+    await Future.wait([
+      GetStorage.init(),
+      GetStorage.init('firebase_cache'),
+      Hive.initFlutter(),
+      dotenv.load(fileName: '.env').catchError((e) {
+        AppLogger.debug('dotenv load skipped: $e');
+      }),
+    ]);
 
-  // Initialize cache service (optional: prefetch critical data)
-  final cacheService = FirebaseCacheService();
-  // Prefetch important collections in the background
-  cacheService.prefetchCollections(['Explore', 'Discussions']).then((_) {
-    AppLogger.debug('📦 Initial data cached successfully');
-  }).catchError((e) {
-    AppLogger.warning('⚠️ Cache prefetch error: $e');
+    Hive.registerAdapter(MessageAdapter());
+    // Use encrypted storage for sensitive chat messages. If the key cannot be
+    // read (e.g. after a backup restore onto a new device), start with a fresh
+    // box rather than blocking app launch.
+    try {
+      await SecureHiveHelper.instance.openEncryptedBox<Message>('chat_messages');
+    } catch (e, st) {
+      AppLogger.error('Failed to open encrypted chat box, resetting it', e, st);
+      try {
+        await Hive.deleteBoxFromDisk('chat_messages');
+        await SecureHiveHelper.instance.openEncryptedBox<Message>('chat_messages');
+      } catch (e2, st2) {
+        AppLogger.error('Encrypted chat box unavailable', e2, st2);
+      }
+    }
+
+    Get.put(ThemeController(), permanent: true);
+    runApp(const MyApp());
+
+    // Non-critical initialisation happens after the first frame is scheduled.
+    AIService().syncModelFromFirebase().catchError((_) {});
+  }, (error, stack) {
+    AppLogger.error('Uncaught zone error', error, stack);
   });
+}
 
-  // Load environment variables (e.g., GEMINI_API_KEY)
-  try {
-    await dotenv.load(fileName: '.env');
-  } catch (e) {
-    AppLogger.debug('dotenv load skipped: $e');
+/// Shown when Firebase cannot be initialised, instead of a frozen splash.
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      // Plain themes: ThemeController is not registered on this path.
+      theme: ThemeData(
+          useMaterial3: true, colorSchemeSeed: ThemeController.defaultColor),
+      darkTheme: ThemeData(
+          useMaterial3: true,
+          brightness: Brightness.dark,
+          colorSchemeSeed: ThemeController.defaultColor),
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off_rounded, size: 64),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Something went wrong while starting DevSphere.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Check your connection and try again.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: main,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
-
-  Hive.registerAdapter(MessageAdapter());
-  // Use encrypted storage for sensitive chat messages
-  await SecureHiveHelper.instance.openEncryptedBox<Message>('chat_messages');
-
-  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -85,18 +143,21 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Initialize ThemeController for color theming
-    Get.put(ThemeController());
-
     // Initialize Analytics Service
     final analyticsService = AnalyticsService();
 
-    return GetMaterialApp(
+    // Obx rebuilds the theme as soon as the user picks a new colour.
+    return Obx(() => GetMaterialApp(
       title: 'DevSphere',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
+      // Framework widgets (dialogs, pickers, text fields) follow the device
+      // locale. App strings are still English-only; add ARB files via
+      // `flutter gen-l10n` to translate them.
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('en')],
       navigatorObservers: [
         analyticsService.getAnalyticsObserver(),
       ],
@@ -107,48 +168,7 @@ class MyApp extends StatelessWidget {
         );
       },
       home: const SplashScreen(),
-    );
-  }
-}
-
-class Button extends StatelessWidget {
-  // final auth = Authservice();
-  const Button({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    return Center(
-      child: ElevatedButton(
-        onPressed: () async {
-          final email = currentUser?.email;
-          if (email == null || email.isEmpty) {
-            return;
-          }
-          await Authservice().signup(
-            email: email,
-            password: '',
-            context: context,
-          );
-        },
-        child: Text('Show SnackBar'),
-      ),
-    );
-  }
-}
-
-class Splash extends StatelessWidget {
-  const Splash({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSplashScreen(
-        duration: 2500,
-        splashIconSize: 250,
-        splash: 'assets/images/QA.png',
-        nextScreen: wrapper(),
-        splashTransition: SplashTransition.fadeTransition,
-        backgroundColor: Colors.lightBlue.shade50);
+    ));
   }
 }
 
@@ -182,8 +202,14 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _controller.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Skip the entrance animation when the user has reduced motion on.
+      if (mounted && MediaQuery.disableAnimationsOf(context)) {
+        _controller.value = 1;
+      }
+    });
 
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted) {
         Navigator.pushReplacement(
           context,
@@ -207,10 +233,11 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
+            // Dark enough for the white title and tagline to pass WCAG AA.
             colors: [
-              Color(0xFF42A5F5), // Light Blue
-              Color(0xFF2196F3), // Blue
-              Color(0xFF1976D2), // Dark Blue
+              Color(0xFF1976D2),
+              Color(0xFF1565C0),
+              Color(0xFF0D47A1),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,

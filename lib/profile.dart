@@ -1,35 +1,32 @@
-import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:developer_community_app/saved_discussion.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'utils/avatar_manager.dart';
 import 'ai_service.dart';
 import 'utils/app_snackbar.dart';
-import 'services/firebase_cache_service.dart';
 import 'services/user_cache_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'messagemodel.dart';
 
 import 'chat.dart';
 import 'portfolio.dart';
 import 'api_key_manager.dart';
 import 'services/secrets_service.dart';
+import 'services/session_service.dart';
+import 'services/account_service.dart';
+import 'services/block_service.dart';
+import 'utils/app_logger.dart';
 import 'screens/gamification_hub_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/ai_repo_analyzer_screen.dart';
 import 'utils/app_theme.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'widgets/app_dialogs.dart';
+import 'utils/user_messages.dart';
 
 /// Menu item data model
 class _MenuItemData {
@@ -158,35 +155,85 @@ class _ProfileState extends State<profile>
     // fetchuser(); // Removed to prevent redundant fetching
   }
 
-  signout() async {
-    // Clear all cached data
+  Future<void> signout() async {
+    await SessionService.instance.signOut();
+    // Drop any routes pushed above the wrapper so login is shown on top.
+    Get.until((route) => route.isFirst);
+  }
+
+  Future<void> _showBlockedUsers() async {
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => ValueListenableBuilder<Set<String>>(
+        valueListenable: BlockService.instance.blockedIds,
+        builder: (ctx, ids, _) {
+          if (ids.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 32),
+              child: Text("You haven't blocked anyone."),
+            );
+          }
+          return ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              for (final id in ids)
+                FutureBuilder<Map<String, dynamic>>(
+                  future: UserCacheService.instance.getUserData(id),
+                  builder: (ctx, snap) => ListTile(
+                    leading: const Icon(Icons.person_off_outlined),
+                    title: Text(snap.data?['Username']?.toString() ?? '…'),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        try {
+                          await BlockService.instance.unblock(id);
+                        } catch (e) {
+                          AppSnackbar.error('Could not unblock. Please try again.');
+                        }
+                      },
+                      child: const Text('Unblock'),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _deleteAccount() async {
+    final password = await showDialog<String>(
+      context: context,
+      builder: (_) => const _DeleteAccountDialog(),
+    );
+    if (password == null || password.isEmpty || !mounted) return;
+
+    Get.dialog(
+      const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      barrierDismissible: false,
+    );
     try {
-      // 1. Clear Firestore Cache (Collection caches)
-      final cacheService = FirebaseCacheService();
-      await cacheService.clearAllCache();
-
-      // 2. Clear API Key (Secure Storage)
-      await ApiKeyManager.instance.clearKey();
-
-      // 3. Clear Chat History (Hive)
-      if (Hive.isBoxOpen('chat_messages')) {
-        await Hive.box<Message>('chat_messages').clear();
-      } else {
-        await Hive.openBox<Message>('chat_messages').then((box) => box.clear());
-      }
-
-      // 4. Clear GetStorage (Avatars, Theme, Selected Models, Local Preferences)
-      await GetStorage().erase();
-
-      // 5. Clear UserCacheService (Explore/Community user metadata cache)
-      UserCacheService.instance.clearAll();
-
-      debugPrint("🧹 All local cache data cleared successfully from A to Z.");
+      await AccountService.instance.deleteAccount(password: password);
+      Get.until((route) => route.isFirst);
+      AppSnackbar.success('Your account and data have been deleted.');
+    } on FirebaseAuthException catch (e) {
+      Get.back();
+      AppSnackbar.error(
+        e.code == 'wrong-password' || e.code == 'invalid-credential'
+            ? 'Incorrect password. Your account was not deleted.'
+            : 'Could not delete your account (${e.code}). Please try again.',
+      );
     } catch (e) {
-      debugPrint("⚠️ Error clearing cache data: $e");
+      Get.back();
+      AppLogger.error('Account deletion failed', e);
+      AppSnackbar.error(
+          'Could not finish deleting your account. Please try again.');
     }
-
-    await FirebaseAuth.instance.signOut();
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -515,6 +562,20 @@ class _ProfileState extends State<profile>
                           color: AppTheme.warningColor,
                           onTap: forget,
                         ),
+                        _MenuItemData(
+                          icon: Icons.block_rounded,
+                          title: 'Blocked Users',
+                          subtitle: 'Manage people you have blocked',
+                          color: Colors.blueGrey,
+                          onTap: _showBlockedUsers,
+                        ),
+                        _MenuItemData(
+                          icon: Icons.delete_forever_rounded,
+                          title: 'Delete Account',
+                          subtitle: 'Permanently delete your account and data',
+                          color: AppTheme.errorColor,
+                          onTap: _deleteAccount,
+                        ),
                       ]),
                       const SizedBox(height: 24),
                       _buildLogoutButton(theme),
@@ -637,9 +698,7 @@ class _ProfileState extends State<profile>
                         backgroundImage:
                             imageUrl != null && imageUrl!.isNotEmpty
                                 ? CachedNetworkImageProvider(imageUrl!)
-                                : const NetworkImage(
-                                    'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                  ) as ImageProvider,
+                                : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
                       ),
                     ),
                     Positioned(
@@ -1006,23 +1065,6 @@ class _ProfileState extends State<profile>
     );
   }
 
-  uploadProfilePicFirebase(File file) async {
-    try {
-      Reference reference = FirebaseStorage.instance
-          .ref('/Profile')
-          .child('${FirebaseAuth.instance.currentUser?.uid}.png');
-
-      await reference
-          .putFile(file)
-          .whenComplete(() => {AppSnackbar.success('Profile Pic Changed')});
-
-      imageUrl = await reference.getDownloadURL();
-      setState(() {});
-    } catch (e) {
-      print('Error');
-    }
-  }
-
   Future<void> _editGithub() async {
     final controller = TextEditingController(text: githubUsername ?? '');
     final theme = Theme.of(context);
@@ -1334,8 +1376,8 @@ class _ProfileState extends State<profile>
                                 .loadSelectedModel();
                             if (remoteModel == null || remoteModel.isEmpty) {
                               // If no model is set in the profile, show dialog asking them to select one
-                              if (context.mounted) {
-                                AppDialogs.showConfirmation(context,
+                              if (mounted) {
+                                AppDialogs.showConfirmation(this.context,
                                         title: 'API Key Saved',
                                         message:
                                             'API key saved successfully! Please select an AI model from your profile to use in the app.',
@@ -1352,7 +1394,11 @@ class _ProfileState extends State<profile>
                                   title: 'Saved');
                             }
                           } catch (e) {
-                            AppSnackbar.error(e.toString(), title: 'Error');
+                            AppSnackbar.error(
+                                userMessageFor(e,
+                                    fallback:
+                                        'Could not save the key. Please try again.'),
+                                title: 'Error');
                           }
                         },
                         child: const Text('Save'),
@@ -1365,6 +1411,75 @@ class _ProfileState extends State<profile>
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Asks for the password before deleting the account. Returns the password,
+/// or null if cancelled.
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _controller = TextEditingController();
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Delete account?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This permanently deletes your profile, posts, discussions, '
+            'replies, likes and XP. It cannot be undone.',
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            obscureText: _obscure,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: 'Password',
+              helperText: 'Enter your password to confirm',
+              suffixIcon: IconButton(
+                tooltip: _obscure ? 'Show password' : 'Hide password',
+                icon: Icon(_obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: theme.colorScheme.error,
+            foregroundColor: theme.colorScheme.onError,
+          ),
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('Delete'),
+        ),
+      ],
     );
   }
 }

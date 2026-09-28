@@ -22,7 +22,9 @@ class UserCacheService {
     
     try {
       final data = await fetchFuture;
-      _cache[uid] = data;
+      // Only cache real profiles, so a transient error does not pin
+      // "Unknown User" for the rest of the session.
+      if (data['_fallback'] != true) _cache[uid] = data;
       return data;
     } finally {
       _pendingFetches.remove(uid);
@@ -41,6 +43,7 @@ class UserCacheService {
       'Username': 'Unknown User',
       'profilePicture': null,
       'XP': 100, // fallback
+      '_fallback': true,
     };
   }
 

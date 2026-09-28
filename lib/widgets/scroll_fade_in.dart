@@ -108,6 +108,9 @@ class _ScrollFadeInState extends State<ScrollFadeIn>
 
   @override
   Widget build(BuildContext context) {
+    // Respect the system "remove animations" accessibility setting.
+    if (MediaQuery.disableAnimationsOf(context)) return widget.child;
+
     // Ensure animations are initialized (handles hot reload edge cases)
     if (_opacity == null || _slide == null) {
       _initAnimations();

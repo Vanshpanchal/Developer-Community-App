@@ -4,6 +4,7 @@ import '../utils/app_theme.dart';
 import '../ai_service.dart';
 import '../ThemeController.dart';
 import '../utils/app_snackbar.dart';
+import '../utils/user_messages.dart';
 
 class AIRepoAnalyzerScreen extends StatefulWidget {
   const AIRepoAnalyzerScreen({super.key});
@@ -64,7 +65,8 @@ class _AIRepoAnalyzerScreenState extends State<AIRepoAnalyzerScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _analyzing = false);
-        AppSnackbar.error(e.toString());
+        AppSnackbar.error(userMessageFor(e,
+            fallback: 'Could not analyze this repository. Please try again.'));
       }
     }
   }

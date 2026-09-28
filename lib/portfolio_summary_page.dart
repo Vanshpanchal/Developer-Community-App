@@ -10,6 +10,7 @@ import 'ai_service.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_snackbar.dart';
 import 'widgets/app_dialogs.dart';
+import 'utils/app_logger.dart';
 
 class PortfolioSummaryPage extends StatefulWidget {
   final String? userId;
@@ -118,7 +119,7 @@ class _PortfolioSummaryPageState extends State<PortfolioSummaryPage> {
         'company': data['company'],
       };
     } catch (e) {
-      print('Error fetching GitHub stats: $e');
+      AppLogger.warning('Error fetching GitHub stats: $e');
     }
   }
 
@@ -146,7 +147,7 @@ class _PortfolioSummaryPageState extends State<PortfolioSummaryPage> {
         'ts': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('Error storing summary: $e');
+      AppLogger.warning('Error storing summary: $e');
     }
   }
 

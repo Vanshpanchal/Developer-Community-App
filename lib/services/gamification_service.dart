@@ -498,11 +498,15 @@ class GamificationService {
     }
   }
 
-  Future<bool> _isXpAwardAllowed(String userId, XpAction action) async {
+  /// Rate-limits XP events. The throttle document always lives under the
+  /// acting user, since clients may only write their own `gamification` docs.
+  /// Awards to another user are throttled under a separate `<action>_sent` key.
+  Future<bool> _isXpAwardAllowed(String actorId, XpAction action,
+      {bool toOtherUser = false}) async {
     final todayId = _buildDateId(DateTime.now());
     final throttleRef = _firestore
         .collection('User')
-        .doc(userId)
+        .doc(actorId)
         .collection('gamification')
         .doc('xp_control_$todayId');
 
@@ -510,7 +514,7 @@ class GamificationService {
       final updated = await _firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(throttleRef);
         final data = snapshot.data() ?? <String, dynamic>{};
-        final actionKey = action.name;
+        final actionKey = toOtherUser ? '${action.name}_sent' : action.name;
         final counts = Map<String, dynamic>.from(data['counts'] ?? {});
         final lastAwardRaw =
             Map<String, dynamic>.from(data['lastAwardAt'] ?? {});
@@ -545,8 +549,9 @@ class GamificationService {
       });
       return updated;
     } catch (e) {
-      debugPrint('XP throttle check failed, allowing action: $e');
-      return true;
+      // Fail closed: if the throttle cannot be recorded, do not award XP.
+      debugPrint('XP throttle check failed, skipping award: $e');
+      return false;
     }
   }
 
@@ -1137,18 +1142,31 @@ class GamificationService {
 
   // ==================== XP MANAGEMENT ====================
 
-  /// Award XP to user
-  Future<void> awardXp(XpAction action,
+  /// Largest XP change one user may apply to another user's profile.
+  /// Must match `maxCrossUserXp()` in firestore.rules.
+  static const int maxCrossUserXp = 50;
+
+  /// Award XP to user. Returns whether the XP was actually recorded.
+  ///
+  /// When [targetUserId] is another user, only their `XP`, `lastXpUpdate` and
+  /// an `xp_history` entry are written (the only cross-user writes the
+  /// security rules permit). Their challenges and badges update the next time
+  /// they act themselves.
+  Future<bool> awardXp(XpAction action,
       {int? customXp, String? targetUserId}) async {
-    final userId = targetUserId ?? _currentUserId;
-    if (userId == null) return;
+    final actorId = _currentUserId;
+    final userId = targetUserId ?? actorId;
+    if (userId == null || actorId == null) return false;
+    final isOtherUser = userId != actorId;
 
-    final xpToAdd = customXp ?? action.defaultXp;
-    if (xpToAdd <= 0) return;
+    var xpToAdd = customXp ?? action.defaultXp;
+    if (xpToAdd <= 0) return false;
+    if (isOtherUser && xpToAdd > maxCrossUserXp) xpToAdd = maxCrossUserXp;
 
-    final allowed = await _isXpAwardAllowed(userId, action);
+    final allowed =
+        await _isXpAwardAllowed(actorId, action, toOtherUser: isOtherUser);
     if (!allowed) {
-      return;
+      return false;
     }
 
     try {
@@ -1177,6 +1195,8 @@ class GamificationService {
         );
       });
 
+      if (isOtherUser) return true;
+
       final progressIncrements = _challengeProgressByAction[action];
       if (progressIncrements != null && progressIncrements.isNotEmpty) {
         await _updateChallengeProgress(userId, increments: progressIncrements);
@@ -1184,8 +1204,10 @@ class GamificationService {
 
       // Check for level up and badges
       await _checkBadgesAndMilestones(userId);
+      return true;
     } catch (e) {
       debugPrint('Error awarding XP: $e');
+      return false;
     }
   }
 
@@ -1624,15 +1646,14 @@ class GamificationService {
           .count()
           .get();
 
-      // Get likes received (sum from all user's posts)
-      int likesReceived = 0;
-      final userPosts = await _firestore
+      // Likes received: a server-side sum instead of downloading every post.
+      final likesAggregate = await _firestore
           .collection('Explore')
           .where('Uid', isEqualTo: userId)
+          .aggregate(sum('likescount'))
           .get();
-      for (final post in userPosts.docs) {
-        likesReceived += (post.data()['likescount'] as int?) ?? 0;
-      }
+      final likesReceived =
+          (likesAggregate.getSum('likescount') ?? 0).round();
 
       final likesGiven = userData['likesGiven'] as int? ?? 0;
       final pollsCreated = userData['pollsCreated'] as int? ?? 0;

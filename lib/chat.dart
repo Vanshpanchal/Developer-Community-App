@@ -113,16 +113,13 @@ class _ChatScreenState extends State<ChatScreen1> {
     super.dispose();
   }
 
-  Future<String> getGeminiResponse(String prompt) async {
-    return AIService().generateText(prompt);
-  }
-
   void _showCopiedSnackBar() {
     AppSnackbar.success('Message copied to clipboard');
   }
 
   Future<void> _sendMessage() async {
-    if (_controller.text.trim().isEmpty) return;
+    // One request at a time, so replies cannot arrive out of order.
+    if (_isLoading || _controller.text.trim().isEmpty) return;
 
     final userMessage = Message(text: _controller.text, isUser: true);
     await _messageBox.add(userMessage);
@@ -135,15 +132,25 @@ class _ChatScreenState extends State<ChatScreen1> {
     _controller.clear();
     _scrollToBottom();
 
-    final botResponse = await getGeminiResponse(userMessage.text);
-    final botMessage = Message(text: botResponse, isUser: false);
-    await _messageBox.add(botMessage);
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _isTyping = false;
-      });
+    try {
+      // Send recent turns so the assistant has conversational context.
+      final history = [
+        for (final m in _messageBox.values) (text: m.text, isUser: m.isUser),
+      ];
+      final result = await AIService().chat(history);
+      if (result.ok) {
+        await _messageBox.add(Message(text: result.text, isUser: false));
+      } else {
+        // Errors are shown, not saved into the conversation history.
+        AppSnackbar.error(result.text, title: 'Assistant unavailable');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isTyping = false;
+        });
+      }
     }
     _scrollToBottom();
   }
@@ -387,7 +394,7 @@ class _ChatScreenState extends State<ChatScreen1> {
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(24),
-                            onTap: _sendMessage,
+                            onTap: _isLoading ? null : _sendMessage,
                             child: const Padding(
                               padding: EdgeInsets.all(12),
                               child: Icon(

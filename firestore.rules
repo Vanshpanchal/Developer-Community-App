@@ -1,72 +1,375 @@
 rules_version = '2';
+
+// DevSphere Firestore rules.
+//
+// The project runs on the Spark plan (no Cloud Functions), so XP, moderation
+// and reporting are written by clients. These rules keep every write as narrow
+// as the app allows: owners edit their own content, other users may only
+// toggle their own like/vote, report once, and apply small bounded XP awards.
+//
+// Keep the constants below in sync with the app:
+//   maxCrossUserXp()  <-> GamificationService.maxCrossUserXp
+//   reportThreshold() <-> _DetailDiscussionState._reportThreshold
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
+
+    // ───────────────────────── helpers ─────────────────────────
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // User profiles
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function changedKeys() {
+      return incoming().diff(existing()).affectedKeys();
+    }
+
+    function onlyChanges(keys) {
+      return changedKeys().hasOnly(keys);
+    }
+
+    function maxCrossUserXp() {
+      return 50;
+    }
+
+    // Largest single XP change an owner can write (largest badge reward).
+    function maxOwnXpStep() {
+      return 1000;
+    }
+
+    function reportThreshold() {
+      return 3;
+    }
+
+    // `XP` may be a legacy string on old profiles.
+    function xpOf(data) {
+      return !('XP' in data) ? 0
+        : data.XP is int ? data.XP
+        : int(data.XP);
+    }
+
+    function xpDelta() {
+      return xpOf(incoming()) - xpOf(existing());
+    }
+
+    function xpChangeWithin(limit) {
+      return !('XP' in changedKeys())
+        || (incoming().XP is int
+            && incoming().XP >= 0
+            && xpDelta() <= limit
+            && xpDelta() >= -limit);
+    }
+
+    // The caller added or removed only their own uid in `field`.
+    function togglesOnlyOwnUid(field) {
+      let before = existing().get(field, []).toSet();
+      let after = incoming().get(field, []).toSet();
+      return after.difference(before).union(before.difference(after))
+        .hasOnly([request.auth.uid]);
+    }
+
+    // Like toggle on a doc that keeps a `likes` array and optional `likescount`.
+    function isLikeToggle() {
+      return togglesOnlyOwnUid('likes')
+        && (onlyChanges(['likes'])
+            || (onlyChanges(['likes', 'likescount'])
+                && incoming().likescount is int
+                && incoming().likescount - existing().get('likescount', 0)
+                   == incoming().likes.size() - existing().get('likes', []).size()));
+    }
+
+    function isShortString(value, max) {
+      return value is string && value.size() <= max;
+    }
+
+    // ── Embedded poll voting (poll lives in a `poll` map, max 6 options) ──
+
+    function pollOptionVoteOnly(i) {
+      let before = existing().poll.options;
+      let after = incoming().poll.options;
+      return before.size() <= i
+        || (after[i].id == before[i].id
+            && after[i].text == before[i].text
+            && after[i].keys().hasOnly(['id', 'text', 'voterIds'])
+            && after[i].voterIds.toSet().difference(before[i].voterIds.toSet())
+                 .union(before[i].voterIds.toSet().difference(after[i].voterIds.toSet()))
+                 .hasOnly([request.auth.uid]));
+    }
+
+    function isPollVote() {
+      return onlyChanges(['poll'])
+        && existing().poll is map
+        && incoming().poll.diff(existing().poll).affectedKeys().hasOnly(['options'])
+        && incoming().poll.options.size() == existing().poll.options.size()
+        && existing().poll.options.size() <= 6
+        && pollOptionVoteOnly(0) && pollOptionVoteOnly(1) && pollOptionVoteOnly(2)
+        && pollOptionVoteOnly(3) && pollOptionVoteOnly(4) && pollOptionVoteOnly(5);
+    }
+
+    // ───────────────────────── users ─────────────────────────
+
     match /User/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
-      
-      // User private subcollections (FCM tokens, private settings)
-      match /private/{privateDoc} {
+
+      allow create: if isOwner(userId)
+        && incoming().get('Uid', userId) == userId
+        && incoming().get('XP', 100) == 100
+        && !('Email' in incoming());
+
+      // Owner: may edit their profile but not their identity or re-add Email.
+      // Other users: only a small XP award/deduction (likes, accepted answers).
+      allow update: if isAuthenticated() && (
+          (isOwner(userId)
+            && !('Uid' in changedKeys())
+            && (!('Email' in incoming()) || !('Email' in changedKeys()))
+            && xpChangeWithin(maxOwnXpStep()))
+        || (!isOwner(userId)
+            && onlyChanges(['XP', 'lastXpUpdate'])
+            && xpDelta() != 0
+            && xpChangeWithin(maxCrossUserXp()))
+      );
+
+      allow delete: if isOwner(userId);
+
+      // FCM tokens and other private settings.
+      match /private/{docId} {
         allow read, write: if isOwner(userId);
       }
 
-      // User saved bookmarks
-      match /Saved/{savedDoc} {
+      // Legacy bookmarks subcollection.
+      match /Saved/{docId} {
         allow read, write: if isOwner(userId);
+      }
+
+      // Streak and XP throttle documents. Streaks show on public profiles.
+      match /gamification/{docId} {
+        allow read: if isOwner(userId) || (isAuthenticated() && docId == 'streak');
+        allow write: if isOwner(userId);
+      }
+
+      match /PortfolioHistory/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Audit trail. Other users may append one bounded entry alongside a
+      // cross-user XP award; only the owner can read or change history.
+      match /xp_history/{entryId} {
+        allow read, update, delete: if isOwner(userId);
+        allow create: if isOwner(userId)
+          || (isAuthenticated()
+              && incoming().keys().hasOnly(['action', 'xp', 'timestamp', 'description'])
+              && incoming().xp is int
+              && incoming().xp != 0
+              && incoming().xp <= maxCrossUserXp()
+              && incoming().xp >= -maxCrossUserXp()
+              && isShortString(incoming().get('action', ''), 64)
+              && isShortString(incoming().get('description', ''), 200));
       }
     }
 
-    // Explore / Posts collection
+    // Per-user challenge progress.
+    match /DailyChallenges/{dateId}/UserChallenges/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /WeeklyChallenges/{weekId}/UserChallenges/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ───────────────────────── posts ─────────────────────────
+
     match /Explore/{postId} {
+      function isPostOwner() {
+        return isAuthenticated()
+          && (existing().get('Uid', null) == request.auth.uid
+              || existing().get('uid', null) == request.auth.uid);
+      }
+
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && 
-        (request.resource.data.uid == request.auth.uid || request.resource.data.Uid == request.auth.uid);
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated() && 
-        (resource.data.uid == request.auth.uid || resource.data.Uid == request.auth.uid);
+
+      allow create: if isAuthenticated()
+        && incoming().Uid == request.auth.uid
+        && incoming().get('uid', request.auth.uid) == request.auth.uid
+        && incoming().Report == false
+        && incoming().get('likes', []).size() == 0
+        && incoming().get('likescount', 0) == 0
+        && isShortString(incoming().Title, 300)
+        && isShortString(incoming().get('Description', ''), 20000)
+        && isShortString(incoming().get('code', ''), 50000);
+
+      allow update: if isAuthenticated() && (
+          (isPostOwner()
+            && onlyChanges(['Title', 'Description', 'Tags', 'code', 'poll', 'hasPoll'])
+            && isShortString(incoming().Title, 300)
+            && isShortString(incoming().get('Description', ''), 20000)
+            && isShortString(incoming().get('code', ''), 50000))
+        || isLikeToggle()
+        || isPollVote()
+      );
+
+      allow delete: if isPostOwner();
     }
 
-    // Discussions collection
+    // ───────────────────────── discussions ─────────────────────────
+
     match /Discussions/{discussionId} {
+      function isDiscussionOwner() {
+        return isAuthenticated()
+          && (existing().get('Uid', null) == request.auth.uid
+              || existing().get('uid', null) == request.auth.uid
+              || existing().get('creatorId', null) == request.auth.uid);
+      }
+
+      function reportPath() {
+        return /databases/$(database)/documents/Discussions/$(discussionId)/Reports/$(request.auth.uid);
+      }
+
+      // One report per user, written in the same transaction as the counter.
+      // The discussion is hidden only once enough distinct users report it.
+      function isReport() {
+        let count = existing().get('reportCount', 0) + 1;
+        return onlyChanges(['reportCount', 'Report'])
+          && incoming().reportCount == count
+          && incoming().Report == (count >= reportThreshold())
+          && !exists(reportPath())
+          && existsAfter(reportPath());
+      }
+
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated() && 
-        (resource.data.uid == request.auth.uid || resource.data.Uid == request.auth.uid || resource.data.creatorId == request.auth.uid);
-      
-      // Replies subcollection
+
+      allow create: if isAuthenticated()
+        && incoming().Uid == request.auth.uid
+        && incoming().Report == false
+        && !('reportCount' in incoming())
+        && isShortString(incoming().Title, 300)
+        && isShortString(incoming().get('Description', ''), 20000);
+
+      allow update: if isAuthenticated() && (
+          (isDiscussionOwner()
+            && onlyChanges(['Title', 'Description', 'Tags', 'poll', 'hasPoll'])
+            && isShortString(incoming().Title, 300)
+            && isShortString(incoming().get('Description', ''), 20000))
+        || isPollVote()
+        || isReport()
+      );
+
+      allow delete: if isDiscussionOwner();
+
+      match /Reports/{reporterId} {
+        allow create: if isOwner(reporterId)
+          && incoming().keys().hasOnly(['reporterId', 'createdAt'])
+          && incoming().reporterId == reporterId;
+        allow read: if isOwner(reporterId);
+      }
+
       match /Replies/{replyId} {
+        function isReplyOwner() {
+          return isAuthenticated()
+            && (existing().get('uid', null) == request.auth.uid
+                || existing().get('Uid', null) == request.auth.uid);
+        }
+
+        function isParentDiscussionOwner() {
+          let parent = get(/databases/$(database)/documents/Discussions/$(discussionId)).data;
+          return parent.get('Uid', null) == request.auth.uid
+            || parent.get('uid', null) == request.auth.uid
+            || parent.get('creatorId', null) == request.auth.uid;
+        }
+
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated();
-        allow update: if isAuthenticated();
-        allow delete: if isAuthenticated() && 
-          (resource.data.uid == request.auth.uid || resource.data.Uid == request.auth.uid);
+
+        allow create: if isAuthenticated()
+          && incoming().uid == request.auth.uid
+          && incoming().get('accepted', false) == false
+          && incoming().get('likes', []).size() == 0
+          && isShortString(incoming().get('reply', ''), 20000)
+          && isShortString(incoming().get('code', ''), 50000);
+
+        allow update: if isAuthenticated() && (
+            // Author edits their reply or attaches code.
+            (isReplyOwner()
+              && onlyChanges(['reply', 'code'])
+              && isShortString(incoming().get('reply', ''), 20000)
+              && isShortString(incoming().get('code', ''), 50000))
+            // Discussion owner accepts an answer (once, not their own reply).
+          || (onlyChanges(['accepted'])
+              && existing().get('accepted', false) == false
+              && incoming().accepted == true
+              && !isReplyOwner()
+              && isParentDiscussionOwner())
+          || isLikeToggle()
+        );
+
+        // Authors delete their replies; a discussion owner deleting the
+        // whole thread removes every reply in it.
+        allow delete: if isReplyOwner() || isParentDiscussionOwner();
+
+        match /SubReplies/{subReplyId} {
+          allow read: if isAuthenticated();
+
+          allow create: if isAuthenticated()
+            && incoming().uid == request.auth.uid
+            && incoming().get('likes', []).size() == 0
+            && isShortString(incoming().get('reply', ''), 20000);
+
+          allow update: if isAuthenticated() && isLikeToggle();
+
+          allow delete: if isAuthenticated()
+            && (existing().get('uid', null) == request.auth.uid
+                || isParentDiscussionOwner());
+        }
       }
     }
 
-    // Standalone Polls collection
+    // ─────────────── collection-group queries (account deletion) ───────────────
+    // Reads only; writes still go through the nested rules above.
+
+    match /{path=**}/Replies/{replyId} {
+      allow read: if isAuthenticated();
+    }
+
+    match /{path=**}/SubReplies/{subReplyId} {
+      allow read: if isAuthenticated();
+    }
+
+    match /{path=**}/UserChallenges/{docId} {
+      allow read: if isAuthenticated() && existing().userId == request.auth.uid;
+    }
+
+    // ───────────────────────── standalone polls ─────────────────────────
+
     match /Polls/{pollId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated() && resource.data.creatorId == request.auth.uid;
+      allow create: if isAuthenticated() && incoming().creatorId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && existing().creatorId == request.auth.uid;
     }
 
-    // Application Secrets & Configuration (read-only for clients)
-    match /Secrets/{secretId} {
-      allow read: if isAuthenticated();
-      allow write: if false; // Only server/admin SDK can modify secrets
+    // ───────────────────────── configuration ─────────────────────────
+
+    // Public, non-secret app configuration. Config/app.minSupportedVersionCode
+    // forces an update for older builds (read before sign-in).
+    match /Config/{docId} {
+      allow read: if docId == 'app';
+      allow write: if false;
+    }
+
+    // Secrets/gemini holds only the shared model list (availableModels), which
+    // every signed-in user needs. Rules cannot hide individual fields, so this
+    // document must never contain an API key. All other Secrets are Admin-only.
+    match /Secrets/{docId} {
+      allow read: if isAuthenticated() && docId == 'gemini';
+      allow write: if false;
     }
   }
 }

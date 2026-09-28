@@ -1,8 +1,6 @@
 import 'package:developer_community_app/services/analytics_service.dart';
 import 'package:developer_community_app/signup.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
@@ -26,40 +24,6 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
-
-  Future<void> _storeFreshFcmToken(User user) async {
-    try {
-      final messaging = FirebaseMessaging.instance;
-      final settings = await messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
-
-      if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        return;
-      }
-
-      final token = await messaging.getToken();
-      if (token == null || token.trim().isEmpty) {
-        return;
-      }
-
-      await FirebaseFirestore.instance
-          .collection('User')
-          .doc(user.uid)
-          .collection('private')
-          .doc('tokens')
-          .set({
-        'fcmToken': token,
-        'fcmTokens': FieldValue.arrayUnion([token]),
-        'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Failed to store FCM token after login: $e');
-    }
-  }
 
   @override
   void initState() {
@@ -96,18 +60,14 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
 
     setState(() => _isLoading = true);
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text,
       );
 
-      final user = credential.user;
-      if (user != null) {
-        await _storeFreshFcmToken(user);
-      }
-
       await AnalyticsService().logLogin(method: 'email');
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       if (e.code == 'invalid-credential' ||
           e.code == 'wrong-password' ||
           e.code == 'user-not-found') {
@@ -130,6 +90,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       await AppDialogs.showError(
         context,
         title: 'Error',
@@ -286,7 +247,7 @@ class _loginState extends State<login> with SingleTickerProviderStateMixin {
               hint: 'Enter your password',
               icon: Icons.lock_outline,
               isPassword: true,
-              validator: AppValidators.validatePassword,
+              validator: AppValidators.validateLoginPassword,
             ),
             const SizedBox(height: 12),
             // Forgot Password

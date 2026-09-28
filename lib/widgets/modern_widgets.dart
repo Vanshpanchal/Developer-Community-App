@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../utils/app_theme.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// Modern Code Block Widget with consistent styling across all screens
 class ModernCodeBlock extends StatefulWidget {
@@ -532,8 +533,8 @@ class ModernAvatar extends StatelessWidget {
             ),
             child: ClipOval(
               child: imageUrl != null && imageUrl!.isNotEmpty
-                  ? Image.network(
-                      imageUrl!,
+                  ? Image(
+                      image: CachedNetworkImageProvider(imageUrl!),
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => _buildFallback(),
                     )
@@ -846,7 +847,8 @@ class ShimmerLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
-    return Shimmer.fromColors(
+    // Decorative placeholder: hidden from screen readers.
+    return ExcludeSemantics(child: Shimmer.fromColors(
       baseColor: isDark ? const Color(0xFF2D3748) : const Color(0xFFE2E8F0),
       highlightColor: isDark ? const Color(0xFF4A5568) : const Color(0xFFF1F5F9),
       period: const Duration(milliseconds: 1500),
@@ -858,7 +860,7 @@ class ShimmerLoading extends StatelessWidget {
           borderRadius: BorderRadius.circular(borderRadius),
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -941,13 +943,20 @@ class ListShimmer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: itemCount,
-      itemBuilder: (context, index) => CardShimmer(
-        showAvatar: showAvatar,
-        lineCount: lineCount,
+    // Announce "Loading" once instead of reading out placeholder shapes.
+    return Semantics(
+      label: 'Loading',
+      liveRegion: true,
+      child: ExcludeSemantics(
+        child: ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: itemCount,
+          itemBuilder: (context, index) => CardShimmer(
+            showAvatar: showAvatar,
+            lineCount: lineCount,
+          ),
+        ),
       ),
     );
   }

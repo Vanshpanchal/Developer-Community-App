@@ -3,6 +3,7 @@ import '../models/gamification_models.dart';
 import '../services/gamification_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/modern_widgets.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -263,7 +264,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             radius: rank == 1 ? 35 : 28,
             backgroundColor: Colors.white,
             backgroundImage: entry.profilePicture != null
-                ? NetworkImage(entry.profilePicture!)
+                ? CachedNetworkImageProvider(entry.profilePicture!)
                 : null,
             child: entry.profilePicture == null
                 ? Text(
@@ -400,7 +401,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 radius: 20,
                 backgroundColor: isDark ? AppTheme.darkCard : Colors.white,
                 backgroundImage: entry.profilePicture != null
-                    ? NetworkImage(entry.profilePicture!)
+                    ? CachedNetworkImageProvider(entry.profilePicture!)
                     : null,
                 child: entry.profilePicture == null
                     ? Text(

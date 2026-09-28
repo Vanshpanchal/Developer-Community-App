@@ -16,28 +16,30 @@ class AIService {
   static const String missingKeyMessage =
       'No Gemini API key found. Set your key in profile settings to enable AI features.';
 
+  static const String noModelsMessage =
+      'No AI models are configured right now. Please try again later.';
+
   /// Synchronous local cache of selected model. Use this for instant UI state reading.
   String get cachedSelectedModel {
     final box = GetStorage();
-    return box.read('gemini_model') ?? 'gemini-1.5-flash';
+    return box.read<String>('gemini_model') ?? 'Not selected';
   }
 
-  /// Ultimate asynchronous getter fetching exactly the model the authenticated user selected in Firebase.
-  /// Falls back to local cache or first available model.
-  Future<String> getSelectedModel() async {
-    final remoteModel = await SecretsService.instance.loadSelectedModel();
-    if (remoteModel != null && remoteModel.isNotEmpty) {
-      GetStorage().write('gemini_model', remoteModel);
-      return remoteModel;
-    }
-    
-    final localModel = GetStorage().read<String>('gemini_model');
-    if (localModel != null && localModel.isNotEmpty) {
-      return localModel;
-    }
-    
+  /// The model to call: the user's choice if it is still in
+  /// `Secrets/gemini.availableModels`, otherwise the first model in that list.
+  /// Returns null when the list is empty or cannot be loaded.
+  Future<String?> getSelectedModel() async {
     final available = await getAvailableModels();
-    return available.isNotEmpty ? available.first : 'gemini-1.5-flash';
+    if (available.isEmpty) return null;
+
+    final remoteModel = await SecretsService.instance.loadSelectedModel();
+    final localModel = GetStorage().read<String>('gemini_model');
+    final chosen = [remoteModel, localModel].firstWhere(
+      (m) => m != null && available.contains(m),
+      orElse: () => available.first,
+    )!;
+    if (chosen != localModel) GetStorage().write('gemini_model', chosen);
+    return chosen;
   }
 
   /// Loads selected model from Firebase User doc and caches locally.
@@ -57,21 +59,20 @@ class AIService {
     await SecretsService.instance.saveSelectedModel(model);
   }
 
-  /// Fetches available models from Firestore secrets.
-  Future<List<String>> getAvailableModels() async {
-    final remoteModels = await SecretsService.instance.getAvailableModels();
-    
-      debugPrint("Available models: $remoteModels");
-    if (remoteModels != null && remoteModels.isNotEmpty) {
-      debugPrint("Available models: $remoteModels");
-      return remoteModels;
+  List<String>? _availableModelsCache;
+
+  /// Models listed in `Secrets/gemini.availableModels` — the only source of
+  /// model names. Cached for the session once a non-empty list is loaded.
+  Future<List<String>> getAvailableModels({bool forceRefresh = false}) async {
+    if (!forceRefresh && _availableModelsCache != null) {
+      return _availableModelsCache!;
     }
-    return [
-      'gemini-1.5-flash',
-      'gemini-1.5-pro',
-      'gemini-1.0-pro',
-      'gemini-pro-vision',
-    ];
+    final remoteModels = await SecretsService.instance.getAvailableModels();
+    final models = (remoteModels ?? const <String>[])
+        .where((m) => m.trim().isNotEmpty)
+        .toList();
+    if (models.isNotEmpty) _availableModelsCache = models;
+    return models;
   }
 
   Future<bool> _ensureApiKey() async {
@@ -140,11 +141,46 @@ class AIService {
   }
 
   Future<String> _generate(String prompt) async {
+    final result = await _request([
+      {
+        'role': 'user',
+        'parts': [
+          {'text': prompt}
+        ]
+      }
+    ]);
+    return result.text;
+  }
+
+  /// Multi-turn chat. [history] is oldest first and should end with the
+  /// user's new message. Only the last [maxTurns] turns are sent.
+  /// `ok` is false when [text] is an error message rather than a reply.
+  Future<({String text, bool ok})> chat(
+    List<({String text, bool isUser})> history, {
+    int maxTurns = 20,
+  }) {
+    final recent = history.length > maxTurns
+        ? history.sublist(history.length - maxTurns)
+        : history;
+    return _request([
+      for (final turn in recent)
+        {
+          'role': turn.isUser ? 'user' : 'model',
+          'parts': [
+            {'text': turn.text}
+          ]
+        }
+    ]);
+  }
+
+  Future<({String text, bool ok})> _request(
+      List<Map<String, dynamic>> contents) async {
     try {
       final apiKey = await _getApiKey();
-      if (apiKey == null || apiKey.trim().isEmpty) return missingKeyMessage;
+      if (apiKey == null || apiKey.trim().isEmpty) return (text: missingKeyMessage, ok: false);
 
       final model = await getSelectedModel();
+      if (model == null) return (text: noModelsMessage, ok: false);
       final endpoint =
           'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent';
 
@@ -156,15 +192,7 @@ class AIService {
               'Content-Type': 'application/json',
               'x-goog-api-key': apiKey,
             },
-            body: jsonEncode({
-              'contents': [
-                {
-                  'parts': [
-                    {'text': prompt}
-                  ]
-                }
-              ]
-            }),
+            body: jsonEncode({'contents': contents}),
           )
           .timeout(const Duration(seconds: 25));
 
@@ -177,26 +205,28 @@ class AIService {
               content['parts'] is List &&
               content['parts'].isNotEmpty) {
             final text = content['parts'][0]['text'];
-            if (text is String && text.trim().isNotEmpty) return text.trim();
+            if (text is String && text.trim().isNotEmpty) {
+              return (text: text.trim(), ok: true);
+            }
           }
         }
-        return 'No response generated.';
+        return (text: 'No response generated.', ok: false);
       }
       if (response.statusCode == 401 || response.statusCode == 403) {
-        return 'Authentication error (${response.statusCode}). Check that your API key is valid and has access.';
+        return (text: 'Authentication error (${response.statusCode}). Check that your API key is valid and has access.', ok: false);
       }
       if (response.statusCode == 429) {
-        return 'Rate limit reached. Please wait and try again.';
+        return (text: 'Rate limit reached. Please wait and try again.', ok: false);
       }
       if (response.statusCode >= 500) {
-        return 'Service unavailable (${response.statusCode}). Retry later.';
+        return (text: 'Service unavailable (${response.statusCode}). Retry later.', ok: false);
       }
-      return 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}';
+      return (text: 'Error (${response.statusCode}): ${response.reasonPhrase ?? 'Unknown'}', ok: false);
     } on TimeoutException {
-      return 'Request timed out. Please check your network connection and try again.';
+      return (text: 'Request timed out. Please check your network connection and try again.', ok: false);
     } catch (e, st) {
       if (kDebugMode) debugPrint('Gemini request failed: $e\n$st');
-      return 'Connection error. Please try again.';
+      return (text: 'Connection error. Please try again.', ok: false);
     }
   }
 

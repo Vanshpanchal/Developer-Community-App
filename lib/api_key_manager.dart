@@ -13,7 +13,9 @@ class ApiKeyManager {
   ApiKeyManager._();
   static final ApiKeyManager instance = ApiKeyManager._();
 
-  static const _secure = FlutterSecureStorage();
+  static const _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(resetOnError: true),
+  );
   static const _localKeyName = 'gemini_api_key';
 
   Future<void> saveUserKey(String rawKey) async {

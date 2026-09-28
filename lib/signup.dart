@@ -7,8 +7,8 @@ import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/app_validators.dart';
 import 'utils/avatar_manager.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
-import 'login.dart';
 
 class signup extends StatefulWidget {
   const signup({super.key});
@@ -85,10 +85,14 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
         email: emailController.text.trim(),
         password: passwordController.text,
       );
+      await userCredential.user
+          ?.updateDisplayName(usernameController.text.trim())
+          .catchError((_) {});
+      // Posting requires a verified email; send the link right away.
+      await userCredential.user?.sendEmailVerification().catchError((_) {});
 
       Map<String, dynamic> userData = {
         'Username': usernameController.text.trim(),
-        'Email': userCredential.user?.email,
         'Uid': userCredential.user?.uid,
         'profilePicture': defaultProfile,
         'XP': 100,
@@ -103,7 +107,9 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
 
       await AnalyticsService().logSignUp(method: 'email');
 
-      AppSnackbar.success('Account created successfully', title: 'Welcome! 🎉');
+      AppSnackbar.success(
+          'Account created. Check your inbox to verify your email before posting.',
+          title: 'Welcome! 🎉');
       Get.offAll(() => wrapper());
     } on FirebaseAuthException catch (e) {
       AppSnackbar.error(e.message ?? e.code);
@@ -597,7 +603,9 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
             ),
           ),
           GestureDetector(
-            onTap: () => Get.to(() => const login()),
+            // Signup is always pushed from login, so go back instead of
+            // stacking another login route.
+            onTap: () => Get.back(),
             child: const Text(
               'Sign In',
               style: TextStyle(
@@ -628,7 +636,7 @@ class _signupState extends State<signup> with SingleTickerProviderStateMixin {
               CircleAvatar(
                 radius: 40,
                 backgroundColor: Colors.grey.withValues(alpha: 0.1),
-                backgroundImage: NetworkImage(_selectedAvatarUrl),
+                backgroundImage: CachedNetworkImageProvider(_selectedAvatarUrl),
               ),
               Positioned(
                 bottom: 0,

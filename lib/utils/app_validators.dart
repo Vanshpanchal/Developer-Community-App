@@ -51,8 +51,10 @@ class AppValidators {
     if (value == null || value.trim().isEmpty) {
       return 'Email is required';
     }
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(value)) {
+    // Deliberately permissive (allows +tags and long TLDs); Firebase Auth
+    // performs the authoritative check.
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    if (!emailRegex.hasMatch(value.trim())) {
       return 'Please enter a valid email';
     }
     return null;
@@ -62,8 +64,20 @@ class AppValidators {
     if (value == null || value.isEmpty) {
       return 'Password is required';
     }
-    if (value.length < 6) {
-      return 'Password must be at least 6 characters';
+    if (value.length < minPasswordLength) {
+      return 'Password must be at least $minPasswordLength characters';
+    }
+    return null;
+  }
+
+  /// Minimum length for new passwords.
+  static const int minPasswordLength = 8;
+
+  /// Sign-in only checks presence, so accounts created under the older
+  /// 6-character minimum can still log in.
+  static String? validateLoginPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
     }
     return null;
   }

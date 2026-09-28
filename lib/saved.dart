@@ -5,13 +5,15 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'utils/app_theme.dart';
 import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/app_logger.dart';
+import 'widgets/linkified_text.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'utils/date_format.dart';
 
 class saved extends StatefulWidget {
   const saved({super.key});
@@ -87,6 +89,31 @@ class savedState extends State<saved>
     super.dispose();
   }
 
+  String? _savedPostsKey;
+  Future<List<DocumentSnapshot>>? _savedPostsFuture;
+
+  /// Fetches saved posts in chunks of 10, reusing the in-flight/previous
+  /// result until the saved id list actually changes.
+  Future<List<DocumentSnapshot>> _savedPostsFor(List<String> ids) {
+    final key = ids.join(',');
+    if (_savedPostsFuture != null && key == _savedPostsKey) {
+      return _savedPostsFuture!;
+    }
+    _savedPostsKey = key;
+    return _savedPostsFuture = () async {
+      final allDocs = <DocumentSnapshot>[];
+      for (var i = 0; i < ids.length; i += 10) {
+        final chunk = ids.sublist(i, i + 10 > ids.length ? ids.length : i + 10);
+        final query = await FirebaseFirestore.instance
+            .collection('Explore')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+        allDocs.addAll(query.docs);
+      }
+      return allDocs;
+    }();
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -125,23 +152,14 @@ class savedState extends State<saved>
                     }
 
                     return FutureBuilder<List<DocumentSnapshot>>(
-                      future: () async {
-                        List<DocumentSnapshot> allDocs = [];
-                        for(var i = 0; i < documentIds.length; i += 10) {
-                          var chunk = documentIds.sublist(i, (i + 10 > documentIds.length) ? documentIds.length : i + 10);
-                          final query = await FirebaseFirestore.instance.collection('Explore')
-                              .where(FieldPath.documentId, whereIn: chunk).get();
-                          allDocs.addAll(query.docs);
-                        }
-                        return allDocs;
-                      }(),
+                      future: _savedPostsFor(documentIds),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
                           return _buildLoadingState();
                         }
                         if (snapshot.hasError) {
-                          return _buildErrorState(snapshot.error.toString());
+                          return _buildErrorState("Couldn't load saved posts");
                         }
                         if (!snapshot.hasData || snapshot.data!.isEmpty) {
                           return _buildEmptyState();
@@ -166,6 +184,7 @@ class savedState extends State<saved>
                                 );
                               },
                               child: QuestionCard(
+                                key: ValueKey(docs[index].id),
                                 title: data['Title'] ?? '',
                                 description: data['Description'] ?? '',
                                 tags: List<String>.from(data['Tags'] ?? []),
@@ -400,43 +419,40 @@ class _QuestionCardState extends State<QuestionCard> {
     }
   }
 
+  bool _likeInFlight = false;
+
   Future<void> _handleLike() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _likeInFlight) return;
+    _likeInFlight = true;
     try {
-      DocumentReference questionRef =
+      final questionRef =
           FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
-      DocumentSnapshot questionDoc = await questionRef.get();
-
-      if (questionDoc.exists) {
-        var likes = questionDoc['likes'] as List<dynamic>? ?? [];
-        bool actuallyLiked =
-            likes.contains(FirebaseAuth.instance.currentUser?.uid);
-
-        if (actuallyLiked) {
-          await questionRef.update({
-            'likes': FieldValue.arrayRemove(
-                [FirebaseAuth.instance.currentUser?.uid]),
-          });
-        } else {
-          await questionRef.update({
-            'likes':
-                FieldValue.arrayUnion([FirebaseAuth.instance.currentUser?.uid]),
-          });
-        }
-
-        DocumentSnapshot updatedDoc = await questionRef.get();
-        List<dynamic> updatedLikes = updatedDoc['likes'] ?? [];
-
-        await questionRef.update({
-          'likescount': updatedLikes.length,
+      // One transaction keeps `likes` and `likescount` consistent.
+      final nowLiked =
+          await FirebaseFirestore.instance.runTransaction<bool?>((tx) async {
+        final snap = await tx.get(questionRef);
+        if (!snap.exists) return null;
+        final likes = List<String>.from(snap.data()?['likes'] ?? const []);
+        final liked = likes.contains(uid);
+        tx.update(questionRef, {
+          'likes': liked
+              ? FieldValue.arrayRemove([uid])
+              : FieldValue.arrayUnion([uid]),
+          'likescount': FieldValue.increment(liked ? -1 : 1),
         });
-
+        return !liked;
+      });
+      if (nowLiked != null && mounted) {
         setState(() {
-          isLiked = !actuallyLiked;
+          isLiked = nowLiked;
         });
       }
     } catch (e) {
       AppLogger.e('Error handling like/dislike', error: e);
       await _checkIfLiked();
+    } finally {
+      _likeInFlight = false;
     }
   }
 
@@ -521,10 +537,8 @@ class _QuestionCardState extends State<QuestionCard> {
                         backgroundColor:
                             theme.colorScheme.surfaceContainerHighest,
                         foregroundImage: hasImage
-                                ? NetworkImage(imageUrl)
-                                : const NetworkImage(
-                                    'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                  ),
+                                ? CachedNetworkImageProvider(imageUrl)
+                                : const AssetImage('assets/images/default_avatar.png'),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -585,13 +599,11 @@ class _QuestionCardState extends State<QuestionCard> {
             ),
             const SizedBox(height: 8),
             // Description
-            RichText(
-              text: TextSpan(
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.4,
-                ),
-                children: _buildDescription(widget.description, theme),
+            LinkifiedText(
+              widget.description,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.4,
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -651,9 +663,10 @@ class _QuestionCardState extends State<QuestionCard> {
                     color: theme.colorScheme.primary,
                   ),
                   onPressed: () => removesaved(widget.docid),
+                  tooltip: 'Remove bookmark',
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                 ),
               ],
             ),
@@ -808,7 +821,7 @@ class _QuestionCardState extends State<QuestionCard> {
                     AppSnackbar.success('Code copied to clipboard', title: 'Copied!');
                   },
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Copy code',
                   color: theme.colorScheme.primary,
@@ -822,7 +835,7 @@ class _QuestionCardState extends State<QuestionCard> {
                   icon: Icon(Icons.expand_less_rounded, size: 16),
                   onPressed: () => setState(() => _showFullCode = false),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Collapse',
                   color: theme.colorScheme.primary,
@@ -936,7 +949,7 @@ class _QuestionCardState extends State<QuestionCard> {
         }
       },
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(),
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       visualDensity: VisualDensity.compact,
       tooltip: _showComplexity ? 'Hide analysis' : 'Analyze complexity',
       color: theme.colorScheme.primary,
@@ -978,71 +991,7 @@ class _QuestionCardState extends State<QuestionCard> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        return '${difference.inMinutes}m ago';
-      }
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
+  String _formatDate(DateTime date) => formatRelativeDate(date);
 }
 
-List<TextSpan> _buildDescription(String description, ThemeData theme) {
-  final urlRegex = RegExp(r'(https?://[^\s]+)'); // Matches URLs
-  final matches = urlRegex.allMatches(description);
 
-  if (matches.isEmpty) {
-    return [TextSpan(text: description)];
-  }
-
-  int lastMatchEnd = 0;
-  List<TextSpan> spans = [];
-
-  for (final match in matches) {
-    // Add text before the URL
-    if (match.start > lastMatchEnd) {
-      spans.add(
-          TextSpan(text: description.substring(lastMatchEnd, match.start)));
-    }
-
-    // Add the URL as a clickable link
-    final url = description.substring(match.start, match.end);
-    spans.add(
-      TextSpan(
-        text: url,
-        style: TextStyle(
-          color: theme.colorScheme.primary,
-          decoration: TextDecoration.underline,
-        ),
-        recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
-      ),
-    );
-
-    lastMatchEnd = match.end;
-  }
-
-  // Add remaining text after the last URL
-  if (lastMatchEnd < description.length) {
-    spans.add(TextSpan(text: description.substring(lastMatchEnd)));
-  }
-
-  return spans;
-}
-
-// Function to launch URLs
-void _launchURL(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  } else {
-    debugPrint('Could not launch $url');
-  }
-}

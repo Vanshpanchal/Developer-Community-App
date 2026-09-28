@@ -3,13 +3,13 @@ import 'package:developer_community_app/addpost.dart';
 import 'package:developer_community_app/chat.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'portfolio.dart';
 import 'services/gamification_service.dart';
@@ -17,12 +17,19 @@ import 'services/firebase_cache_service.dart';
 import 'models/gamification_models.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_snackbar.dart';
+import 'utils/app_logger.dart';
 import 'utils/content_moderation.dart';
 import 'services/user_cache_service.dart';
 import 'widgets/modern_widgets.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'widgets/scroll_fade_in.dart';
+import 'services/account_service.dart';
+import 'services/block_service.dart';
+import 'widgets/app_dialogs.dart';
+import 'widgets/linkified_text.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'utils/date_format.dart';
 
 class explore extends StatefulWidget {
   const explore({super.key});
@@ -45,9 +52,22 @@ class exploreState extends State<explore>
   bool _isLoadingMore = false;
   bool _isInitialLoading = true;
   bool _isRefreshing = false;
+  bool _hasError = false;
+
+  // Source data, kept in Firestore order (Timestamp desc). `_headPosts` is the
+  // live first page from the stream; `_olderPosts` are pages loaded on scroll.
+  List<Map<String, dynamic>> _headPosts = [];
+  List<Map<String, dynamic>> _olderPosts = [];
+  // Derived views, recomputed only when the source or the search query changes.
   List<Map<String, dynamic>> _posts = [];
+  List<Map<String, dynamic>> _visiblePosts = [];
+  // Cursor: id of the oldest loaded post (by Timestamp, not by feed rank).
   String? _lastDocumentId;
   StreamSubscription<List<Map<String, dynamic>>>? _streamSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _savedSubscription;
+  Set<String> _savedIds = {};
+  Timer? _searchDebounce;
 
   String username = '';
   String imageUrl = '';
@@ -71,6 +91,8 @@ class exploreState extends State<explore>
     _animationController.forward();
 
     _setupFeed();
+    _listenToSaved();
+    BlockService.instance.blockedIds.addListener(_onBlockListChanged);
 
     // Setup scroll listener for pagination
     _scrollController.addListener(_onScroll);
@@ -78,11 +100,64 @@ class exploreState extends State<explore>
 
   @override
   void dispose() {
+    BlockService.instance.blockedIds.removeListener(_onBlockListChanged);
     _streamSubscription?.cancel();
+    _savedSubscription?.cancel();
+    _searchDebounce?.cancel();
     _animationController.dispose();
     search_controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Streams the viewer's saved ids once, instead of one read per card.
+  void _listenToSaved() {
+    final uid = user?.uid;
+    if (uid == null) return;
+    _savedSubscription = FirebaseFirestore.instance
+        .collection('User')
+        .doc(uid)
+        .snapshots()
+        .listen((doc) {
+      if (!mounted) return;
+      setState(() {
+        _savedIds = Set<String>.from(doc.data()?['Saved'] ?? const []);
+      });
+    }, onError: (e) => AppLogger.warning('Saved ids stream error: $e'));
+  }
+
+  static Map<String, dynamic> _withId(Map<String, dynamic> post) {
+    final id = post['id'] ?? post['docId'];
+    return {...post, 'id': id, 'docId': id};
+  }
+
+  static DateTime _timeOf(Map<String, dynamic> post) {
+    final ts = post['Timestamp'];
+    if (ts is Timestamp) return ts.toDate();
+    if (ts is String) return DateTime.tryParse(ts) ?? DateTime(0);
+    return DateTime(0);
+  }
+
+  void _onBlockListChanged() {
+    if (mounted) setState(_recomputeViews);
+  }
+
+  /// Rebuilds the ranked and searched views from the source lists.
+  void _recomputeViews() {
+    final seen = <String>{};
+    final source = <Map<String, dynamic>>[];
+    for (final post in [..._headPosts, ..._olderPosts]) {
+      final id = post['id'] as String?;
+      if (id != null && seen.add(id)) source.add(post);
+    }
+    source.sort((a, b) => _timeOf(b).compareTo(_timeOf(a)));
+    // The cursor uses the unfiltered list so paging is unaffected by blocks.
+    _lastDocumentId = source.isNotEmpty ? source.last['id'] as String? : null;
+    final blocks = BlockService.instance;
+    _posts = _rankPosts(source
+        .where((post) => !blocks.isBlocked(post['Uid'] as String?))
+        .toList());
+    _visiblePosts = _performSearch(_posts);
   }
 
   void _setupFeed() {
@@ -95,18 +170,18 @@ class exploreState extends State<explore>
         where: {'Report': false},
         orderBy: 'Timestamp',
         descending: true,
-        limit: 20,
+        limit: _limit,
       );
 
       if (cachedPosts != null && cachedPosts.isNotEmpty) {
         setState(() {
-          _posts = _rankPosts(cachedPosts);
+          _headPosts = cachedPosts.map(_withId).toList();
+          _recomputeViews();
           _isInitialLoading = false;
-          _lastDocumentId = _posts.isNotEmpty ? _posts.last['id'] : null;
         });
       }
     } catch (e) {
-      print('Error loading cached posts: $e');
+      AppLogger.warning('Error loading cached posts: $e');
     }
 
     _postsStream = _cacheService.listenToCollection(
@@ -114,30 +189,27 @@ class exploreState extends State<explore>
       where: {'Report': false},
       orderBy: 'Timestamp',
       descending: true,
-      limit: 20,
+      limit: _limit,
     );
 
     _streamSubscription = _postsStream.listen((data) {
-      if (mounted) {
-        setState(() {
-          _isInitialLoading = false;
-          // Only update if we are in a state that expects a fresh feed
-          // (e.g. initial load or empty list) to avoid conflict with pagination
-          // OR if the data is different/newer. For simplicity, we update if list was empty
-          // or if we rely on the stream to be the source of truth.
-          // Since we just loaded cache, let's update if we have new data.
-          if (_posts.isEmpty || data.isNotEmpty) {
-            _posts = _rankPosts(data);
-            if (_posts.isNotEmpty) _lastDocumentId = _posts.last['id'];
-          }
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _hasError = false;
+        // Stream events only replace the live first page; older pages that
+        // were loaded on scroll are kept.
+        _headPosts = data.map(_withId).toList();
+        if (_olderPosts.isEmpty) _hasMore = data.length >= _limit;
+        _recomputeViews();
+      });
     }, onError: (error) {
-      if (mounted) {
-        setState(() {
-          _isInitialLoading = false;
-        });
-      }
+      AppLogger.error('Explore stream error', error);
+      if (!mounted) return;
+      setState(() {
+        _isInitialLoading = false;
+        _hasError = _posts.isEmpty;
+      });
     });
   }
 
@@ -150,6 +222,7 @@ class exploreState extends State<explore>
 
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore || _lastDocumentId == null) return;
+    if (_searchQuery.isNotEmpty) return;
 
     setState(() {
       _isLoadingMore = true;
@@ -160,6 +233,10 @@ class exploreState extends State<explore>
           .collection('Explore')
           .doc(_lastDocumentId)
           .get();
+      if (!lastDoc.exists) {
+        if (mounted) setState(() => _hasMore = false);
+        return;
+      }
       final nextBatch = await FirebaseFirestore.instance
           .collection('Explore')
           .where('Report', isEqualTo: false)
@@ -168,25 +245,23 @@ class exploreState extends State<explore>
           .limit(_limit)
           .get();
 
-      if (nextBatch.docs.isNotEmpty) {
-        final newData =
-            nextBatch.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList();
+      if (!mounted) return;
+      final newData = nextBatch.docs
+          .map((doc) => _withId({...doc.data(), 'id': doc.id}))
+          .toList();
+      setState(() {
+        _olderPosts = [..._olderPosts, ...newData];
+        _hasMore = newData.length == _limit;
+        _recomputeViews();
+      });
+    } catch (e) {
+      AppLogger.error('Error loading more posts', e);
+    } finally {
+      if (mounted) {
         setState(() {
-          _posts = _rankPosts([..._posts, ...newData]);
-          _lastDocumentId = _posts.isNotEmpty ? _posts.last['id'] : null;
-          _hasMore = newData.length == _limit;
-        });
-      } else {
-        setState(() {
-          _hasMore = false;
+          _isLoadingMore = false;
         });
       }
-    } catch (e) {
-      print('Error loading more posts: $e');
-    } finally {
-      setState(() {
-        _isLoadingMore = false;
-      });
     }
   }
 
@@ -200,13 +275,18 @@ class exploreState extends State<explore>
   String _searchQuery = '';
 
   onSearch2(String query) {
-    setState(() {
-      _searchQuery = query.trim().toLowerCase();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = query.trim().toLowerCase();
+        _visiblePosts = _performSearch(_posts);
+      });
     });
   }
 
-  List<Map<String, dynamic>> _performSearch(List<Map<String, dynamic>> docs) {
-    final rankedDocs = _rankPosts(docs);
+  List<Map<String, dynamic>> _performSearch(
+      List<Map<String, dynamic>> rankedDocs) {
     if (_searchQuery.isEmpty) return rankedDocs;
 
     // Perform search on the current docs
@@ -243,7 +323,7 @@ class exploreState extends State<explore>
     // Deduplicate by 'id' or 'docId'
     final seenIds = <String>{};
     final uniquePosts = <Map<String, dynamic>>[];
-    
+
     for (final post in posts) {
       final id = post['id'] ?? post['docId'];
       if (id != null && !seenIds.contains(id)) {
@@ -253,23 +333,23 @@ class exploreState extends State<explore>
     }
 
     final rankedPosts = uniquePosts
-        .where((post) => 
-            post['contentStatus']?.toString() != 'blocked' && 
+        .where((post) =>
+            post['contentStatus']?.toString() != 'blocked' &&
             post['Report'] != true)
         .toList();
 
+    // Score each post once rather than on every comparison.
+    final scores = {
+      for (final post in rankedPosts)
+        post['id']: ContentModerationService.calculateFeedScore(post),
+    };
     rankedPosts.sort((a, b) {
-      final scoreComparison = ContentModerationService.calculateFeedScore(b)
-          .compareTo(ContentModerationService.calculateFeedScore(a));
+      final scoreComparison =
+          (scores[b['id']] ?? 0).compareTo(scores[a['id']] ?? 0);
       if (scoreComparison != 0) {
         return scoreComparison;
       }
-
-      final leftTime = (a['Timestamp'] as Timestamp?)?.toDate() ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      final rightTime = (b['Timestamp'] as Timestamp?)?.toDate() ??
-          DateTime.fromMillisecondsSinceEpoch(0);
-      return rightTime.compareTo(leftTime);
+      return _timeOf(b).compareTo(_timeOf(a));
     });
 
     return rankedPosts;
@@ -277,9 +357,11 @@ class exploreState extends State<explore>
 
   all() {
     setState(() {
-      _posts.clear();
-      _lastDocumentId = null;
+      _headPosts = [];
+      _olderPosts = [];
+      _searchQuery = '';
       _hasMore = true;
+      _recomputeViews();
     });
     _setupFeed();
     search_controller.clear();
@@ -341,13 +423,15 @@ class exploreState extends State<explore>
       if (!mounted) return;
 
       final refreshedPosts = refreshedBatch.docs
-          .map((doc) => {...doc.data(), 'id': doc.id})
+          .map((doc) => _withId({...doc.data(), 'id': doc.id}))
           .toList();
 
       setState(() {
-        _posts = _rankPosts(refreshedPosts);
-        _lastDocumentId = _posts.isNotEmpty ? _posts.last['id'] : null;
+        _headPosts = refreshedPosts;
+        _olderPosts = [];
         _hasMore = refreshedPosts.length == _limit;
+        _hasError = false;
+        _recomputeViews();
         _isLoadingMore = false;
         _isInitialLoading = false;
       });
@@ -388,8 +472,11 @@ class exploreState extends State<explore>
                     return _buildLoadingState();
                   }
 
-                  // Apply advanced search algorithm
-                  final questions = _performSearch(_posts);
+                  final questions = _visiblePosts;
+
+                  if (_hasError) {
+                    return _buildErrorState();
+                  }
 
                   if (questions.isEmpty) {
                     if (_searchQuery.isNotEmpty) {
@@ -414,7 +501,8 @@ class exploreState extends State<explore>
                             child: Center(
                               child: Opacity(
                                 opacity: 0.5,
-                                child: Text('•', style: TextStyle(fontSize: 24)),
+                                child:
+                                    Text('•', style: TextStyle(fontSize: 24)),
                               ),
                             ),
                           );
@@ -422,8 +510,12 @@ class exploreState extends State<explore>
 
                         final data = questions[index];
                         return ScrollFadeIn(
-                          delay: Duration(milliseconds: index < 5 ? index * 80 : 0),
+                          delay: Duration(
+                              milliseconds: index < 5 ? index * 80 : 0),
                           child: QuestionCard(
+                            key: ValueKey(data['id']),
+                            likes: List<String>.from(data['likes'] ?? const []),
+                            isSaved: _savedIds.contains(data['id']),
                             title: data['Title'] ?? '',
                             description: data['Description'] ?? '',
                             tags: List<String>.from(data['Tags'] ?? []),
@@ -434,7 +526,7 @@ class exploreState extends State<explore>
                                     DateTime.now(),
                             code: data['code'] ?? '',
                             uid: data['Uid'] ?? '',
-                            docid: data['docId'] ?? '',
+                            docid: data['id'] ?? '',
                           ),
                         );
                       },
@@ -496,28 +588,34 @@ class exploreState extends State<explore>
           ),
           const Spacer(),
           // Profile Avatar
-          GestureDetector(
-            onTap: () {
-              if (user != null) {
-                Get.to(DeveloperPortfolioPage(userId: user!.uid));
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: AppTheme.primaryGradient,
-              ),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: theme.scaffoldBackgroundColor,
+          Semantics(
+            button: true,
+            label: 'Open your portfolio',
+            excludeSemantics: true,
+            child: GestureDetector(
+              onTap: () {
+                if (user != null) {
+                  Get.to(DeveloperPortfolioPage(userId: user!.uid));
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AppTheme.primaryGradient,
+                ),
                 child: CircleAvatar(
-                  radius: 18,
-                  backgroundImage:
-                      imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
-                  child: imageUrl.isEmpty
-                      ? Icon(Icons.person, color: theme.colorScheme.primary)
-                      : null,
+                  radius: 20,
+                  backgroundColor: theme.scaffoldBackgroundColor,
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundImage: imageUrl.isNotEmpty
+                        ? CachedNetworkImageProvider(imageUrl)
+                        : null,
+                    child: imageUrl.isEmpty
+                        ? Icon(Icons.person, color: theme.colorScheme.primary)
+                        : null,
+                  ),
                 ),
               ),
             ),
@@ -583,29 +681,37 @@ class exploreState extends State<explore>
     );
   }
 
-  // ignore: unused_element
-  Widget _buildErrorState(String error) {
+  Widget _buildErrorState() {
+    final theme = Theme.of(context);
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline_rounded, size: 64, color: Colors.red[300]),
-          const SizedBox(height: 16),
-          Text(
-            'Something went wrong',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[800],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_off_rounded,
+                size: 64, color: theme.colorScheme.error),
+            const SizedBox(height: 16),
+            Text(
+              "Couldn't load posts",
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error,
-            style: TextStyle(color: Colors.grey[600]),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Check your connection and try again.',
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _refreshPosts,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -785,8 +891,17 @@ class QuestionCard extends StatefulWidget {
   final String docid;
   final DateTime timestamp;
 
+  /// Uids that liked the post, as already loaded by the feed. When null the
+  /// card fetches the like state itself.
+  final List<String>? likes;
+
+  /// Whether the viewer has bookmarked the post. When null the card fetches it.
+  final bool? isSaved;
+
   const QuestionCard({
     super.key,
+    this.likes,
+    this.isSaved,
     required this.title,
     required this.code,
     required this.description,
@@ -813,19 +928,43 @@ class _QuestionCardState extends State<QuestionCard> {
   bool _showFullDescription = false; // For expandable description
   final _gamificationService = GamificationService();
 
+  bool _likeInFlight = false;
+  bool _saveInFlight = false;
+
   @override
   void initState() {
     super.initState();
     _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
-    _checkIfLiked();
-    _checkStatus();
+    _syncFromWidget();
   }
 
-  Future<void> _checkStatus() async {
-    await Future.wait([
-      _checkIfLiked(),
-      _checkIfSaved(),
-    ]);
+  @override
+  void didUpdateWidget(covariant QuestionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid != widget.uid) {
+      _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
+    }
+    if (oldWidget.docid != widget.docid ||
+        oldWidget.isSaved != widget.isSaved ||
+        !listEquals(oldWidget.likes, widget.likes)) {
+      _syncFromWidget();
+    }
+  }
+
+  /// Takes like/saved state from the parent when it provides it, so a feed
+  /// page does not cost extra reads per card.
+  void _syncFromWidget() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (widget.likes != null) {
+      if (!_likeInFlight) isLiked = widget.likes!.contains(uid);
+    } else {
+      _checkIfLiked();
+    }
+    if (widget.isSaved != null) {
+      if (!_saveInFlight) isSaved = widget.isSaved!;
+    } else {
+      _checkIfSaved();
+    }
   }
 
   Future<void> _checkIfSaved() async {
@@ -847,51 +986,50 @@ class _QuestionCardState extends State<QuestionCard> {
         }
       }
     } catch (e) {
-      print('Error checking saved status: $e');
+      AppLogger.warning('Error checking saved status: $e');
     }
   }
 
   Future<void> _handleLike() async {
     final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null || _likeInFlight) return;
 
-    // Fetch current state from Firestore to verify before toggling
+    final startLiked = isLiked;
+    setState(() {
+      _likeInFlight = true;
+      isLiked = !startLiked;
+    });
+    HapticFeedback.lightImpact();
+
     try {
       final questionRef =
           FirebaseFirestore.instance.collection('Explore').doc(widget.docid);
-      final questionDoc = await questionRef.get();
 
-      if (!questionDoc.exists) return;
-
-      final data = questionDoc.data() as Map<String, dynamic>;
-      final likes = data['likes'] as List<dynamic>? ?? [];
-      final currentLikesCount = data['likescount'] as int? ?? 0;
-      final actuallyLiked = likes.contains(currentUser.uid);
-
-      // Optimistic Update based on actual state
-      final startLiked = actuallyLiked;
-
-      setState(() {
-        isLiked = !actuallyLiked;
+      // Read and write in one transaction so rapid taps or concurrent likes
+      // cannot drift `likescount` away from `likes`.
+      final nowLiked =
+          await FirebaseFirestore.instance.runTransaction<bool?>((tx) async {
+        final snap = await tx.get(questionRef);
+        if (!snap.exists) return null;
+        final likes = List<String>.from(snap.data()?['likes'] ?? const []);
+        final liked = likes.contains(currentUser.uid);
+        tx.update(questionRef, {
+          'likes': liked
+              ? FieldValue.arrayRemove([currentUser.uid])
+              : FieldValue.arrayUnion([currentUser.uid]),
+          'likescount': FieldValue.increment(liked ? -1 : 1),
+        });
+        return !liked;
       });
 
-      // Haptic feedback
-      HapticFeedback.lightImpact();
+      if (!mounted) return;
+      if (nowLiked == null) {
+        setState(() => isLiked = startLiked);
+        return;
+      }
+      setState(() => isLiked = nowLiked);
 
-      if (startLiked) {
-        // Was liked, so remove like
-        // Only decrement if count is greater than 0
-        await questionRef.update({
-          'likes': FieldValue.arrayRemove([currentUser.uid]),
-          'likescount': currentLikesCount > 0 ? FieldValue.increment(-1) : 0,
-        });
-      } else {
-        // Was not liked, so add like
-        await questionRef.update({
-          'likes': FieldValue.arrayUnion([currentUser.uid]),
-          'likescount': FieldValue.increment(1),
-        });
-
+      if (nowLiked) {
         // Gamification rewards (background)
         _gamificationService.awardXp(XpAction.giveLike);
         _gamificationService.incrementCounter('likesGiven');
@@ -902,19 +1040,21 @@ class _QuestionCardState extends State<QuestionCard> {
         }
       }
     } catch (e) {
-      print('Error handling like: $e');
-      // Revert on error - re-check the actual state
-      await _checkIfLiked();
+      AppLogger.error('Error handling like', e);
+      if (mounted) setState(() => isLiked = startLiked);
+    } finally {
+      if (mounted) setState(() => _likeInFlight = false);
     }
   }
 
   Future<void> _handleSave() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null || _saveInFlight) return;
 
     // Optimistic Update
     final startSaved = isSaved;
     setState(() {
+      _saveInFlight = true;
       isSaved = !isSaved;
     });
 
@@ -936,20 +1076,16 @@ class _QuestionCardState extends State<QuestionCard> {
         });
       }
     } catch (e) {
-      print("Error toggling save: $e");
+      AppLogger.error('Error toggling save', e);
       // Revert
       if (mounted) {
         setState(() {
           isSaved = startSaved;
         });
-        // Note: Title is required in some versions of AppSnackbar, defaulting to 'Error'
-        try {
-          // Attempt with named title if supported, otherwise just message if overload exists
-          // or fallback to basic error catch if API mismatch.
-          // Based on error: "Required named parameter 'title' must be provided."
-          AppSnackbar.error('Failed to update bookmark', title: 'Error');
-        } catch (_) {}
+        AppSnackbar.error('Failed to update bookmark');
       }
+    } finally {
+      if (mounted) setState(() => _saveInFlight = false);
     }
   }
 
@@ -975,10 +1111,9 @@ class _QuestionCardState extends State<QuestionCard> {
         }
       }
     } catch (e) {
-      print('Error checking like status: $e');
+      AppLogger.warning('Error checking like status: $e');
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -1026,13 +1161,11 @@ class _QuestionCardState extends State<QuestionCard> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                RichText(
-                  text: TextSpan(
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
-                    children: _buildDescription(widget.description, theme),
+                LinkifiedText(
+                  widget.description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.4,
                   ),
                   maxLines: _showFullDescription ? null : 3,
                   overflow: _showFullDescription
@@ -1119,9 +1252,11 @@ class _QuestionCardState extends State<QuestionCard> {
                         : theme.colorScheme.onSurfaceVariant,
                   ),
                   onPressed: _handleSave,
+                  tooltip: isSaved ? 'Remove bookmark' : 'Save post',
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints:
+                      const BoxConstraints(minWidth: 44, minHeight: 44),
                 ),
               ],
             ),
@@ -1268,7 +1403,7 @@ class _QuestionCardState extends State<QuestionCard> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const UserInfoShimmer();
         }
-        
+
         final userData = snapshot.data ?? {};
         final imageUrl = userData['profilePicture'] as String?;
         final hasImage = imageUrl != null && imageUrl.isNotEmpty;
@@ -1278,28 +1413,32 @@ class _QuestionCardState extends State<QuestionCard> {
         return Row(
           children: [
             // Profile Image
-            GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
+            Semantics(
+              button: true,
+              label: "Open $userName's profile",
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          DeveloperPortfolioPage(userId: widget.uid),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: AppTheme.primaryGradient,
                   ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: AppTheme.primaryGradient,
-                ),
-                child: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: theme.scaffoldBackgroundColor,
-                  backgroundImage: hasImage
-                      ? NetworkImage(imageUrl)
-                      : const NetworkImage(
-                          'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                        ),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: theme.scaffoldBackgroundColor,
+                    backgroundImage: hasImage
+                        ? CachedNetworkImageProvider(imageUrl)
+                        : const AssetImage('assets/images/default_avatar.png'),
+                  ),
                 ),
               ),
             ),
@@ -1307,18 +1446,23 @@ class _QuestionCardState extends State<QuestionCard> {
 
             // Username
             Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => DeveloperPortfolioPage(userId: widget.uid),
+              child: Semantics(
+                button: true,
+                hint: 'Opens profile',
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            DeveloperPortfolioPage(userId: widget.uid),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    userName,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
-                  );
-                },
-                child: Text(
-                  userName,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -1343,20 +1487,74 @@ class _QuestionCardState extends State<QuestionCard> {
                 ),
               ),
             ),
+            _buildPostMenu(userName),
           ],
         );
       },
     );
   }
 
-  Widget _buildShimmerText() {
-    return Container(
-      height: 16,
-      width: 80,
-      decoration: BoxDecoration(
-        color: Colors.grey[300],
-        borderRadius: BorderRadius.circular(4),
-      ),
+  Widget _buildPostMenu(String userName) {
+    final isOwn = FirebaseAuth.instance.currentUser?.uid == widget.uid;
+    return PopupMenuButton<String>(
+      tooltip: 'More options',
+      icon: const Icon(Icons.more_vert_rounded),
+      onSelected: (value) async {
+        if (value == 'delete') {
+          final confirm = await AppDialogs.showConfirmation(
+            context,
+            title: 'Delete post',
+            message: 'This permanently deletes your post.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+          );
+          if (confirm != true) return;
+          try {
+            await AccountService.instance.deletePost(widget.docid);
+            AppSnackbar.success('Post deleted');
+          } catch (e) {
+            AppLogger.error('Failed to delete post', e);
+            AppSnackbar.error('Could not delete the post. Please try again.');
+          }
+        } else if (value == 'block') {
+          final confirm = await AppDialogs.showConfirmation(
+            context,
+            title: 'Block $userName?',
+            message:
+                "You won't see their posts, discussions or replies. You can unblock them from your profile.",
+            confirmText: 'Block',
+            cancelText: 'Cancel',
+          );
+          if (confirm != true) return;
+          try {
+            await BlockService.instance.block(widget.uid);
+            AppSnackbar.success('$userName blocked');
+          } catch (e) {
+            AppLogger.error('Failed to block user', e);
+            AppSnackbar.error('Could not block this user. Please try again.');
+          }
+        }
+      },
+      itemBuilder: (_) => [
+        if (isOwn)
+          const PopupMenuItem(
+            value: 'delete',
+            child: ListTile(
+              leading: Icon(Icons.delete_outline_rounded),
+              title: Text('Delete post'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          )
+        else
+          const PopupMenuItem(
+            value: 'block',
+            child: ListTile(
+              leading: Icon(Icons.block_rounded),
+              title: Text('Block user'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+      ],
     );
   }
 
@@ -1413,7 +1611,8 @@ class _QuestionCardState extends State<QuestionCard> {
                     );
                   },
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints:
+                      const BoxConstraints(minWidth: 44, minHeight: 44),
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Copy code',
                   color: theme.colorScheme.primary,
@@ -1427,7 +1626,8 @@ class _QuestionCardState extends State<QuestionCard> {
                   icon: Icon(Icons.expand_less_rounded, size: 16),
                   onPressed: () => setState(() => _showFullCode = false),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  constraints:
+                      const BoxConstraints(minWidth: 44, minHeight: 44),
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Collapse',
                   color: theme.colorScheme.primary,
@@ -1538,7 +1738,7 @@ class _QuestionCardState extends State<QuestionCard> {
         }
       },
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(),
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       visualDensity: VisualDensity.compact,
       tooltip: _showComplexity ? 'Hide analysis' : 'Analyze complexity',
       color: theme.colorScheme.primary,
@@ -1676,73 +1876,7 @@ class _QuestionCardState extends State<QuestionCard> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        return '${difference.inMinutes}m ago';
-      }
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
-}
-
-List<TextSpan> _buildDescription(String description, ThemeData theme) {
-  final urlRegex = RegExp(r'(https?://[^\s]+)'); // Matches URLs
-  final matches = urlRegex.allMatches(description);
-
-  if (matches.isEmpty) {
-    return [TextSpan(text: description)];
-  }
-
-  int lastMatchEnd = 0;
-  List<TextSpan> spans = [];
-
-  for (final match in matches) {
-    // Add text before the URL
-    if (match.start > lastMatchEnd) {
-      spans.add(
-          TextSpan(text: description.substring(lastMatchEnd, match.start)));
-    }
-
-    // Add the URL as a clickable link
-    final url = description.substring(match.start, match.end);
-    spans.add(
-      TextSpan(
-        text: url,
-        style: TextStyle(
-          color: theme.colorScheme.primary,
-          decoration: TextDecoration.underline,
-        ),
-        recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
-      ),
-    );
-
-    lastMatchEnd = match.end;
-  }
-
-  // Add remaining text after the last URL
-  if (lastMatchEnd < description.length) {
-    spans.add(TextSpan(text: description.substring(lastMatchEnd)));
-  }
-
-  return spans;
-}
-
-// Function to launch URLs
-void _launchURL(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  } else {
-    debugPrint('Could not launch $url');
-  }
+  String _formatDate(DateTime date) => formatRelativeDate(date);
 }
 
 class SearchController extends GetxController {

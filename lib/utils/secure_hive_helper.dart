@@ -8,7 +8,9 @@ class SecureHiveHelper {
   SecureHiveHelper._();
   static final SecureHiveHelper instance = SecureHiveHelper._();
 
-  static const _secureStorage = FlutterSecureStorage();
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(resetOnError: true),
+  );
   static const _encryptionKeyName = 'hive_encryption_key';
 
   List<int>? _encryptionKey;

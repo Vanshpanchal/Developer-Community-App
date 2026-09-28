@@ -1,0 +1,12 @@
+{
+  "name": "devsphere-admin-tools",
+  "private": true,
+  "type": "module",
+  "description": "One-off maintenance scripts run locally with the Admin SDK (works on the Spark plan).",
+  "scripts": {
+    "cleanup-profiles": "node cleanup-profiles.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

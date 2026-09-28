@@ -2,13 +2,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
-/// Fetches app-wide secrets from the `secrets` Firestore collection.
-/// In future, all API keys and config values will be stored here.
+/// Reads the shared AI model list and per-user AI preferences.
 ///
 /// Firestore structure:
-///   secrets/
+///   Secrets/
 ///     gemini/
-///       apiKey: "..."
+///       availableModels: ["gemini-2.5-flash", ...]
+///
+/// Signed-in users can read the whole `Secrets/gemini` document (rules cannot
+/// hide single fields), so it must never contain an API key.
 class SecretsService {
   SecretsService._();
   static final SecretsService instance = SecretsService._();
@@ -16,30 +18,14 @@ class SecretsService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ---------------------------------------------------------------------------
-  // Gemini secrets
-  // ---------------------------------------------------------------------------
-
-  /// Fetches the shared Gemini API key from Firestore (secrets/gemini).
-  Future<String?> getGeminiApiKey() async {
-    try {
-      final doc = await _db.collection('Secrets').doc('gemini').get();
-      return doc.data()?['apiKey'] as String?;
-    } catch (e) {
-      debugPrint('SecretsService: failed to fetch gemini key: $e');
-      return null;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // User model preference & Available Models
   // ---------------------------------------------------------------------------
 
-  /// Fetches available Gemini models from the shared secrets/gemini config.
+  /// Fetches available Gemini models from `Secrets/gemini.availableModels`.
   Future<List<String>?> getAvailableModels() async {
     try {
       final doc = await _db.collection('Secrets').doc('gemini').get();
       final models = doc.data()?['availableModels'] as List<dynamic>?;
-      debugPrint("Available models___: $models");
       if (models != null) {
         return models.cast<String>();
       }

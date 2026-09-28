@@ -3,8 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 import 'models/poll_model.dart';
 import 'widgets/poll_widgets.dart';
 import 'services/gamification_service.dart';
@@ -12,6 +10,7 @@ import 'models/gamification_models.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
 import 'utils/app_validators.dart';
+import 'utils/email_verification.dart';
 
 class add_discussion extends StatefulWidget {
   const add_discussion({super.key});
@@ -49,6 +48,7 @@ class _add_discussionState extends State<add_discussion> {
       AppSnackbar.error("Please fix the errors in the form.");
       return;
     }
+    if (!await ensureEmailVerified(context)) return;
     if (_tags.isEmpty) {
       AppSnackbar.error("Please add at least one tag.");
       return;
@@ -108,9 +108,10 @@ class _add_discussionState extends State<add_discussion> {
       debugPrint("Discussion Created");
 
       // Award XP for creating discussion
-      await _gamificationService.awardXp(XpAction.createDiscussion);
-      await _gamificationService.incrementCounter('discussionsCount');
-      await _gamificationService.recordActivity();
+      final xpAwarded =
+          await _gamificationService.awardXp(XpAction.createDiscussion);
+      _gamificationService.incrementCounter('discussionsCount');
+      _gamificationService.recordActivity();
 
       // Award XP for poll if created
       if (_pollData != null && _pollData!.isValid) {
@@ -118,7 +119,10 @@ class _add_discussionState extends State<add_discussion> {
         await _gamificationService.incrementCounter('pollsCreated');
       }
 
-      AppSnackbar.success("Success! +${XpAction.createDiscussion.defaultXp} XP",
+      AppSnackbar.success(
+          xpAwarded
+              ? "Success! +${XpAction.createDiscussion.defaultXp} XP"
+              : "Your discussion is live.",
           title: "Discussion Created");
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -131,7 +135,8 @@ class _add_discussionState extends State<add_discussion> {
           title: 'Authentication Error');
     } catch (e) {
       debugPrint("ShareDiscussion Error: {$e}");
-      AppSnackbar.error(e.toString(), title: "Error");
+      AppSnackbar.error('Could not publish your discussion. Please try again.',
+          title: "Error");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -146,7 +151,6 @@ class _add_discussionState extends State<add_discussion> {
       setState(() {
         _tags.add(tag);
       });
-      print(_tags);
       _tagController.clear();
     }
   }

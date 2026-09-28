@@ -6,9 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'ai_service.dart';
 import 'services/gamification_service.dart';
 import 'models/gamification_models.dart';
@@ -21,6 +19,13 @@ import 'utils/content_moderation.dart';
 import 'widgets/app_dialogs.dart';
 import 'widgets/scroll_fade_in.dart';
 import 'services/user_cache_service.dart';
+import 'utils/app_logger.dart';
+import 'services/account_service.dart';
+import 'services/block_service.dart';
+import 'utils/email_verification.dart';
+import 'widgets/linkified_text.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'utils/date_format.dart';
 
 class detail_discussion extends StatefulWidget {
   final String docId;
@@ -60,6 +65,7 @@ class _detail_discussionState extends State<detail_discussion> {
   @override
   void initState() {
     super.initState();
+    BlockService.instance.blockedIds.addListener(_onBlockListChanged);
     _discussionStream = FirebaseFirestore.instance
         .collection('Discussions')
         .doc(widget.docId)
@@ -72,8 +78,13 @@ class _detail_discussionState extends State<detail_discussion> {
         .snapshots();
   }
 
+  void _onBlockListChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    BlockService.instance.blockedIds.removeListener(_onBlockListChanged);
     _replyController.dispose();
     _nestedReplyController.dispose();
     _activeReplyId.dispose();
@@ -110,7 +121,7 @@ class _detail_discussionState extends State<detail_discussion> {
       final userData = await UserCacheService.instance.getUserData(uid);
       return userData['XP']?.toString() ?? '100';
     } catch (e) {
-      print('Error fetching user data: $e');
+      AppLogger.warning('Error fetching user data: $e');
       return 'Error';
     }
   }
@@ -120,7 +131,7 @@ class _detail_discussionState extends State<detail_discussion> {
       final userData = await UserCacheService.instance.getUserData(uid);
       return userData['profilePicture'] as String?;
     } catch (e) {
-      print('Error fetching user data: $e');
+      AppLogger.warning('Error fetching user data: $e');
       return null;
     }
   }
@@ -137,13 +148,14 @@ class _detail_discussionState extends State<detail_discussion> {
       // Return the number of documents in the Replies collection
       return repliesSnapshot.size.toInt();
     } catch (e) {
-      print('Error getting replies count: $e');
+      AppLogger.warning('Error getting replies count: $e');
       return 0; // Return 0 in case of an error
     }
   }
 
   Future<void> addReply() async {
     final replyText = _replyController.text.trim();
+    if (!await ensureEmailVerified(context)) return;
     setState(() => _isLoading = true);
 
     final moderation = await ContentModerationService.moderateReply(replyText);
@@ -166,7 +178,6 @@ class _detail_discussionState extends State<detail_discussion> {
           .doc(user.uid)
           .get();
 
-      print(user.uid);
       if (userDoc.exists) {
         // Get username and profile picture, fallback if not available
         final username = userDoc.data()?['Username'] ?? 'Anonymous';
@@ -200,23 +211,22 @@ class _detail_discussionState extends State<detail_discussion> {
         _replyController.clear();
 
         // Award XP for posting reply
-        await _gamificationService.awardXp(XpAction.postReply);
-        await _gamificationService.incrementCounter('repliesCount');
-        await _gamificationService.recordActivity();
+        final xpAwarded =
+            await _gamificationService.awardXp(XpAction.postReply);
+        _gamificationService.incrementCounter('repliesCount');
+        _gamificationService.recordActivity();
 
         // Show success message
-        AppSnackbar.success(
-            'Reply added successfully! +${XpAction.postReply.defaultXp} XP');
+        AppSnackbar.success(xpAwarded
+            ? 'Reply added successfully! +${XpAction.postReply.defaultXp} XP'
+            : 'Reply added successfully!');
       } else {
         // Handle case where user document does not exist
         throw Exception('User document not found in Firestore.');
       }
     } catch (e) {
-      // Print error to console
-      print('Error adding reply: $e');
-
-      // Show error message to the user
-      AppSnackbar.error('Failed to add reply: $e');
+      AppLogger.error('Error adding reply', e);
+      AppSnackbar.error('Failed to add reply. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -269,6 +279,7 @@ class _detail_discussionState extends State<detail_discussion> {
   Future<void> _addNestedReply(String parentReplyId) async {
     final text = _nestedReplyController.text.trim();
     if (text.isEmpty) return;
+    if (!await ensureEmailVerified(context)) return;
     setState(() => _nestedReplyLoading = true);
 
     final moderation = await ContentModerationService.moderateReply(text);
@@ -335,52 +346,135 @@ class _detail_discussionState extends State<detail_discussion> {
     return '${(diff.inDays / 365).floor()}y';
   }
 
-  Future<void> updateXP(String uid) async {
-    try {
-      // Save the updated XP back to Firestore atomically
-      await FirebaseFirestore.instance.collection('User').doc(uid).update({
-        'XP': FieldValue.increment(50),
-        'lastXpUpdate': FieldValue.serverTimestamp(),
-      });
+  bool _acceptInFlight = false;
 
-      // Log XP history for sync
-      await FirebaseFirestore.instance
-          .collection('User')
-          .doc(uid)
-          .collection('xp_history')
-          .add({
-        'action': 'helpfulAnswer',
-        'xp': 50,
-        'timestamp': FieldValue.serverTimestamp(),
-        'description': 'Answer marked as helpful',
-      });
-    } catch (e) {
-      debugPrint('Error updating XP: $e');
-    }
-  }
-
-  Future<void> _reportDiscussion() async {
+  /// Marks a reply as accepted exactly once and awards the author +50 XP.
+  /// The transaction makes double taps and concurrent accepts a no-op.
+  Future<void> _acceptReply(
+      String replyId, Map<String, dynamic> replyData) async {
+    if (_acceptInFlight) return;
+    _acceptInFlight = true;
     try {
-      await FirebaseFirestore.instance
+      final replyRef = FirebaseFirestore.instance
           .collection('Discussions')
           .doc(widget.docId)
-          .update({
-        'Report': true,
-        'reportedAt': FieldValue.serverTimestamp(),
-        'reportedBy': user?.uid,
+          .collection('Replies')
+          .doc(replyId);
+      final accepted =
+          await FirebaseFirestore.instance.runTransaction<bool>((tx) async {
+        final snap = await tx.get(replyRef);
+        if (!snap.exists || snap.data()?['accepted'] == true) return false;
+        tx.update(replyRef, {'accepted': true});
+        return true;
       });
-      AppSnackbar.success(
-          'Discussion reported. Our moderators will review it.');
+      if (!accepted) return;
+
+      final authorId = replyData['uid'] as String?;
+      if (authorId != null) {
+        await _gamificationService.awardXp(XpAction.helpfulAnswer,
+            customXp: 50, targetUserId: authorId);
+      }
+      AppSnackbar.success('Reply accepted!');
     } catch (e) {
-      AppSnackbar.error('Failed to report discussion: $e');
+      AppLogger.error('Failed to accept reply', e);
+      AppSnackbar.error('Could not accept this reply. Please try again.');
+    } finally {
+      _acceptInFlight = false;
     }
   }
 
-  Future<void> _notifyAcceptedReplyAuthor(
-      Map<String, dynamic> replyData) async {
-    // Push notifications disabled - no server-side function available.
-    // To re-enable, deploy an Appwrite Function or backend that can call FCM.
-    return;
+  Future<void> _onDiscussionMenu(String value) async {
+    switch (value) {
+      case 'report':
+        final confirm = await AppDialogs.showConfirmation(
+          context,
+          title: 'Report Discussion',
+          message:
+              'Do you want to report this discussion for moderator review?',
+          confirmText: 'Report',
+          cancelText: 'Cancel',
+        );
+        if (confirm == true) await _reportDiscussion();
+      case 'block':
+        await _confirmBlock(widget.creatorId, 'the author');
+        if (mounted && BlockService.instance.isBlocked(widget.creatorId)) {
+          Navigator.of(context).pop();
+        }
+      case 'delete':
+        final confirm = await AppDialogs.showConfirmation(
+          context,
+          title: 'Delete discussion',
+          message:
+              'This permanently deletes the discussion and all of its replies.',
+          confirmText: 'Delete',
+          cancelText: 'Cancel',
+        );
+        if (confirm != true) return;
+        try {
+          await AccountService.instance.deleteDiscussion(widget.docId);
+          AppSnackbar.success('Discussion deleted');
+          if (mounted) Navigator.of(context).pop();
+        } catch (e) {
+          AppLogger.error('Failed to delete discussion', e);
+          AppSnackbar.error('Could not delete the discussion. Please try again.');
+        }
+    }
+  }
+
+  Future<void> _confirmBlock(String? targetUid, String name) async {
+    if (targetUid == null || targetUid == user?.uid) return;
+    final confirm = await AppDialogs.showConfirmation(
+      context,
+      title: 'Block $name?',
+      message:
+          "You won't see their posts, discussions or replies. You can unblock them from your profile.",
+      confirmText: 'Block',
+      cancelText: 'Cancel',
+    );
+    if (confirm != true) return;
+    try {
+      await BlockService.instance.block(targetUid);
+      AppSnackbar.success('User blocked');
+    } catch (e) {
+      AppLogger.error('Failed to block user', e);
+      AppSnackbar.error('Could not block this user. Please try again.');
+    }
+  }
+
+  /// Number of distinct reporters needed before a discussion is hidden.
+  /// Must match `reportThreshold()` in firestore.rules.
+  static const int _reportThreshold = 3;
+
+  Future<void> _reportDiscussion() async {
+    final uid = user?.uid;
+    if (uid == null) return;
+    final discussionRef =
+        FirebaseFirestore.instance.collection('Discussions').doc(widget.docId);
+    final reportRef = discussionRef.collection('Reports').doc(uid);
+    try {
+      final reported =
+          await FirebaseFirestore.instance.runTransaction<bool>((tx) async {
+        final existing = await tx.get(reportRef);
+        if (existing.exists) return false;
+        final discussion = await tx.get(discussionRef);
+        final count = (discussion.data()?['reportCount'] as int? ?? 0) + 1;
+        tx.set(reportRef, {
+          'reporterId': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        tx.update(discussionRef, {
+          'reportCount': count,
+          'Report': count >= _reportThreshold,
+        });
+        return true;
+      });
+      AppSnackbar.success(reported
+          ? 'Discussion reported. Thanks for helping keep DevSphere safe.'
+          : 'You have already reported this discussion.');
+    } catch (e) {
+      AppLogger.error('Failed to report discussion', e);
+      AppSnackbar.error('Could not report this discussion. Please try again.');
+    }
   }
 
   @override
@@ -418,25 +512,42 @@ class _detail_discussionState extends State<detail_discussion> {
           color: isDark ? Colors.white : Colors.black87,
         ),
         actions: [
-          IconButton(
-            tooltip: 'Report Discussion',
+          PopupMenuButton<String>(
+            tooltip: 'More options',
             icon: Icon(
-              Icons.flag_outlined,
+              Icons.more_vert_rounded,
               color: isDark ? Colors.grey.shade200 : Colors.black87,
             ),
-            onPressed: () async {
-              final confirm = await AppDialogs.showConfirmation(
-                context,
-                title: 'Report Discussion',
-                message:
-                    'Do you want to report this discussion for moderator review?',
-                confirmText: 'Report',
-                cancelText: 'Cancel',
-              );
-              if (confirm == true) {
-                await _reportDiscussion();
-              }
-            },
+            onSelected: _onDiscussionMenu,
+            itemBuilder: (_) => [
+              if (user?.uid == widget.creatorId)
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: ListTile(
+                    leading: Icon(Icons.delete_outline_rounded),
+                    title: Text('Delete discussion'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                )
+              else ...[
+                const PopupMenuItem(
+                  value: 'report',
+                  child: ListTile(
+                    leading: Icon(Icons.flag_outlined),
+                    title: Text('Report discussion'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'block',
+                  child: ListTile(
+                    leading: Icon(Icons.block_rounded),
+                    title: Text('Block author'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ],
           ),
           IconButton(
             tooltip: 'Summarize Thread',
@@ -486,9 +597,8 @@ class _detail_discussionState extends State<detail_discussion> {
                         });
                         // Show in bottom sheet
                         if (summary.isNotEmpty) {
-                          // ignore: use_build_context_synchronously
                           showModalBottomSheet(
-                            context: context,
+                            context: this.context,
                             isScrollControlled: true,
                             backgroundColor:
                                 isDark ? AppTheme.darkCard : Colors.white,
@@ -502,8 +612,10 @@ class _detail_discussionState extends State<detail_discussion> {
                         }
                       }
                     } catch (e) {
+                      AppLogger.error('Thread summary failed', e);
                       if (mounted) {
-                        AppSnackbar.error('Summary failed: $e');
+                        AppSnackbar.error(
+                            'Could not summarize this thread. Please try again.');
                       }
                     } finally {
                       if (mounted) {
@@ -858,7 +970,9 @@ class _detail_discussionState extends State<detail_discussion> {
                           final replies =
                               repliesSnapshot.data!.docs.where((doc) {
                             final data = doc.data() as Map<String, dynamic>;
-                            return !_isUnsafeContent(data);
+                            return !_isUnsafeContent(data) &&
+                                !BlockService.instance
+                                    .isBlocked(data['uid'] as String?);
                           }).toList();
 
                           if (replies.isEmpty) {
@@ -923,6 +1037,11 @@ class _detail_discussionState extends State<detail_discussion> {
                                 (context, index) {
                                   var replyData = replies[index].data()
                                       as Map<String, dynamic>;
+                                  final bool hasAcceptedReply = replies.any(
+                                      (r) =>
+                                          (r.data() as Map<String, dynamic>)[
+                                              'accepted'] ==
+                                          true);
                                   final bool isAccepted =
                                       replyData['accepted'] == true;
                                   final bool isOwner =
@@ -954,6 +1073,14 @@ class _detail_discussionState extends State<detail_discussion> {
 
                                   return GestureDetector(
                                     onLongPress: () async {
+                                      if (!isOwner) {
+                                        await _confirmBlock(
+                                            replyData['uid'] as String?,
+                                            replyData['user_name']
+                                                    ?.toString() ??
+                                                'this user');
+                                        return;
+                                      }
                                       if (isOwner) {
                                         bool? confirmDelete =
                                             await AppDialogs.showConfirmation(
@@ -965,23 +1092,25 @@ class _detail_discussionState extends State<detail_discussion> {
                                           cancelText: 'Cancel',
                                           barrierDismissible: false,
                                         );
-                                        if (confirmDelete == true) {
-                                          try {
-                                            await FirebaseFirestore.instance
-                                                .collection('Discussions')
-                                                .doc(widget.docId)
-                                                .collection('Replies')
-                                                .doc(replyId)
-                                                .delete();
-                                            AppSnackbar.success(
-                                                'Reply deleted successfully!');
-                                          } catch (e) {
-                                            AppSnackbar.error(
-                                                'Failed to delete reply: $e');
+                                        if (confirmDelete != true) return;
+                                        try {
+                                          await FirebaseFirestore.instance
+                                              .collection('Discussions')
+                                              .doc(widget.docId)
+                                              .collection('Replies')
+                                              .doc(replyId)
+                                              .delete();
+                                          AppSnackbar.success(
+                                              'Reply deleted successfully!');
+                                          if (replyData['accepted'] == true) {
+                                            await updateXP2(
+                                                replyData['uid'], 50);
                                           }
-                                        }
-                                        if (replyData['accepted'] == true) {
-                                          updateXP2(replyData['uid'], 50);
+                                        } catch (e) {
+                                          AppLogger.error(
+                                              'Failed to delete reply', e);
+                                          AppSnackbar.error(
+                                              'Failed to delete reply. Please try again.');
                                         }
                                       }
                                     },
@@ -1162,7 +1291,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                                 return CircleAvatar(
                                                                     radius: 14,
                                                                     backgroundImage:
-                                                                        NetworkImage(
+                                                                        CachedNetworkImageProvider(
                                                                             snapshot.data!));
                                                               }
                                                             },
@@ -1274,24 +1403,17 @@ class _detail_discussionState extends State<detail_discussion> {
                                                     const SizedBox(height: 8),
 
                                                     // ── Reply text ──
-                                                    RichText(
-                                                      text: TextSpan(
-                                                        style: TextStyle(
-                                                            color: isDark
-                                                                ? Colors.grey
-                                                                    .shade200
-                                                                : Colors
-                                                                    .black87,
-                                                            fontSize: 14,
-                                                            height: 1.5),
-                                                        children:
-                                                            _buildDescription(
-                                                                replyData[
-                                                                        'reply'] ??
-                                                                    '',
-                                                                Theme.of(
-                                                                    context)),
-                                                      ),
+                                                    LinkifiedText(
+                                                      replyData['reply']
+                                                              ?.toString() ??
+                                                          '',
+                                                      style: TextStyle(
+                                                          color: isDark
+                                                              ? Colors.grey
+                                                                  .shade200
+                                                              : Colors.black87,
+                                                          fontSize: 14,
+                                                          height: 1.5),
                                                     ),
                                                     const SizedBox(height: 10),
 
@@ -1570,68 +1692,25 @@ class _detail_discussionState extends State<detail_discussion> {
                                                         const Spacer(),
 
                                                         // ── Accept button ──
-                                                        if (!isAccepted)
-                                                          FutureBuilder<User?>(
-                                                            future: FirebaseAuth
-                                                                .instance
-                                                                .authStateChanges()
-                                                                .first,
-                                                            builder: (context,
-                                                                snapshot) {
-                                                              if (snapshot
-                                                                      .hasData &&
-                                                                  snapshot.data!
-                                                                          .uid ==
-                                                                      widget
-                                                                          .creatorId &&
-                                                                  user?.uid !=
-                                                                      replyData[
-                                                                          'uid']) {
-                                                                return _buildActionChip(
-                                                                  icon: Icons
-                                                                      .check_circle_outline_rounded,
-                                                                  label:
-                                                                      'Accept',
-                                                                  color: AppTheme
-                                                                      .successColor,
-                                                                  isDark:
-                                                                      isDark,
-                                                                  onTap:
-                                                                      () async {
-                                                                    try {
-                                                                      await FirebaseFirestore
-                                                                          .instance
-                                                                          .collection(
-                                                                              'Discussions')
-                                                                          .doc(widget
-                                                                              .docId)
-                                                                          .collection(
-                                                                              'Replies')
-                                                                          .doc(
-                                                                              replyId)
-                                                                          .update({
-                                                                        'accepted':
-                                                                            true
-                                                                      });
-                                                                      updateXP(
-                                                                          replyData[
-                                                                              'uid']);
-                                                                      await _notifyAcceptedReplyAuthor(
-                                                                          replyData);
-                                                                      AppSnackbar
-                                                                          .success(
-                                                                              'Reply accepted!');
-                                                                    } catch (e) {
-                                                                      AppSnackbar
-                                                                          .error(
-                                                                              'Failed to accept: $e');
-                                                                    }
-                                                                  },
-                                                                );
-                                                              }
-                                                              return const SizedBox
-                                                                  .shrink();
-                                                            },
+                                                        if (!isAccepted &&
+                                                            !hasAcceptedReply &&
+                                                            user?.uid ==
+                                                                widget
+                                                                    .creatorId &&
+                                                            user?.uid !=
+                                                                replyData[
+                                                                    'uid'])
+                                                          _buildActionChip(
+                                                            icon: Icons
+                                                                .check_circle_outline_rounded,
+                                                            label: 'Accept',
+                                                            color: AppTheme
+                                                                .successColor,
+                                                            isDark: isDark,
+                                                            onTap: () =>
+                                                                _acceptReply(
+                                                                    replyId,
+                                                                    replyData),
                                                           ),
                                                       ],
                                                     ),
@@ -1934,7 +2013,7 @@ class _detail_discussionState extends State<detail_discussion> {
                                                                               (context, snap) {
                                                                             return CircleAvatar(
                                                                               radius: 9,
-                                                                              backgroundImage: snap.hasData && snap.data != null && snap.data!.isNotEmpty ? NetworkImage(snap.data!) : null,
+                                                                              backgroundImage: snap.hasData && snap.data != null && snap.data!.isNotEmpty ? CachedNetworkImageProvider(snap.data!) : null,
                                                                               child: (!snap.hasData || snap.data == null || snap.data!.isEmpty) ? Text(sub['user_name']?[0].toUpperCase() ?? '?', style: const TextStyle(fontSize: 8)) : null,
                                                                             );
                                                                           },
@@ -2338,7 +2417,7 @@ class display_discussionCardState extends State<display_discussion> {
       final userData = await UserCacheService.instance.getUserData(uid);
       return userData['Username'] as String? ?? 'Unknown User';
     } catch (e) {
-      print('Error fetching user data: $e');
+      AppLogger.warning('Error fetching user data: $e');
       return 'Error';
     }
   }
@@ -2390,11 +2469,10 @@ class display_discussionCardState extends State<display_discussion> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  SelectableText.rich(
-                    TextSpan(
-                      style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-                      children: _buildDescription(widget.description, theme),
-                    ),
+                  LinkifiedText(
+                    widget.description,
+                    style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+                    selectable: true,
                   ),
                   if (widget.tags.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -2439,7 +2517,7 @@ class display_discussionCardState extends State<display_discussion> {
       final userData = await UserCacheService.instance.getUserData(uid);
       return userData['profilePicture'] as String?;
     } catch (e) {
-      print('Error fetching user data: $e');
+      AppLogger.warning('Error fetching user data: $e');
       return null;
     }
   }
@@ -2449,7 +2527,7 @@ class display_discussionCardState extends State<display_discussion> {
       final userData = await UserCacheService.instance.getUserData(uid);
       return userData['XP']?.toString() ?? '100';
     } catch (e) {
-      print('Error fetching user data: $e');
+      AppLogger.warning('Error fetching user data: $e');
       return '100';
     }
   }
@@ -2542,7 +2620,7 @@ class display_discussionCardState extends State<display_discussion> {
                         }
                         return CircleAvatar(
                           radius: 18,
-                          backgroundImage: NetworkImage(url),
+                          backgroundImage: CachedNetworkImageProvider(url),
                         );
                       },
                     ),
@@ -2636,16 +2714,14 @@ class display_discussionCardState extends State<display_discussion> {
                 const SizedBox(height: 6),
 
                 // ── Description ──
-                RichText(
-                  text: TextSpan(
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      height: 1.6,
-                      fontSize: 14,
-                      color: isDark
-                          ? Colors.grey.shade300
-                          : const Color(0xFF475569),
-                    ),
-                    children: _buildDescription(widget.description, theme),
+                LinkifiedText(
+                  widget.description,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    height: 1.6,
+                    fontSize: 14,
+                    color: isDark
+                        ? Colors.grey.shade300
+                        : const Color(0xFF475569),
                   ),
                   maxLines: _showFullDescription ? null : 4,
                   overflow: TextOverflow.ellipsis,
@@ -2691,73 +2767,10 @@ class display_discussionCardState extends State<display_discussion> {
   }
 
   // ignore: unused_element
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        return '${difference.inMinutes}m ago';
-      }
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
+  String _formatDate(DateTime date) => formatRelativeDate(date);
 }
 
-List<TextSpan> _buildDescription(String description, ThemeData theme) {
-  final urlRegex = RegExp(r'(https?://[^\s]+)'); // Matches URLs
-  final matches = urlRegex.allMatches(description);
 
-  if (matches.isEmpty) {
-    return [TextSpan(text: description)];
-  }
-
-  int lastMatchEnd = 0;
-  List<TextSpan> spans = [];
-
-  for (final match in matches) {
-    // Add text before the URL
-    if (match.start > lastMatchEnd) {
-      spans.add(
-          TextSpan(text: description.substring(lastMatchEnd, match.start)));
-    }
-
-    // Add the URL as a clickable link
-    final url = description.substring(match.start, match.end);
-    spans.add(
-      TextSpan(
-        text: url,
-        style: TextStyle(
-          color: theme.colorScheme.primary,
-          decoration: TextDecoration.underline,
-        ),
-        recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
-      ),
-    );
-
-    lastMatchEnd = match.end;
-  }
-
-  // Add remaining text after the last URL
-  if (lastMatchEnd < description.length) {
-    spans.add(TextSpan(text: description.substring(lastMatchEnd)));
-  }
-
-  return spans;
-}
-
-void _launchURL(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  } else {
-    debugPrint('Could not launch $url');
-  }
-}
 
 class _ThreadSummarySheet extends StatefulWidget {
   final String summary;

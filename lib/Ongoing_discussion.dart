@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:developer_community_app/add_discussion.dart';
 import 'package:developer_community_app/detail_discussion.dart';
@@ -7,7 +8,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'models/poll_model.dart';
 import 'widgets/poll_widgets.dart';
 import 'utils/app_theme.dart';
@@ -17,6 +17,12 @@ import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
 import 'dart:math' as math;
 import 'widgets/scroll_fade_in.dart';
+import 'utils/app_logger.dart';
+import 'services/block_service.dart';
+import 'widgets/linkified_text.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'utils/user_messages.dart';
+import 'utils/date_format.dart';
 
 class ongoing_discussion extends StatefulWidget {
   const ongoing_discussion({super.key});
@@ -39,11 +45,9 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   DocumentSnapshot? _lastDocument;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  // Pages loaded on scroll, older than the live first page from the stream.
   final List<QueryDocumentSnapshot> _discussions = [];
-  // ignore: unused_field
-  List<QueryDocumentSnapshot> _allDiscussions = [];
-  // ignore: unused_field
-  final List<QueryDocumentSnapshot> _filteredDiscussions = [];
+  Timer? _searchDebounce;
 
   var discussionStream = FirebaseFirestore.instance
       .collection('Discussions')
@@ -54,6 +58,10 @@ class _ongoing_discussionState extends State<ongoing_discussion>
 
   all() {
     setState(() {
+      _discussions.clear();
+      _lastDocument = null;
+      _hasMore = true;
+      _searchQuery = '';
       discussionStream = FirebaseFirestore.instance
           .collection('Discussions')
           .where('Report', isEqualTo: false)
@@ -103,17 +111,63 @@ class _ongoing_discussionState extends State<ongoing_discussion>
   String _searchQuery = '';
 
   onSearch2(String query) {
-    setState(() {
-      _searchQuery = query.trim().toLowerCase();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = query.trim().toLowerCase();
+      });
     });
+  }
+
+  // Memo for the ranked list, so rebuilds that don't change the inputs
+  // (e.g. the loading indicator toggling) skip ranking and search.
+  QuerySnapshot? _viewSnapshot;
+  int _viewOlderCount = -1;
+  String _viewQuery = '';
+  Set<String>? _viewBlocked;
+  List<QueryDocumentSnapshot> _view = const [];
+
+  List<QueryDocumentSnapshot> _visibleDiscussions(QuerySnapshot snapshot) {
+    final blocked = BlockService.instance.blockedIds.value;
+    if (identical(snapshot, _viewSnapshot) &&
+        _viewOlderCount == _discussions.length &&
+        _viewQuery == _searchQuery &&
+        identical(blocked, _viewBlocked)) {
+      return _view;
+    }
+    _viewSnapshot = snapshot;
+    _viewOlderCount = _discussions.length;
+    _viewQuery = _searchQuery;
+    _viewBlocked = blocked;
+    return _view = _performSearch(_mergeWithLoadedPages(snapshot.docs)
+        .where((doc) => !blocked.contains(
+            (doc.data() as Map<String, dynamic>)['Uid'] as String?))
+        .toList());
+  }
+
+  /// Live first page plus older pages, de-duplicated and in Timestamp order.
+  /// Also moves the pagination cursor to the oldest loaded document.
+  List<QueryDocumentSnapshot> _mergeWithLoadedPages(
+      List<QueryDocumentSnapshot> streamDocs) {
+    final seen = <String>{};
+    final merged = <QueryDocumentSnapshot>[
+      for (final doc in [...streamDocs, ..._discussions])
+        if (seen.add(doc.id)) doc,
+    ];
+    DateTime timeOf(QueryDocumentSnapshot doc) =>
+        ((doc.data() as Map<String, dynamic>)['Timestamp'] as Timestamp?)
+            ?.toDate() ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    merged.sort((a, b) => timeOf(b).compareTo(timeOf(a)));
+    if (merged.isNotEmpty) _lastDocument = merged.last;
+    if (_discussions.isEmpty) _hasMore = streamDocs.length >= _limit;
+    return merged;
   }
 
   List<QueryDocumentSnapshot> _performSearch(List<QueryDocumentSnapshot> docs) {
     final rankedDocs = _rankDiscussions(docs);
     if (_searchQuery.isEmpty) return rankedDocs;
-
-    // Store all discussions
-    _allDiscussions = rankedDocs;
 
     // Calculate relevance scores for each document
     final scoredDocs = rankedDocs
@@ -149,13 +203,17 @@ class _ongoing_discussionState extends State<ongoing_discussion>
       return data['contentStatus']?.toString() != 'blocked';
     }).toList();
 
+    // Score each discussion once rather than on every comparison.
+    final scores = {
+      for (final doc in rankedDocs)
+        doc.id: ContentModerationService.calculateFeedScore(
+            doc.data() as Map<String, dynamic>),
+    };
     rankedDocs.sort((a, b) {
       final leftData = a.data() as Map<String, dynamic>;
       final rightData = b.data() as Map<String, dynamic>;
 
-      final scoreComparison =
-          ContentModerationService.calculateFeedScore(rightData)
-              .compareTo(ContentModerationService.calculateFeedScore(leftData));
+      final scoreComparison = scores[b.id]!.compareTo(scores[a.id]!);
       if (scoreComparison != 0) {
         return scoreComparison;
       }
@@ -188,10 +246,17 @@ class _ongoing_discussionState extends State<ongoing_discussion>
 
     // Setup scroll listener for pagination
     _scrollController.addListener(_onScroll);
+    BlockService.instance.blockedIds.addListener(_onBlockListChanged);
+  }
+
+  void _onBlockListChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    BlockService.instance.blockedIds.removeListener(_onBlockListChanged);
+    _searchDebounce?.cancel();
     _animationController.dispose();
     search_controller.dispose();
     _scrollController.dispose();
@@ -207,6 +272,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
 
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore || _lastDocument == null) return;
+    if (_searchQuery.isNotEmpty) return;
 
     setState(() {
       _isLoadingMore = true;
@@ -221,23 +287,20 @@ class _ongoing_discussionState extends State<ongoing_discussion>
           .limit(_limit)
           .get();
 
-      if (nextBatch.docs.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _discussions.addAll(nextBatch.docs);
+        if (nextBatch.docs.isNotEmpty) _lastDocument = nextBatch.docs.last;
+        _hasMore = nextBatch.docs.length == _limit;
+      });
+    } catch (e) {
+      AppLogger.error('Error loading more discussions', e);
+    } finally {
+      if (mounted) {
         setState(() {
-          _discussions.addAll(nextBatch.docs);
-          _lastDocument = nextBatch.docs.last;
-          _hasMore = nextBatch.docs.length == _limit;
-        });
-      } else {
-        setState(() {
-          _hasMore = false;
+          _isLoadingMore = false;
         });
       }
-    } catch (e) {
-      print('Error loading more discussions: $e');
-    } finally {
-      setState(() {
-        _isLoadingMore = false;
-      });
     }
   }
 
@@ -267,21 +330,15 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                       return _buildLoadingState();
                     }
                     if (snapshot.hasError) {
-                      return _buildErrorState(snapshot.error.toString());
+                      return _buildErrorState(userMessageFor(snapshot.error!,
+                          fallback: "Couldn't load discussions."));
                     }
                     if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                       return _buildEmptyState();
                     }
 
-                    // Sync pagination state with stream data
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && snapshot.data!.docs.isNotEmpty) {
-                        _lastDocument = snapshot.data!.docs.last;
-                      }
-                    });
-
-                    // Apply advanced search algorithm
-                    final questions = _performSearch(snapshot.data!.docs);
+                    // Render the live first page plus pages loaded on scroll.
+                    final questions = _visibleDiscussions(snapshot.data!);
 
                     if (questions.isEmpty && _searchQuery.isNotEmpty) {
                       return _buildNoResultsState();
@@ -313,6 +370,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                               ? Map<String, dynamic>.from(rawPollData)
                               : null;
                           return ScrollFadeIn(
+                            key: ValueKey(questions[index].id),
                             child: displayCard(
                               title: data['Title'] ?? '',
                               description: data['Description'] ?? '',
@@ -321,7 +379,7 @@ class _ongoing_discussionState extends State<ongoing_discussion>
                                   (data['Timestamp'] as Timestamp?)?.toDate() ??
                                       DateTime.now(),
                               uid: data['Uid'] ?? '',
-                              docid: data['docId'] ?? '',
+                              docid: questions[index].id,
                               replies: [],
                               hasPoll: data['hasPoll'] == true,
                               pollData: pollMap,
@@ -463,28 +521,37 @@ class _ongoing_discussionState extends State<ongoing_discussion>
     );
   }
 
-  Widget _buildErrorState(String error) {
+  Widget _buildErrorState(String message) {
+    final theme = Theme.of(context);
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline_rounded, size: 64, color: Colors.red[300]),
-          const SizedBox(height: 16),
-          Text(
-            'Something went wrong',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[800],
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_off_rounded,
+                size: 64, color: theme.colorScheme.error),
+            const SizedBox(height: 16),
+            Text(
+              'Something went wrong',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            error,
-            style: TextStyle(color: Colors.grey[600]),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: all,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -611,24 +678,34 @@ class displayCardState extends State<displayCard> {
     super.initState();
     _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
     _fetchRepliesCount();
-    // _checkIfLiked();
-    // Access the parameters with widget.parameterName
+  }
+
+  @override
+  void didUpdateWidget(covariant displayCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.uid != widget.uid) {
+      _userDataFuture = UserCacheService.instance.getUserData(widget.uid);
+    }
+    if (oldWidget.docid != widget.docid) _fetchRepliesCount();
   }
 
   int _repliesCount = 0;
   Future<void> _fetchRepliesCount() async {
     try {
-      QuerySnapshot repliesSnapshot = await FirebaseFirestore.instance
+      // Aggregate count: one billed read instead of downloading every reply.
+      final countSnapshot = await FirebaseFirestore.instance
           .collection('Discussions')
           .doc(widget.docid)
           .collection('Replies')
+          .count()
           .get();
 
+      if (!mounted) return;
       setState(() {
-        _repliesCount = repliesSnapshot.size; // Set replies count
+        _repliesCount = countSnapshot.count ?? 0;
       });
     } catch (e) {
-      print('Error fetching replies count: $e');
+      AppLogger.warning('Error fetching replies count: $e');
     }
   }
 
@@ -711,10 +788,8 @@ class displayCardState extends State<displayCard> {
                             backgroundColor:
                                 theme.colorScheme.surfaceContainerHighest,
                             foregroundImage: hasImage
-                                    ? NetworkImage(imageUrl)
-                                    : const NetworkImage(
-                                        'https://static.vecteezy.com/system/resources/thumbnails/009/734/564/small_2x/default-avatar-profile-icon-of-social-media-user-vector.jpg',
-                                      ),
+                                    ? CachedNetworkImageProvider(imageUrl)
+                                    : const AssetImage('assets/images/default_avatar.png'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -775,13 +850,11 @@ class displayCardState extends State<displayCard> {
                 ),
                 const SizedBox(height: 8),
                 // Description
-                RichText(
-                  text: TextSpan(
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
-                    children: _buildDescription(widget.description, theme),
+                LinkifiedText(
+                  widget.description,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.4,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -856,9 +929,10 @@ class displayCardState extends State<displayCard> {
                         color: theme.colorScheme.primary,
                       ),
                       onPressed: () => save(widget.docid),
+                      tooltip: 'Save discussion',
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+                      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                     ),
                   ],
                 ),
@@ -870,73 +944,10 @@ class displayCardState extends State<displayCard> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      if (difference.inHours == 0) {
-        return '${difference.inMinutes}m ago';
-      }
-      return '${difference.inHours}h ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays}d ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
+  String _formatDate(DateTime date) => formatRelativeDate(date);
 }
 
-List<TextSpan> _buildDescription(String description, ThemeData theme) {
-  final urlRegex = RegExp(r'(https?://[^\s]+)'); // Matches URLs
-  final matches = urlRegex.allMatches(description);
 
-  if (matches.isEmpty) {
-    return [TextSpan(text: description)];
-  }
-
-  int lastMatchEnd = 0;
-  List<TextSpan> spans = [];
-
-  for (final match in matches) {
-    // Add text before the URL
-    if (match.start > lastMatchEnd) {
-      spans.add(
-          TextSpan(text: description.substring(lastMatchEnd, match.start)));
-    }
-
-    // Add the URL as a clickable link
-    final url = description.substring(match.start, match.end);
-    spans.add(
-      TextSpan(
-        text: url,
-        style: TextStyle(
-          color: theme.colorScheme.primary,
-          decoration: TextDecoration.underline,
-        ),
-        recognizer: TapGestureRecognizer()..onTap = () => _launchURL(url),
-      ),
-    );
-
-    lastMatchEnd = match.end;
-  }
-
-  // Add remaining text after the last URL
-  if (lastMatchEnd < description.length) {
-    spans.add(TextSpan(text: description.substring(lastMatchEnd)));
-  }
-
-  return spans;
-}
-
-void _launchURL(String url) async {
-  final uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  } else {
-    debugPrint('Could not launch $url');
-  }
-}
 
 class SearchController extends GetxController {
   var searchText = ''.obs;

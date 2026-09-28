@@ -13,7 +13,6 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'ai_service.dart';
 import 'dart:ui' as ui;
-import 'package:url_launcher/url_launcher.dart';
 import 'utils/app_theme.dart';
 import 'widgets/modern_widgets.dart';
 import 'ThemeController.dart';
@@ -21,6 +20,8 @@ import 'package:get/get.dart';
 import 'utils/app_snackbar.dart';
 import 'portfolio_summary_page.dart';
 import 'widgets/app_dialogs.dart';
+import 'utils/url_helper.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class DeveloperPortfolioPage extends StatefulWidget {
   // const DeveloperPortfolioPage({super.key, this.userId});
@@ -99,8 +100,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       _username = data['Username'] as String? ??
           data['username'] as String? ??
           'Developer';
-      _profileEmail =
-          data['Email'] as String? ?? (_isSelf ? currentUser.email : null);
+      // Email is private: only ever show the signed-in user's own address.
+      _profileEmail = _isSelf ? currentUser.email : null;
       _userBio = data['bio'] as String?;
       final createdRaw = data['createdAt'];
       if (createdRaw is Timestamp) {
@@ -162,7 +163,6 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       _aiSummary = null;
     });
     try {
-      final user = _auth.currentUser;
       final stats = _buildStats();
       await _maybeFetchGithub();
       final mergedStats = {
@@ -172,7 +172,7 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       final summary = await AIService().generatePortfolioSummary(
         stats: mergedStats,
         github: _githubStats,
-        userHandle: _profileEmail ?? user?.email,
+        userHandle: _username,
       );
       if (summary == AIService.missingKeyMessage) {
         if (mounted) _showMissingKeyDialog();
@@ -710,18 +710,14 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
               IconButton(
                 tooltip: 'Open GitHub Profile',
                 icon: const Icon(Icons.open_in_new, size: 20),
-                onPressed: () async {
-                  final url = Uri.parse('https://github.com/$_githubUsername');
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  }
-                },
+                onPressed: () =>
+                    openExternalUrl('https://github.com/$_githubUsername'),
               ),
           ],
         ),
-        if (_profileEmail != null || _auth.currentUser?.email != null)
+        if (_profileEmail != null)
           Text(
-            _profileEmail ?? _auth.currentUser?.email ?? '',
+            _profileEmail!,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withOpacity(.75),
             ),
@@ -868,8 +864,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
           ], begin: Alignment.topLeft, end: Alignment.bottomRight),
         ),
         child: url != null && url.startsWith('http')
-            ? Image.network(
-                url,
+            ? Image(
+                image: CachedNetworkImageProvider(url),
                 fit: BoxFit.cover,
                 errorBuilder: (c, e, st) => _avatarFallback(),
                 loadingBuilder: (c, child, progress) => progress == null
@@ -1339,8 +1335,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(40),
         child: url != null && url.startsWith('http')
-            ? Image.network(
-                url,
+            ? Image(
+                image: CachedNetworkImageProvider(url),
                 fit: BoxFit.cover,
                 errorBuilder: (c, e, st) => _buildModernAvatarFallback(),
                 loadingBuilder: (c, child, progress) => progress == null
@@ -1400,12 +1396,8 @@ class _DeveloperPortfolioPageState extends State<DeveloperPortfolioPage> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () async {
-            final url = Uri.parse('https://github.com/$_githubUsername');
-            if (await canLaunchUrl(url)) {
-              await launchUrl(url, mode: LaunchMode.externalApplication);
-            }
-          },
+          onTap: () =>
+              openExternalUrl('https://github.com/$_githubUsername'),
           borderRadius: BorderRadius.circular(8),
           child: const Padding(
             padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),

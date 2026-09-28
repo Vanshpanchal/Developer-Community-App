@@ -8,6 +8,7 @@ import 'models/gamification_models.dart';
 import 'utils/app_snackbar.dart';
 import 'utils/content_moderation.dart';
 import 'utils/app_validators.dart';
+import 'utils/email_verification.dart';
 
 class addpost extends StatefulWidget {
   const addpost({super.key});
@@ -44,6 +45,7 @@ class addpostState extends State<addpost> {
       AppSnackbar.error("Please fix the errors in the form.");
       return;
     }
+    if (!await ensureEmailVerified(context)) return;
     if (_tags.isEmpty) {
       AppSnackbar.error("Please add at least one tag.");
       return;
@@ -99,11 +101,15 @@ class addpostState extends State<addpost> {
       debugPrint("AddUser: User Added");
 
       // Award XP for creating post
-      await _gamificationService.awardXp(XpAction.createPost);
-      await _gamificationService.incrementCounter('postsCount');
-      await _gamificationService.recordActivity();
+      final xpAwarded =
+          await _gamificationService.awardXp(XpAction.createPost);
+      _gamificationService.incrementCounter('postsCount');
+      _gamificationService.recordActivity();
 
-      AppSnackbar.success("Success! +${XpAction.createPost.defaultXp} XP",
+      AppSnackbar.success(
+          xpAwarded
+              ? "Success! +${XpAction.createPost.defaultXp} XP"
+              : "Your post is live.",
           title: "Post Created");
 
       await Future.delayed(const Duration(milliseconds: 500));
@@ -116,7 +122,8 @@ class addpostState extends State<addpost> {
           title: 'Authentication Error');
     } catch (e) {
       debugPrint("Sharepost  {$e}");
-      AppSnackbar.error(e.toString(), title: "Error");
+      AppSnackbar.error('Could not publish your post. Please try again.',
+          title: "Error");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -192,7 +199,6 @@ class addpostState extends State<addpost> {
       setState(() {
         _tags.add(tag);
       });
-      print(_tags);
       _tagController.clear();
     }
   }

@@ -1,8 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:get/get.dart';
 import 'ai_service.dart';
 import 'utils/app_snackbar.dart';
 import 'widgets/app_dialogs.dart';
@@ -47,7 +45,6 @@ class _attachcodeState extends State<attachcode> {
       setState(() {
         _tags.add(tag);
       });
-      print(_tags);
       _tagController.clear();
     }
   }
@@ -62,8 +59,6 @@ class _attachcodeState extends State<attachcode> {
   Future<void> _fetchDocumentData() async {
     try {
       // Access the reply document from the subcollection
-      print(widget.discussionId);
-      print(widget.docId);
       var docRef = FirebaseFirestore.instance
           .collection('Discussions')
           .doc(widget.discussionId)

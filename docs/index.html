@@ -374,8 +374,10 @@
                 <li><strong>Access:</strong> Request a copy of your personal data stored in our database</li>
                 <li><strong>Correction:</strong> Update your username, profile picture, bio, and GitHub username through
                     profile settings</li>
-                <li><strong>Deletion:</strong> Request deletion of your account and associated data (see Data Retention
-                    below)</li>
+                <li><strong>Deletion:</strong> Delete your account and associated data yourself in the app under
+                    Profile &rarr; Delete Account, or by email request (see Data Retention below)</li>
+                <li><strong>Blocking:</strong> Block other users from their posts, discussions or replies; manage
+                    blocked users under Profile &rarr; Blocked Users</li>
                 <li><strong>Portability:</strong> Request an export of your posts, discussions, and profile data in JSON
                     format</li>
                 <li><strong>API Key Control:</strong> Your Gemini API key can be changed or deleted at any time from
@@ -393,7 +395,6 @@
             <p>Each user account contains:</p>
             <ul>
                 <li><code>Username</code> - Your display name (string)</li>
-                <li><code>Email</code> - Your email address (string, private)</li>
                 <li><code>Uid</code> - Unique user identifier (string)</li>
                 <li><code>profilePicture</code> - URL to your profile image (string)</li>
                 <li><code>XP</code> - Experience points (number, starts at 100)</li>
@@ -465,16 +466,22 @@
 
             <p><strong>Active Accounts:</strong> We retain your data for as long as your account is active.</p>
 
-            <p><strong>Account Deletion:</strong> When you request account deletion, we will:</p>
+            <p><strong>Account Deletion:</strong> You can delete your account at any time in the app under
+                Profile &rarr; Delete Account (you will be asked for your password). If you can no longer access the
+                app, email vansh.panchal7@proton.me from your account's address and we will delete it for you.
+                Deletion immediately and permanently removes:</p>
             <ul>
-                <li>Delete your User profile document (username, email, profile picture, XP, saved lists, bio, GitHub
-                    username)</li>
-                <li>Delete your Gemini API key hash</li>
-                <li><strong>Preserve public content:</strong> Posts, discussions, and replies you created will remain
-                    visible but will show "[Deleted User]" as the author to maintain community continuity</li>
-                <li>Remove your email and private data from these public posts</li>
-                <li>Clear all analytics data associated with your account within 60 days</li>
+                <li>Your User profile document (username, profile picture, XP, badges, saved lists, bio, GitHub
+                    username, Gemini API key hash) and its private data (notification tokens, block list, XP history,
+                    challenge progress)</li>
+                <li>Posts and discussions you created, including all replies within your discussions</li>
+                <li>Replies and nested replies you posted in other discussions</li>
+                <li>Your likes on posts and replies</li>
+                <li>Your sign-in account (email address and password) in Firebase Authentication</li>
+                <li>Data stored on the device you delete from (caches, chat history, API key)</li>
             </ul>
+            <p>Votes you cast in polls are kept only as anonymous identifiers and are not linked to any remaining
+                profile. Analytics data associated with your account is cleared within 60 days.</p>
 
             <p><strong>Local Data:</strong> AI chatbot conversations stored on your device can be deleted by:</p>
             <ul>
