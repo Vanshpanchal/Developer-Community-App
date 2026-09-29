@@ -108,10 +108,19 @@ function normalizeDataMap(rawData) {
     );
 }
 
+const SINGLE_TOKEN_FIELDS = ['fcmToken', 'notificationToken', 'deviceToken', 'pushToken'];
+const LIST_TOKEN_FIELDS = ['fcmTokens', 'notificationTokens', 'deviceTokens', 'pushTokens'];
+
+// FCM error codes meaning the token will never work again and can be deleted.
+const DEAD_TOKEN_CODES = new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+]);
+
 function collectUserTokens(data) {
     const out = new Set();
-    const single = [data?.fcmToken, data?.notificationToken, data?.deviceToken, data?.pushToken];
-    const lists = [data?.fcmTokens, data?.notificationTokens, data?.deviceTokens, data?.pushTokens];
+    const single = SINGLE_TOKEN_FIELDS.map((field) => data?.[field]);
+    const lists = LIST_TOKEN_FIELDS.map((field) => data?.[field]);
 
     for (const token of single) {
         if (typeof token === 'string' && token.trim().length >= 20) out.add(token.trim());
@@ -127,12 +136,60 @@ function collectUserTokens(data) {
     return [...out];
 }
 
+function maskToken(token) {
+    return `${token.slice(0, 8)}…${token.slice(-4)}`;
+}
+
+/** Records which docs hold each token so dead ones can be removed later. */
+function addTokenOwners(owners, ref, data) {
+    for (const token of collectUserTokens(data)) {
+        if (!owners.has(token)) owners.set(token, []);
+        owners.get(token).push({ ref, data });
+    }
+}
+
+/** Deletes dead tokens from every doc they were found in. Returns docs updated. */
+async function pruneDeadTokens(deadTokens, owners) {
+    const db = admin.firestore();
+
+    // Group dead tokens by the doc holding them.
+    const byDoc = new Map();
+    for (const token of deadTokens) {
+        for (const { ref, data } of owners.get(token) || []) {
+            if (!byDoc.has(ref.path)) byDoc.set(ref.path, { ref, data, dead: new Set() });
+            byDoc.get(ref.path).dead.add(token);
+        }
+    }
+
+    const entries = [...byDoc.values()].map(({ ref, data, dead }) => {
+        const isDead = (item) => typeof item === 'string' && dead.has(item.trim());
+        const update = {};
+        for (const field of SINGLE_TOKEN_FIELDS) {
+            if (isDead(data?.[field])) update[field] = admin.firestore.FieldValue.delete();
+        }
+        for (const field of LIST_TOKEN_FIELDS) {
+            if (Array.isArray(data?.[field]) && data[field].some(isDead)) {
+                update[field] = data[field].filter((item) => !isDead(item));
+            }
+        }
+        return { ref, update };
+    });
+
+    for (let i = 0; i < entries.length; i += 400) {
+        const batch = db.batch();
+        for (const { ref, update } of entries.slice(i, i + 400)) batch.update(ref, update);
+        await batch.commit();
+    }
+
+    return entries.length;
+}
+
 async function fetchAllUserTokens(maxUsers = 10000) {
     const db = admin.firestore();
     const pageSize = 500;
     let scanned = 0;
     let lastDoc = null;
-    const all = new Set();
+    const owners = new Map();
 
     while (scanned < maxUsers) {
         let query = db
@@ -152,8 +209,10 @@ async function fetchAllUserTokens(maxUsers = 10000) {
         );
         for (const [index, doc] of snap.docs.entries()) {
             scanned += 1;
-            for (const token of collectUserTokens(doc.data())) all.add(token);
-            for (const token of collectUserTokens(privateDocs[index].data())) all.add(token);
+            addTokenOwners(owners, doc.ref, doc.data());
+            if (privateDocs[index].exists) {
+                addTokenOwners(owners, privateDocs[index].ref, privateDocs[index].data());
+            }
             if (scanned >= maxUsers) break;
         }
 
@@ -161,7 +220,7 @@ async function fetchAllUserTokens(maxUsers = 10000) {
         if (snap.size < pageSize) break;
     }
 
-    return { tokens: [...all], scannedUsers: scanned };
+    return { tokens: [...owners.keys()], owners, scannedUsers: scanned };
 }
 
 async function sendSingleFcm({ title, body, token, data = {}, dryRun = false }) {
@@ -182,6 +241,7 @@ async function sendBroadcastFcm({ title, body, tokens, data = {}, dryRun = false
     let successCount = 0;
     let failureCount = 0;
     const errors = [];
+    const deadTokens = [];
 
     for (let i = 0; i < tokens.length; i += chunkSize) {
         const chunk = tokens.slice(i, i + chunkSize);
@@ -198,12 +258,18 @@ async function sendBroadcastFcm({ title, body, tokens, data = {}, dryRun = false
         failureCount += result.failureCount;
 
         result.responses.forEach((entry, idx) => {
-            if (entry.success || errors.length >= 25) return;
-            errors.push({ token: chunk[idx], error: entry.error?.message || 'Unknown FCM error' });
+            if (entry.success) return;
+            if (DEAD_TOKEN_CODES.has(entry.error?.code)) deadTokens.push(chunk[idx]);
+            if (errors.length >= 25) return;
+            errors.push({
+                token: maskToken(chunk[idx]),
+                code: entry.error?.code || 'unknown',
+                error: entry.error?.message || 'Unknown FCM error',
+            });
         });
     }
 
-    return { successCount, failureCount, errors };
+    return { successCount, failureCount, errors, deadTokens };
 }
 
 function containsBlockedContent(text) {
@@ -313,7 +379,8 @@ async function runGeminiModeration(payload) {
             ],
             generationConfig: {
                 temperature: 0.1,
-                maxOutputTokens: 220,
+                // Thinking models spend part of this budget on reasoning before the JSON answer.
+                maxOutputTokens: 2048,
                 responseMimeType: 'application/json',
             },
             contents: [{ parts: [{ text: prompt }] }],
@@ -476,10 +543,13 @@ module.exports = async ({ req, res, log, error }) => {
 
             let tokens = [...new Set(providedTokens)];
             let scannedUsers = 0;
+            // Only known when tokens come from Firestore; caller-supplied tokens have no owner doc.
+            let owners = null;
 
             if (!tokens.length) {
                 const fetched = await fetchAllUserTokens(Number(body?.maxUsers || 10000));
                 tokens = fetched.tokens;
+                owners = fetched.owners;
                 scannedUsers = fetched.scannedUsers;
             }
 
@@ -504,6 +574,16 @@ module.exports = async ({ req, res, log, error }) => {
                 dryRun,
             });
 
+            let prunedDocs = 0;
+            if (!dryRun && owners && result.deadTokens.length) {
+                try {
+                    prunedDocs = await pruneDeadTokens(result.deadTokens, owners);
+                } catch (err) {
+                    // The broadcast itself succeeded; a cleanup failure shouldn't hide that.
+                    if (error) error(`Dead token cleanup failed: ${err.message}`);
+                }
+            }
+
             return res.json(
                 {
                     success: result.failureCount === 0,
@@ -511,6 +591,8 @@ module.exports = async ({ req, res, log, error }) => {
                     totalTokens: tokens.length,
                     sentCount: result.successCount,
                     failedCount: result.failureCount,
+                    deadTokenCount: result.deadTokens.length,
+                    prunedDocs,
                     scannedUsers,
                     errors: result.errors,
                 },

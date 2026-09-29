@@ -81,3 +81,4 @@ app.*.map.json
 # Build output and tool backups
 /android/build/
 .asset_backup_*.json
+appwrite-fcm-moderation.tar.gz
