@@ -82,3 +82,6 @@ app.*.map.json
 /android/build/
 .asset_backup_*.json
 appwrite-fcm-moderation.tar.gz
+
+# Local scripts and documentation
+AI_CONTEXT.md
